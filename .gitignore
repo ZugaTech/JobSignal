@@ -5,5 +5,8 @@ node_modules/
 dist/
 build/
 coverage/
+__pycache__/
+.pytest_cache/
+*.pyc
 *.log
 .DS_Store
