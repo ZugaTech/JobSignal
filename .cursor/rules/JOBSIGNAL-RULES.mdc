@@ -1,0 +1,294 @@
+---
+description: 
+alwaysApply: true
+---
+
+You are a senior product engineer and systems architect.
+
+Your task is documentation first, implementation later.
+Maintain a visible commit history that reflects real development progress for hackathon judging.                                                                                           After completing each logical milestone:
+- create a clear git commit with meaningful message
+- push to remote repository
+- do NOT batch commits
+- each sprint must have multiple granular commits reflecting progress    
+Do not write application code yet.
+Do not start coding features yet.
+Do not assume architecture without documenting it.
+Your first job is to create a planning document set and sprint plan for a job verification app that helps applicants avoid fake, stale, duplicated, or low-trust job postings.
+
+Project concept:
+
+* User pastes a job URL or job description
+* The system verifies the posting using trusted search signals
+* The system returns a recommendation such as APPLY, VERIFY, or SKIP
+* The system must prioritize data accuracy, source trust, and reproducibility
+* The system should be production-minded, but still realistic for a hackathon build
+* The product may be multi-tenant
+* Caching should be global across tenants for identical inputs, but must never leak tenant-private data
+* The app must avoid claiming certainty where certainty is not justified
+
+Core product objective:
+Save applicants time by reducing wasted applications to ghost jobs, duplicate postings, recycled listings, vague postings, or suspicious employers.
+
+What you must produce:
+
+1. A clean product specification
+2. A folder and file structure for a new workspace
+3. A dependency and integration plan
+4. A trust, accuracy, and source validation plan
+5. A caching plan
+6. A multi-tenant design note
+7. A frontend and backend structure note
+8. A testing and reliability plan
+9. A security and privacy hardening plan
+10. A deployment readiness plan
+11. A set of sprint documents and execution prompts
+12. A final frozen scope statement
+
+Important constraints:
+
+* Accuracy matters more than flashy AI output
+* The system must use trustworthy search signals
+* The system should use caching globally for identical normalized inputs
+* Cached results must have a TTL
+* The cache should expire after a reasonable window such as 10 to 30 days
+* Cache keys should be based on normalized job URL or normalized job text plus source version or model version
+* The cache must not store tenant secrets or tenant-private notes in a shared record
+* The app may be multi-tenant, but the verification logic should be reusable across tenants
+* The system should be fast enough for a real user but should not trade away trust
+* The AI should be used as a reasoning layer, not a source of truth by itself
+* Search and verification should use multiple sources where possible
+* If confidence is low, the app must say so
+* If the source set is weak, the app must say VERIFY instead of pretending to know
+* The system should support improvement later, so include clear extension points
+
+Your deliverable must be a markdown document set with the following sections.
+
+# 1. Product Definition
+
+Write one concise paragraph describing the app.
+
+# 2. Exact MVP
+
+Define the exact MVP and list:
+
+* input types
+* output types
+* core signals
+* minimum trust logic
+* minimum cache logic
+* minimum multi-tenant logic
+
+# 3. Accuracy and Trust Principles
+
+Define the rules the system must follow to avoid hallucination and overclaiming.
+Include:
+
+* source ranking
+* confidence handling
+* fallback behavior
+* stale data handling
+* duplicate posting handling
+* suspicious posting handling
+* when to return VERIFY
+
+# 4. Caching Design
+
+Create a global caching plan that includes:
+
+* cache key strategy
+* normalization rules
+* TTL strategy
+* stale response policy
+* invalidation policy
+* cross-tenant reuse rules
+* privacy constraints
+* fallback when cache misses
+
+The cache must support identical inputs being reused across tenants if appropriate, while still protecting tenant-specific data.
+
+# 5. Suggested Workspace Structure
+
+Create a realistic folder tree for a new workspace.
+
+Minimum folders and files:
+
+* docs/
+* prompts/
+* sprints/
+* tests/
+* frontend/
+* backend/
+* cache/
+* security/
+* deployment/
+* data_sources/
+* .env.example
+* README.md
+
+For each major folder, explain what belongs there.
+
+# 6. Data Source Plan
+
+Explain what the app should use for trust checks.
+Include:
+
+* official company careers page checks
+* search engine or search API checks
+* company domain checks
+* repeated posting checks
+* recruiter identity checks
+* stale listing signals
+* optional public reputation signals
+
+Do not recommend anything that requires a huge crawler system unless clearly labeled as future work.
+
+# 7. Sprint Roadmap
+
+Create exactly four sprint plans for planning and execution.
+Each sprint must have:
+
+* sprint goal
+* scope
+* tasks
+* done criteria
+* risk
+* fallback
+* manual checklist
+
+The four sprint stages should cover:
+
+* Sprint 1: architecture, workspace, and trust model
+* Sprint 2: data ingestion, search validation, and cache system
+* Sprint 3: scoring, decision output, and frontend flow
+* Sprint 4: testing, hardening, deployment readiness, and final freeze
+
+The plan must assume the team may later start execution step by step from those docs.
+
+# 8. Sprint Prompt Pack
+
+For each of the four sprints, generate a separate IDE-agent prompt that can be pasted into a coding agent later.
+
+Each sprint prompt must:
+
+* instruct the agent to work only on that sprint
+* forbid jumping ahead
+* require documentation updates
+* require tests
+* require safe fallback behavior
+* allow improvement if the agent finds a better implementation path, but only if it documents the change
+* preserve the accuracy-first philosophy
+* preserve the caching rules
+* preserve the multi-tenant rules
+
+Make the prompts detailed and ready to paste.
+
+# 9. Frontend Plan
+
+Define the frontend behavior:
+
+* input box or URL paste
+* status states
+* loading behavior
+* trust score display
+* reason display
+* cache hit display
+* warning display
+* error display
+* low-confidence display
+
+The frontend must make trust and uncertainty visible, not hide them.
+
+# 10. Backend Plan
+
+Define the backend responsibilities:
+
+* normalization
+* source collection
+* trust scoring
+* cache lookup
+* cache write
+* verdict generation
+* response schema validation
+* error handling
+* observability
+* rate limiting
+
+# 11. Testing and Reliability Plan
+
+Include:
+
+* unit tests
+* integration tests
+* cache tests
+* source validation tests
+* scoring tests
+* failure path tests
+* frontend smoke tests
+* regression tests with known job examples
+
+Focus on preventing false confidence and preventing stale or duplicate outputs from breaking the user experience.
+
+# 12. Security and Privacy Plan
+
+Include:
+
+* API key handling
+* environment variable hygiene
+* tenant isolation rules
+* shared cache safety
+* log hygiene
+* safe URL handling
+* safe text handling
+* rate limits
+* prompt injection resistance
+* minimum access control for demo and production-like use
+
+# 13. Deployment Readiness Plan
+
+Write what must be ready before deployment:
+
+* environment variables
+* backend service
+* frontend service
+* cache backend if used
+* external API keys
+* rollback plan
+* monitoring plan
+* basic health checks
+
+# 14. Extension Points
+
+List what the system may improve later without changing the core product:
+
+* richer source coverage
+* stronger reputation signals
+* user watchlists
+* per-user alerts
+* browser extension
+* browser bookmarklet
+* saved history
+* smarter duplicate detection
+* stronger cross-tenant analytics
+
+# 15. Final Frozen Scope
+
+End with one short frozen scope statement that says exactly what this app will do and what it will not do.
+
+Rules for your output:
+
+* Be concrete
+* Be implementation-aware
+* Be accuracy-first
+* Be concise where possible, but do not omit critical details
+* Do not write app code yet
+* Do not pretend certainty where the data is weak
+* Do not skip caching or multi-tenant constraints
+* Do not ignore privacy
+* Do not ignore tests
+* Do not ignore deployment readiness
+* Do not make the product into a full job board or crawler platform
+* Do not make the product into a public blacklist site
+* Keep the system focused on applicant-side decision support
+
+Now create the planning document set in markdown.
