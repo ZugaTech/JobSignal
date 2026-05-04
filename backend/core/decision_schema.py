@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional, TypedDict
+from typing import List, Literal, NotRequired, Optional, TypedDict
 
 
 class Verdict(str, Enum):
@@ -27,9 +27,20 @@ class WarningItem(TypedDict):
 class SignalEvidence(TypedDict):
     id: str
     label: str
-    tier: str  # "T1" | "T2" | "T3" | "none"
-    strength: str  # "high" | "medium" | "low" | "none"
+    tier: Literal["T1", "T2", "T3", "none"]
+    strength: Literal["high", "medium", "low", "none"]
     details: str
+
+
+class DecisionResponse(TypedDict):
+    """Core decision payload; confidence is always explicit at top level."""
+
+    verdict: Verdict
+    confidence: Literal["high", "medium", "low"]
+    # reasons: must contain at least 2 items
+    reasons: List[ReasonItem]
+    warnings: List[WarningItem]
+    signals: List[SignalEvidence]
 
 
 class CacheMeta(TypedDict):
@@ -43,15 +54,9 @@ class ResponseMeta(TypedDict):
     scorer_version: str
 
 
-class VerifyResponse(TypedDict, total=False):
-    """Basic API output contract aligned with docs/architecture.md."""
+class VerifyResponse(DecisionResponse):
+    """Full API envelope: required decision fields plus optional transport metadata."""
 
-    request_id: str
-    verdict: str  # Verdict value
-    confidence: float
-    confidence_band: str  # "high" | "medium" | "low"
-    signals: List[SignalEvidence]
-    reasons: List[ReasonItem]
-    warnings: List[WarningItem]
-    cache: CacheMeta
-    meta: ResponseMeta
+    request_id: NotRequired[str]
+    cache: NotRequired[CacheMeta]
+    meta: NotRequired[ResponseMeta]
