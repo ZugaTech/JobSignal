@@ -16,6 +16,10 @@ Applicant-side job posting verification: reduce wasted applications to ghost, du
 | [`docs/environment.md`](docs/environment.md) | Environment variables and validation |
 | [`docs/folder_structure.md`](docs/folder_structure.md) | Repo layout and minimal future dependencies |
 | [`docs/sprints/sprint-1.md`](docs/sprints/sprint-1.md) | Sprint 1 notes, validation, improvement log |
+| [`docs/data_flow.md`](docs/data_flow.md) | Sprint 2 — ingestion → cache → evidence pipeline |
+| [`docs/cache_design.md`](docs/cache_design.md) | Sprint 2 — TTL, keys, cross-tenant, invalidation |
+| [`docs/source_validation.md`](docs/source_validation.md) | Sprint 2 — sources, search packs, extraction |
+| [`docs/sprints/sprint-2.md`](docs/sprints/sprint-2.md) | Sprint 2 notes and completion record |
 
 **Integrated baseline (earlier planning):** [`docs/JOBSIGNAL-MASTER-PLAN.md`](docs/JOBSIGNAL-MASTER-PLAN.md)
 
