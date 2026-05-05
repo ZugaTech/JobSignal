@@ -1,3 +1,4 @@
 # deployment/
 
-Environment matrices, health checks, rollback steps, and runbooks. Add `RUNBOOK.md` during Sprint 4.
+- `RUNBOOK.md` — short operator steps for incidents and rollback pointers  
+- Full checklist: `docs/deployment_readiness.md`

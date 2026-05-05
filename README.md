@@ -25,6 +25,12 @@ Applicant-side job posting verification: reduce wasted applications to ghost, du
 | [`docs/decision_logic.md`](docs/decision_logic.md) | Sprint 3 — APPLY / VERIFY / SKIP gates |
 | [`docs/frontend_flow.md`](docs/frontend_flow.md) | Sprint 3 — UI states and uncertainty |
 | [`docs/sprints/sprint-3.md`](docs/sprints/sprint-3.md) | Sprint 3 completion notes |
+| [`docs/security.md`](docs/security.md) | Sprint 4 — threats, cache privacy, injection, env hygiene |
+| [`docs/reliability.md`](docs/reliability.md) | Sprint 4 — tests, health checks, failure philosophy |
+| [`docs/deployment_readiness.md`](docs/deployment_readiness.md) | Sprint 4 — go-live checklist + rollback |
+| [`docs/final_scope.md`](docs/final_scope.md) | Sprint 4 — frozen in/out scope |
+| [`docs/sprints/sprint-4.md`](docs/sprints/sprint-4.md) | Sprint 4 completion notes + remaining risks |
+| [`deployment/RUNBOOK.md`](deployment/RUNBOOK.md) | Operator incidents (stub) |
 
 **Integrated baseline (earlier planning):** [`docs/JOBSIGNAL-MASTER-PLAN.md`](docs/JOBSIGNAL-MASTER-PLAN.md)
 

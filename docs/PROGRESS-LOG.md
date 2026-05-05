@@ -12,6 +12,14 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 
 ## Log entries (newest first)
 
+### 2026-05-04 — Sprint 4: hardening, deployment readiness, final freeze
+
+- **Docs:** `docs/security.md`, `docs/reliability.md`, `docs/deployment_readiness.md`, `docs/final_scope.md`, `docs/sprints/sprint-4.md`, `deployment/RUNBOOK.md`.
+- **Backend:** `env.py` (strict + TTL clamp), `inputs.py` (URL/text gates), `prompt_guard.py`, `health.py`; expanded forbidden keys in `cache_payload.py`.
+- **Tests:** `tests/test_env.py`, `test_inputs.py`, `test_prompt_guard.py`, `test_health.py`, `test_cache_privacy.py` (+48 tests total).
+- **Frontend:** client-side validation + safer error surfacing (`frontend/app.js`, `index.html` maxlength).
+- **Risks:** documented explicitly in `docs/sprints/sprint-4.md` (fetch/search wiring, heuristic prompt guard, PSL, mock UI).
+
 ### 2026-05-04 — Sprint 3: scoring, decisions, minimal frontend, tests
 
 - **Docs:** `docs/scoring.md`, `docs/decision_logic.md`, `docs/frontend_flow.md`, `docs/sprints/sprint-3.md`; README updated.
@@ -57,7 +65,7 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 | **1** | Done (docs + scaffold) | `architecture.md`, `trust_model.md`, `scope.md`, `environment.md`, `folder_structure.md`, `docs/sprints/sprint-1.md` |
 | **2** | Done (docs + core modules + tests) | `data_flow.md`, `cache_design.md`, `source_validation.md`, `backend/core/*`, `tests/*`, `docs/sprints/sprint-2.md` |
 | **3** | Done (scoring + static UI + tests; API still mock) | `scoring.md`, `decision_logic.md`, `frontend_flow.md`, `backend/core/scoring.py`, `report.py`, `frontend/*`, `docs/sprints/sprint-3.md` |
-| **4** | Not started | Hardening, CI, deployment readiness (per roadmap) |
+| **4** | Done (hardening + docs + tests; no scope creep) | `security.md`, `reliability.md`, `deployment_readiness.md`, `final_scope.md`, `env.py`, `inputs.py`, `prompt_guard.py`, `health.py`, `docs/sprints/sprint-4.md` |
 
 ---
 
