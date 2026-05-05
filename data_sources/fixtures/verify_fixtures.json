@@ -1,0 +1,31 @@
+{
+  "by_url_sha256": {
+    "REPLACE_WITH_REAL_URL_SHA256": {
+      "signals": [
+        {
+          "id": "fetch_ok",
+          "label": "fetch_ok",
+          "tier": "T1",
+          "strength": "high",
+          "details": "Fixture: posting page fetched successfully (mocked)."
+        },
+        {
+          "id": "domain_align",
+          "label": "domain_align",
+          "tier": "T1",
+          "strength": "medium",
+          "details": "Fixture: registrable domain aligns with employer-controlled domain."
+        },
+        {
+          "id": "search_corroboration",
+          "label": "search_corroboration",
+          "tier": "T2",
+          "strength": "medium",
+          "details": "Fixture: corroborating results from reputable sources."
+        }
+      ],
+      "warnings": []
+    }
+  },
+  "by_text_sha256": {}
+}
