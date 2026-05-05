@@ -12,6 +12,13 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 
 ## Log entries (newest first)
 
+### 2026-05-05 — Post–Sprint 4 audit: created technical ledger
+
+- **Ground truth:** re-read `docs/PROGRESS-LOG.md`, `docs/final_scope.md`, `docs/sprints/sprint-4.md` per post-sprint prompt.
+- **New:** `docs/TECHNICAL-LEDGER.md` created as ✅/⚠️/❌ status board with “Last verified” and next actions.
+- **Tests:** `python -m pytest` — **48 passed** (baseline).
+- **Conclusion:** core library + static UI are complete, but the biggest remaining gap to a shippable demo is **end-to-end HTTP API wiring** and **real fetch/search adapters with deterministic fixtures**.
+
 ### 2026-05-04 — Sprint 4: hardening, deployment readiness, final freeze
 
 - **Docs:** `docs/security.md`, `docs/reliability.md`, `docs/deployment_readiness.md`, `docs/final_scope.md`, `docs/sprints/sprint-4.md`, `deployment/RUNBOOK.md`.
