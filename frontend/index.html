@@ -15,10 +15,10 @@
 
       <section class="panel">
         <label for="jobUrl">Job URL (optional if you paste text)</label>
-        <input id="jobUrl" type="url" placeholder="https://..." autocomplete="off" />
+        <input id="jobUrl" type="url" placeholder="https://..." autocomplete="off" maxlength="2048" />
 
         <label for="jobText">Job description</label>
-        <textarea id="jobText" rows="6" placeholder="Paste posting text..."></textarea>
+        <textarea id="jobText" rows="6" placeholder="Paste posting text..." maxlength="100000"></textarea>
 
         <div class="actions">
           <button id="btnRun" type="button">Check posting</button>

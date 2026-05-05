@@ -14,6 +14,44 @@ const PHASE = {
   ERROR: "error",
 };
 
+// Mirrors backend/core/inputs.py limits for early client-side rejection.
+const MAX_URL_CHARS = 2048;
+const MAX_TEXT_CHARS = 100000;
+
+function readInputs() {
+  return { url: $("jobUrl").value, text: $("jobText").value };
+}
+
+function validateClientInputs(urlRaw, textRaw) {
+  const url = String(urlRaw ?? "").trim();
+  const text = String(textRaw ?? "").trim();
+  if (!url && !text) {
+    return { ok: false, message: "Enter a job URL and/or pasted description." };
+  }
+  if (url.includes("\u0000") || text.includes("\u0000")) {
+    return { ok: false, message: "Input contains disallowed NUL bytes." };
+  }
+  if (url.length > MAX_URL_CHARS) {
+    return { ok: false, message: `URL exceeds ${MAX_URL_CHARS} characters.` };
+  }
+  if (text.length > MAX_TEXT_CHARS) {
+    return { ok: false, message: `Description exceeds ${MAX_TEXT_CHARS} characters.` };
+  }
+  if (url && !/^https?:\/\//i.test(url)) {
+    return { ok: false, message: "Only http(s) URLs are supported." };
+  }
+  try {
+    // Basic host presence check (matches server-side intent).
+    if (url) {
+      const u = new URL(url);
+      if (!u.hostname) return { ok: false, message: "URL must include a host." };
+    }
+  } catch {
+    return { ok: false, message: "URL is not valid." };
+  }
+  return { ok: true, message: "" };
+}
+
 function setPhase(phase) {
   const root = document.querySelector(".shell");
   root.dataset.uiPhase = phase;
@@ -117,6 +155,15 @@ function mockVerify() {
 async function runFlow() {
   $("errorPanel").classList.add("hidden");
   $("result").classList.add("hidden");
+  const { url, text } = readInputs();
+  const validation = validateClientInputs(url, text);
+  if (!validation.ok) {
+    setPhase(PHASE.ERROR);
+    $("errorText").textContent = validation.message;
+    $("errorPanel").classList.remove("hidden");
+    return;
+  }
+
   setPhase(PHASE.LOADING);
   $("btnRun").disabled = true;
 
@@ -133,7 +180,8 @@ async function runFlow() {
     $("result").classList.remove("hidden");
   } catch (e) {
     setPhase(PHASE.ERROR);
-    $("errorText").textContent = "Network or server error — no verdict fabricated.";
+    const msg = e && e.message ? String(e.message) : "Unknown error";
+    $("errorText").textContent = `Network or server error — no verdict fabricated. (${msg})`;
     $("errorPanel").classList.remove("hidden");
   } finally {
     $("btnRun").disabled = false;
