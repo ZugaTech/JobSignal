@@ -21,6 +21,10 @@ Applicant-side job posting verification: reduce wasted applications to ghost, du
 | [`docs/source_validation.md`](docs/source_validation.md) | Sprint 2 — sources, search packs, extraction |
 | [`docs/sprints/sprint-2.md`](docs/sprints/sprint-2.md) | Sprint 2 notes and completion record |
 | [`docs/PROGRESS-LOG.md`](docs/PROGRESS-LOG.md) | Running log of shipped work and sprint status |
+| [`docs/scoring.md`](docs/scoring.md) | Sprint 3 — trust score composition |
+| [`docs/decision_logic.md`](docs/decision_logic.md) | Sprint 3 — APPLY / VERIFY / SKIP gates |
+| [`docs/frontend_flow.md`](docs/frontend_flow.md) | Sprint 3 — UI states and uncertainty |
+| [`docs/sprints/sprint-3.md`](docs/sprints/sprint-3.md) | Sprint 3 completion notes |
 
 **Integrated baseline (earlier planning):** [`docs/JOBSIGNAL-MASTER-PLAN.md`](docs/JOBSIGNAL-MASTER-PLAN.md)
 
