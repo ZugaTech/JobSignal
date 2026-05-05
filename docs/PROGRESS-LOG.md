@@ -19,6 +19,15 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 - **Tests:** `python -m pytest` — **48 passed** (baseline).
 - **Conclusion:** core library + static UI are complete, but the biggest remaining gap to a shippable demo is **end-to-end HTTP API wiring** and **real fetch/search adapters with deterministic fixtures**.
 
+### 2026-05-05 — End-to-end demo wiring: FastAPI + fixtures verify + frontend fetch
+
+- **API:** added FastAPI app with `/health`, `/ready`, `/v1/verify` (`backend/api/*`) and Railway `Procfile`.
+- **Orchestration:** `backend/core/orchestrator.py` now wires validate → normalize → cache (in-memory) → fixture evidence → score → public report.
+- **Fixtures:** `data_sources/fixtures/verify_fixtures.json` added (needs real hashes filled in).
+- **Frontend:** `frontend/app.js` now calls `/v1/verify` (default `http://localhost:8080`, override via `window.JOBSIGNAL_API_BASE`).
+- **Tests:** added API smoke tests; `python -m pytest` still passes (**51** tests).
+- **Known limitation:** still fixtures-only; live fetch/search adapters and multi-provider fallback are next.
+
 ### 2026-05-04 — Sprint 4: hardening, deployment readiness, final freeze
 
 - **Docs:** `docs/security.md`, `docs/reliability.md`, `docs/deployment_readiness.md`, `docs/final_scope.md`, `docs/sprints/sprint-4.md`, `deployment/RUNBOOK.md`.
