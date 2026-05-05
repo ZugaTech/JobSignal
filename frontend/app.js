@@ -132,24 +132,8 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;");
 }
 
-/** Demo-only mock: swap for real API response shape (`build_public_report`). */
-function mockVerify() {
-  return {
-    report_schema_version: "1.0.0",
-    verdict: "VERIFY",
-    confidence: "medium",
-    reasons: [
-      { code: "DEMO", message: "Mock response — wire backend for live evidence." },
-      { code: "COVERAGE", message: "UI shows uncertainty whenever confidence is not high." },
-    ],
-    warnings: [{ code: "DEMO", message: "This is a static demo." }],
-    signals: [
-      { id: "fetch_ok", label: "fetch_ok", tier: "T1", strength: "medium", details: "mock" },
-      { id: "domain_align", label: "domain_align", tier: "T1", strength: "medium", details: "mock" },
-    ],
-    cache: { hit: true, ttl_expires_at: null, key_fingerprint: "demo" },
-    meta: { pipeline_version: "1", scorer_version: "3.0.0" },
-  };
+function getApiBase() {
+  return window.JOBSIGNAL_API_BASE || "http://localhost:8080";
 }
 
 async function runFlow() {
@@ -168,9 +152,16 @@ async function runFlow() {
   $("btnRun").disabled = true;
 
   try {
-    // Simulate latency; replace with fetch() to API.
-    await new Promise((r) => setTimeout(r, 350));
-    const report = mockVerify();
+    const res = await fetch(`${getApiBase()}/v1/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ job_url: url || null, job_description: text || null }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const report = await res.json();
     renderReport(report);
 
     const uiPhase = mapUiPhaseFromReport(report);

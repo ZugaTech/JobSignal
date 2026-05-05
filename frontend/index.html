@@ -11,6 +11,7 @@
       <header class="header">
         <h1>JobSignal</h1>
         <p class="tagline">Advisory check — not a guarantee. Prefer VERIFY when unsure.</p>
+        <p class="muted">API: <code id="apiBase">http://localhost:8080</code></p>
       </header>
 
       <section class="panel">
@@ -60,6 +61,11 @@
         <!-- ui phases: idle, loading, success, warning, cache_hit (overlay), error -->
       </footer>
     </main>
+    <script>
+      // Optional override: set window.JOBSIGNAL_API_BASE in DevTools before reloading.
+      window.JOBSIGNAL_API_BASE = window.JOBSIGNAL_API_BASE || "http://localhost:8080";
+      document.getElementById("apiBase").textContent = window.JOBSIGNAL_API_BASE;
+    </script>
     <script src="app.js" defer></script>
   </body>
 </html>
