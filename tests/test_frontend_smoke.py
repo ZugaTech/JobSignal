@@ -26,6 +26,11 @@ def test_frontend_documents_ui_phases(token: str):
     assert token in html or token in js
 
 
+def test_frontend_includes_client_validation():
+    js = _read("frontend/app.js")
+    assert "validateClientInputs" in js
+
+
 def test_app_contains_uncertainty_copy():
     html = _read("frontend/index.html")
     js = _read("frontend/app.js")
