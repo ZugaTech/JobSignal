@@ -48,7 +48,7 @@
 
 | Item | Status | Notes |
 |------|--------|------|
-| Search adapter (real provider) | ⚪ | Provider choice pending; implement multi-provider fallback once vendor decided. |
+| Search adapter (real provider) | ⚪ | Candidate providers (planned multi-provider fallback): **SerpAPI**, **Zenserp**, **Bing Web Search**, **Google Programmable Search**. |
 | Fetch adapter (SSRF-safe) | 🔴 | Not implemented; fixtures-only evidence currently. |
 | Deterministic fixtures for CI | 🟡 | `data_sources/fixtures/verify_fixtures.json` added; needs real hashes and more cases. |
 
