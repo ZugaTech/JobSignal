@@ -16,6 +16,11 @@ _TENANT_FORBIDDEN = frozenset(
         "recruiter_notes",
         "api_key",
         "authorization",
+        "session_id",
+        "workspace_id",
+        "password",
+        "email",
+        "cookie",
     }
 )
 
