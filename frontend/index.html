@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JobSignal — Verify</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell" data-ui-phase="idle" data-cache="miss">
+      <header class="header">
+        <h1>JobSignal</h1>
+        <p class="tagline">Advisory check — not a guarantee. Prefer VERIFY when unsure.</p>
+      </header>
+
+      <section class="panel">
+        <label for="jobUrl">Job URL (optional if you paste text)</label>
+        <input id="jobUrl" type="url" placeholder="https://..." autocomplete="off" />
+
+        <label for="jobText">Job description</label>
+        <textarea id="jobText" rows="6" placeholder="Paste posting text..."></textarea>
+
+        <div class="actions">
+          <button id="btnRun" type="button">Check posting</button>
+          <span id="phaseNote" class="muted" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <section id="result" class="panel hidden" aria-live="polite">
+        <div id="cacheBadge" class="cache-badge hidden" data-cache-role="hit">Recent shared check</div>
+        <div id="uncertaintyStrip" class="strip hidden">Limited certainty — verify on the employer’s official careers channel.</div>
+        <div class="verdict-row">
+          <div class="verdict" id="verdict">VERIFY</div>
+          <div class="confidence" id="confidence">medium</div>
+        </div>
+        <h2>Signals</h2>
+        <table class="table" id="signalTable">
+          <thead>
+            <tr>
+              <th>Signal</th>
+              <th>Tier</th>
+              <th>Strength</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <h2>Reasons</h2>
+        <ul id="reasonList"></ul>
+        <h2>Warnings</h2>
+        <ul id="warnList"></ul>
+      </section>
+
+      <section id="errorPanel" class="panel error hidden">
+        <p id="errorText">Something went wrong.</p>
+      </section>
+
+      <footer class="footer muted">
+        Static demo UI (Sprint 3). Replace mock in <code>app.js</code> with your API.
+        <!-- ui phases: idle, loading, success, warning, cache_hit (overlay), error -->
+      </footer>
+    </main>
+    <script src="app.js" defer></script>
+  </body>
+</html>
