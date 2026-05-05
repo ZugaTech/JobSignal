@@ -12,6 +12,15 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 
 ## Log entries (newest first)
 
+### 2026-05-04 — Sprint 3: scoring, decisions, minimal frontend, tests
+
+- **Docs:** `docs/scoring.md`, `docs/decision_logic.md`, `docs/frontend_flow.md`, `docs/sprints/sprint-3.md`; README updated.
+- **Backend:** `backend/core/scoring.py` (`decide_from_signals`, `SCORER_VERSION`), `backend/core/report.py` (`build_public_report`, `report_schema_version`).
+- **Frontend:** static `frontend/index.html`, `app.js`, `styles.css` with phases (`idle`, `loading`, `success`, `warning`, `error`) and `data-cache` overlay for cache hits; mock verify until API exists.
+- **Tests:** `tests/test_scoring.py`, `tests/test_frontend_smoke.py`.
+- **Honesty improvement:** borderline APPLY (T1 best `medium`, ≤2 `medium+` rows) → low confidence → forced `VERIFY` (`HONESTY_GUARD`); documented in `decision_logic.md` §6.1 and `scoring.md`.
+- **Deferred:** real verify API route, Playwright E2E, Sprint 4 hardening.
+
 ### 2026-05-04 — Sprint 2: ingestion, cache, tests, docs
 
 - **Docs:** `docs/data_flow.md`, `docs/cache_design.md`, `docs/source_validation.md`, `docs/sprints/sprint-2.md`; README links updated.
@@ -47,7 +56,7 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 |--------|--------|---------------------|
 | **1** | Done (docs + scaffold) | `architecture.md`, `trust_model.md`, `scope.md`, `environment.md`, `folder_structure.md`, `docs/sprints/sprint-1.md` |
 | **2** | Done (docs + core modules + tests) | `data_flow.md`, `cache_design.md`, `source_validation.md`, `backend/core/*`, `tests/*`, `docs/sprints/sprint-2.md` |
-| **3** | Not started | Scoring, API polish, frontend flow (per roadmap) |
+| **3** | Done (scoring + static UI + tests; API still mock) | `scoring.md`, `decision_logic.md`, `frontend_flow.md`, `backend/core/scoring.py`, `report.py`, `frontend/*`, `docs/sprints/sprint-3.md` |
 | **4** | Not started | Hardening, CI, deployment readiness (per roadmap) |
 
 ---
