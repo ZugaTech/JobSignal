@@ -13,8 +13,8 @@
 
 **Baseline verification**
 
-- `python -m pytest`: **48 passed** (local)
-- Latest commit at time of ledger creation: `af0310d`
+- `python -m pytest`: **51 passed** (local; FastAPI smoke added)
+- Latest commit at time of last verification: `56e5449`
 
 ---
 
@@ -23,10 +23,10 @@
 | Item | Status | Notes |
 |------|--------|------|
 | Python runtime / test harness (`pyproject.toml`, pytest) | 🟢 | Core libs + tests run. |
-| HTTP server app | 🔴 | No ASGI/WSGI app exists in `backend/` (only core modules). |
-| Routes: `/health` + `/ready` | 🟡 | Payload helpers exist (`backend/core/health.py`), but no HTTP wiring. |
-| Route: `/v1/verify` (or chosen) | 🔴 | No request handler yet; frontend still uses mock response. |
-| CORS / request id | 🔴 | Needs HTTP framework choice. |
+| HTTP server app (FastAPI) | 🟢 | `backend/api/main.py` (`create_app`) + `Procfile`. |
+| Routes: `/health` + `/ready` | 🟡 | HTTP wiring exists; `/ready` does not ping real cache yet. |
+| Route: `/v1/verify` | 🟡 | Works end-to-end using **fixtures evidence**; no live fetch/search adapters. |
+| CORS / request id | 🟡 | CORS allows `*` for demo; request-id propagation not yet implemented. |
 
 ---
 
@@ -40,7 +40,7 @@
 | Evidence ordering | 🟢 | `backend/core/source_evidence.py` + tests. |
 | Scoring + verdict + confidence | 🟢 | `backend/core/scoring.py` + tests. |
 | Public report envelope | 🟢 | `backend/core/report.py` + tests. |
-| Orchestrator function (end-to-end in code) | 🔴 | No single function that calls: validate → normalize → cache → collectors → score → report. |
+| Orchestrator function (end-to-end in code) | 🟡 | `backend/core/orchestrator.py` wires validate→normalize→cache→fixtures→score→report. Live collectors pending. |
 
 ---
 
@@ -48,9 +48,9 @@
 
 | Item | Status | Notes |
 |------|--------|------|
-| Search adapter (real provider) | 🔴 | Docs only (`docs/source_validation.md`). |
-| Fetch adapter (SSRF-safe) | 🔴 | Not implemented; only limits/env/docs exist. |
-| Deterministic fixtures for CI | 🔴 | Not implemented (required for stable demo/CI). |
+| Search adapter (real provider) | ⚪ | Provider choice pending; implement multi-provider fallback once vendor decided. |
+| Fetch adapter (SSRF-safe) | 🔴 | Not implemented; fixtures-only evidence currently. |
+| Deterministic fixtures for CI | 🟡 | `data_sources/fixtures/verify_fixtures.json` added; needs real hashes and more cases. |
 
 ---
 
@@ -60,9 +60,9 @@
 |------|--------|------|
 | Minimal UI + states | 🟢 | Static `frontend/*` with phases and uncertainty strip. |
 | Client-side input validation | 🟢 | `frontend/app.js` validates lengths + URL shape. |
-| Replace `mockVerify` with real `fetch` | 🟡 | Mock still present; needs API route + wiring. |
+| Replace `mockVerify` with real `fetch` | 🟢 | Frontend calls `http://localhost:8080/v1/verify` by default; override via `window.JOBSIGNAL_API_BASE`. |
 | Cache-hit display | 🟢 | Badge overlay wired to `cache.hit` (mocked). |
-| Error handling | 🟢 | Client validation and network error path shown; needs real API integration test later. |
+| Error handling | 🟡 | Client validation and network error path shown; needs real “API down” manual check in demo script. |
 
 ---
 
@@ -99,7 +99,7 @@
 | Item | Status | Notes |
 |------|--------|------|
 | Deployment checklist + rollback | 🟢 | `docs/deployment_readiness.md` + `deployment/RUNBOOK.md`. |
-| Actual deploy target configured | ⚪ | Needs human choice (Render/Fly/Railway/etc.). |
+| Actual deploy target configured | 🟡 | **Railway chosen**; repo needs Railway-specific run instructions and env list verified. |
 
 ---
 
@@ -123,7 +123,7 @@
 
 ## Next actions (smallest vertical slice)
 
-1. Implement **minimal HTTP API** (FastAPI or Flask) with `/health`, `/ready`, `/v1/verify` calling a new orchestrator function; keep scope tight (no background jobs).
-2. Replace frontend `mockVerify()` with real `fetch()` for the happy path; keep mock as fallback only in dev if API absent (documented).
-3. Add deterministic “fixtures mode” for fetch/search adapters (pure local JSON) so CI is stable.
+1. Expand fixtures: add 3–5 real job URLs and populate `verify_fixtures.json` with their real sha256 keys (documented method).
+2. Add **live** search adapter behind interface with **fixtures-first** and **multiple-provider fallback** (per your preference), preserving CI determinism.
+3. Add Railway “how to run” section + ensure `/ready` semantics match deploy reality (cache ping when Redis configured).
 

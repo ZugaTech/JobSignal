@@ -3,6 +3,7 @@
 ## 1. Pre-flight checklist
 
 - [ ] **Runtime:** Python 3.10+ on API hosts; `python -m pytest` green in CI.
+- [ ] **Dependencies:** `pip install -r requirements.txt` completes (FastAPI + uvicorn + httpx).
 - [ ] **Secrets:** `.env` / secret manager holds `SEARCH_API_KEY`, `CACHE_URL`, etc.; never baked into images.
 - [ ] **Config:** `EnvConfig.load(strict=True)` in production entrypoint (fail fast).
 - [ ] **Cache:** Redis (or compatible) reachable; TTL matches policy (see `cache_design.md`).
@@ -18,6 +19,12 @@
 | `GET /ready` | Readiness | `200` when critical deps satisfied; `503` if misconfigured (strict env) |
 
 Payload shape: see `backend/core/health.py`.
+
+## 2.1 Railway notes (current repo shape)
+
+- Entry point: `Procfile` runs `uvicorn backend.api.main:app` with `PORT` (defaults to 8080 locally).
+- Set Railway env vars at minimum: `NODE_ENV=production`, `CACHE_URL` (required by strict/staging/prod), `CACHE_DEFAULT_TTL_DAYS`, `SOURCE_PIPELINE_VERSION`, `SCORER_VERSION`.
+- Optional (demo fixtures): `JOBSIGNAL_FIXTURES_PATH=data_sources/fixtures/verify_fixtures.json`
 
 ## 3. Rollback plan
 
