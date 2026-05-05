@@ -10,3 +10,6 @@ __pycache__/
 *.pyc
 *.log
 .DS_Store
+
+# Private LLM session archive (local reference only; do not commit)
+local-session-archive.md
