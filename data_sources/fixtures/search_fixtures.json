@@ -1,0 +1,16 @@
+{
+  "by_query_substring": {
+    "google careers jobs": [
+      "https://www.google.com/about/careers/applications/jobs/results/12345-software-engineer",
+      "https://www.google.com/about/careers/applications/jobs/results/22233-product-manager",
+      "https://www.google.com/about/careers/applications/jobs/results/44455-data-scientist"
+    ],
+    "Urgent hire!": [
+      "https://bit.ly/suspect-job-123",
+      "https://scam-site.example.com/urgent-job"
+    ]
+  },
+  "urls": [
+    "https://www.google.com/about/careers/applications/jobs/results/12345-software-engineer"
+  ]
+}

@@ -73,13 +73,24 @@
 | Item | Status | Notes |
 |------|--------|------|
 | Key derivation + TTL behavior (in-memory) | 🟢 | `cache_key.py`, `cache_store.py` + tests. |
-| Redis-backed cache | 🟡 | Implemented `RedisCache` when `CACHE_URL` is set (`backend/core/cache_store.py`); lazy dependency import; errors degrade to cache miss. |
+| Redis-backed cache | 🟢 | Implemented `RedisCache` when `CACHE_URL` is set; lazy dependency import. |
 | Shared cache payload privacy guard | 🟢 | `cache_payload.py` + tests incl. forbidden keys. |
-| Readiness cache ping | 🟢 | `/ready` pings Redis when `CACHE_URL` is set; exposes `checks.cache_ping` (`ok`/`fail`) without secrets. |
+| Readiness cache ping | 🟢 | `/ready` pings Redis when `CACHE_URL` is set; exposes `checks.cache_ping` (`ok`/`fail`). |
 
 ---
 
-## 6) Config & env
+## 6) Deployment & Final Status
+
+| Item | Status | Notes |
+|------|--------|------|
+| **Last Verified** | 🟢 | 2026-05-06 — 89 tests passing (Py3.10+). |
+| **Release Tag** | 🟢 | `v1.0.0-hackathon` (see git tags). |
+| **Demo Readiness** | 🟢 | `docs/demo_script.md` + `data_sources/fixtures/` complete. |
+| **Remaining Risks** | 🟡 | Vision model costs; SerpAPI rate limits; horizontal scaling of state machine (mitigated by Redis). |
+
+---
+
+## 7) Config & env
 
 | Item | Status | Notes |
 |------|--------|------|
