@@ -27,6 +27,11 @@
           <img id="imagePreview" alt="Selected screenshot preview" />
         </div>
 
+        <label class="checkbox-row">
+          <input id="recRecommendations" type="checkbox" />
+          <span>Show similar jobs (search + verify, max 3 — advisory only)</span>
+        </label>
+
         <div class="actions">
           <button id="btnRun" type="button">Check posting</button>
           <span id="phaseNote" class="muted" aria-live="polite"></span>
@@ -36,7 +41,7 @@
       <section id="result" class="panel hidden" aria-live="polite">
         <p id="ingestionNote" class="muted hidden" aria-live="polite"></p>
         <div id="cacheBadge" class="cache-badge hidden" data-cache-role="hit">Recent shared check</div>
-        <div id="uncertaintyStrip" class="strip hidden">Limited certainty — verify on the employer’s official careers channel.</div>
+        <div id="uncertaintyStrip" class="strip hidden">We’re not fully confident yet—confirm on the employer’s official careers page before you spend time applying.</div>
         <div class="verdict-row">
           <div class="verdict" id="verdict">VERIFY</div>
           <div class="confidence" id="confidence">medium</div>
@@ -57,6 +62,11 @@
         <ul id="reasonList"></ul>
         <h2>Warnings</h2>
         <ul id="warnList"></ul>
+        <div id="recSection" class="rec-section hidden">
+          <h2>Similar jobs</h2>
+          <p id="recMeta" class="muted"></p>
+          <ul id="recList" class="rec-list"></ul>
+        </div>
       </section>
 
       <section id="errorPanel" class="panel error hidden">

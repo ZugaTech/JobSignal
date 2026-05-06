@@ -23,6 +23,7 @@ function readInputs() {
     url: $("jobUrl").value,
     text: $("jobText").value,
     file: $("jobImage").files?.[0] ?? null,
+    recommendations: $("recRecommendations").checked,
   };
 }
 
@@ -110,7 +111,7 @@ function renderReport(report) {
   rl.innerHTML = "";
   for (const r of report.reasons ?? []) {
     const li = document.createElement("li");
-    li.textContent = `${r.code}: ${r.message}`;
+    li.textContent = r.message || `${r.code}: (no message)`;
     rl.appendChild(li);
   }
 
@@ -118,7 +119,7 @@ function renderReport(report) {
   wl.innerHTML = "";
   for (const w of report.warnings ?? []) {
     const li = document.createElement("li");
-    li.textContent = `${w.code}: ${w.message}`;
+    li.textContent = w.message || `${w.code}: (no message)`;
     wl.appendChild(li);
   }
 
@@ -128,6 +129,54 @@ function renderReport(report) {
     strip.classList.remove("hidden");
   } else {
     strip.classList.add("hidden");
+  }
+}
+
+function renderRecommendations(report) {
+  const section = $("recSection");
+  const meta = $("recMeta");
+  const list = $("recList");
+  const recs = report.recommendations;
+  const st = report.meta?.recommendations_status;
+  if (st == null && (!recs || recs.length === 0)) {
+    section.classList.add("hidden");
+    return;
+  }
+  section.classList.remove("hidden");
+  if (st === "unavailable") {
+    meta.textContent =
+      report.meta?.recommendations_message ||
+      "Similar jobs need search configuration on the server (see API docs).";
+    list.innerHTML = "";
+    return;
+  }
+  if (!recs?.length) {
+    meta.textContent = "No similar postings returned for this query (limits, search results, or verify filters).";
+    list.innerHTML = "";
+    return;
+  }
+  meta.textContent = "Advisory matches only — not endorsements. Confirm each posting yourself.";
+  list.innerHTML = "";
+  for (const r of recs) {
+    const li = document.createElement("li");
+    li.className = "rec-card";
+    const band = r.confidence_band === "HIGH" ? "HIGH" : "MEDIUM";
+    const badgeClass = band === "HIGH" ? "badge-high" : "badge-medium";
+    const reasons = (r.similarity_reasons || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("");
+    li.innerHTML = `
+      <span class="badge ${badgeClass}">${escapeHtml(band)}</span>
+      <span class="muted">Verdict: ${escapeHtml(r.verdict || "—")}</span>
+      <div class="rec-url"></div>
+      <ul class="rec-reasons">${reasons}</ul>
+    `;
+    const urlWrap = li.querySelector(".rec-url");
+    const a = document.createElement("a");
+    a.href = String(r.job_url || "#");
+    a.textContent = String(r.job_url || "");
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    urlWrap.appendChild(a);
+    list.appendChild(li);
   }
 }
 
@@ -169,7 +218,7 @@ function getApiBase() {
 async function runFlow() {
   $("errorPanel").classList.add("hidden");
   $("result").classList.add("hidden");
-  const { url, text, file } = readInputs();
+  const { url, text, file, recommendations } = readInputs();
   const validation = validateClientInputs(url, text, file);
   if (!validation.ok) {
     setPhase(PHASE.ERROR);
@@ -188,12 +237,17 @@ async function runFlow() {
       if (url) fd.append("job_url", url);
       if (text) fd.append("job_description", text);
       fd.append("job_image", file, file.name || "screenshot.png");
+      fd.append("recommendations_enabled", recommendations ? "true" : "false");
       res = await fetch(`${getApiBase()}/v1/verify`, { method: "POST", body: fd });
     } else {
       res = await fetch(`${getApiBase()}/v1/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_url: url || null, job_description: text || null }),
+        body: JSON.stringify({
+          job_url: url || null,
+          job_description: text || null,
+          recommendations_enabled: recommendations,
+        }),
       });
     }
     if (!res.ok) {
@@ -203,6 +257,7 @@ async function runFlow() {
     const report = await res.json();
     renderReport(report);
     renderIngestion(report);
+    renderRecommendations(report);
 
     const uiPhase = mapUiPhaseFromReport(report);
     setPhase(uiPhase);
