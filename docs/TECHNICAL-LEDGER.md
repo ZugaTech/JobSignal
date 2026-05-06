@@ -13,7 +13,7 @@
 
 **Baseline verification**
 
-- `python -m pytest`: **62 passed** (local; image ingest + multipart verify)
+- `python -m pytest`: **64 passed** (local; image ingest + multipart verify)
 - Scope addendum: `docs/scope_addendum_2026-05-06.md`
 
 ---
