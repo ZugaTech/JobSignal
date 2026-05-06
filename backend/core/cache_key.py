@@ -19,6 +19,8 @@ def build_public_cache_key(
     norm: NormalizationResult,
     pipeline_version: str,
     source_set_version: str,
+    *,
+    image_bytes_sha256: str | None = None,
 ) -> PublicCacheKey:
     """Build stable cache key string.
 
@@ -44,6 +46,8 @@ def build_public_cache_key(
         f"sv:{source_set_version}",
         f"fp:{fingerprint}",
     ]
+    if image_bytes_sha256:
+        parts.append(f"img:{image_bytes_sha256}")
     materialized = "|".join(parts)
     preview = fingerprint[:16] + ("" if len(fingerprint) <= 16 else "…")
     return PublicCacheKey(materialized=materialized, fingerprint_preview=preview)
