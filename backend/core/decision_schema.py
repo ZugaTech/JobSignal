@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Literal, NotRequired, Optional, TypedDict
+try:
+    from typing import List, Literal, Optional, TypedDict, NotRequired
+except ImportError:
+    from typing import List, Literal, Optional, TypedDict
+    from typing_extensions import NotRequired
 
 
 class Verdict(str, Enum):
