@@ -118,9 +118,9 @@
       </footer>
     </main>
     <script>
-      // Optional override: set window.JOBSIGNAL_API_BASE in DevTools before reloading.
+      // API base is managed via the settings panel (persisted in localStorage).
+      // To override for a specific deployment, set window.JOBSIGNAL_API_BASE before this script.
       window.JOBSIGNAL_API_BASE = window.JOBSIGNAL_API_BASE || "http://localhost:8080";
-      document.getElementById("apiBase").textContent = window.JOBSIGNAL_API_BASE;
     </script>
     <script src="app.js" defer></script>
   </body>

@@ -7,13 +7,22 @@ from backend.api.routes.health import router as health_router
 from backend.api.routes.verify import router as verify_router
 
 
-def create_app() -> FastAPI:
-    app = FastAPI(title="JobSignal API", version="0.1.0")
+import os
 
-    # Demo-friendly: allow local static file frontend and Railway preview origins.
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="JobSignal API",
+        version="1.0.0",
+        description="Job listing verification engine — Accuracy-First doctrine.",
+    )
+
+    _raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
+    _origins = [o.strip() for o in _raw_origins.split(",") if o.strip()] or ["*"]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_origins,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],

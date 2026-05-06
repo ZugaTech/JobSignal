@@ -17,7 +17,6 @@ from backend.core.cache_store import CacheStore, InMemoryCache, RedisCache
 from backend.core.decision_schema import DecisionResponse, ReasonItem, Verdict, WarningItem
 from backend.core.env import EnvConfig
 from backend.core.fetch_job_page import job_fetch_enabled, run_job_page_fetch
-from backend.core.fixtures import load_fixture_evidence
 from backend.core.image_ingest import (
     IMAGE_INGEST_VERSION,
     ExtractedVisionFields,
@@ -184,7 +183,7 @@ def verify_job(
     cache_key = build_public_cache_key(
         norm,
         pipeline_version=cfg.source_pipeline_version,
-        source_set_version="fixtures-v1",
+        source_set_version=f"pipeline-{cfg.source_pipeline_version}",
         image_bytes_sha256=image_sha,
         image_ingest_version=IMAGE_INGEST_VERSION if has_image else None,
         fetch_profile=fetch_profile,
@@ -256,25 +255,6 @@ def verify_job(
         warnings.extend(fx.warnings)
 
     steps.append({"id": "evidence", "label": "Evidence collection"})
-    fixtures_path = os.environ.get("JOBSIGNAL_FIXTURES_PATH", "data_sources/fixtures/verify_fixtures.json")
-    fe = load_fixture_evidence(
-        fixtures_path=fixtures_path,
-        canonical_url_sha256=norm.canonical_url_sha256,
-        description_full_sha256=norm.description_full_sha256,
-    )
-    if fe:
-        fsigs = fe.signals
-        if live_fetch_attempted:
-            fsigs = [s for s in fsigs if str(s.get("id")) not in ("fetch_ok", "domain_align")]
-        signals.extend(fsigs)
-        warnings.extend(fe.warnings)
-    else:
-        warnings.append(
-            {
-                "code": "FIXTURES_MISS",
-                "message": "No fixture evidence matched this input; result will likely VERIFY until live adapters are wired.",
-            }
-        )
 
     steps.append({"id": "llm", "label": "AI intelligence (T3)"})
     llm = build_llm_signals(job_text=norm.description_text or "")
