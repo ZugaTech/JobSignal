@@ -123,7 +123,7 @@ From `local-session-archive.md` (private reference; not committed): the hackatho
 
 ---
 
-### Sprint 6 — Recommendations v1 (Option A: search + verify, max 3, optional)
+### Sprint 6 — Recommendations v1 (Option A: search + verify, max 3, optional) — **shipped**
 
 **Goal:** After primary verification, optionally return up to **3** similar jobs, ranked **high then medium**, clearly labeled.
 
