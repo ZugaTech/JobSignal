@@ -62,35 +62,35 @@
           </div>
         </div>
 
-        <div class="timeline-container">
-          <h3>Pipeline timeline</h3>
-          <div id="pipelineTimeline" class="timeline"></div>
+        <div class="recommendation-box" id="recommendationBox">
+          <p id="recommendationText"></p>
         </div>
 
-        <h3>Signals</h3>
-        <div class="table-wrap">
-          <table class="table" id="signalTable">
-            <thead>
-              <tr>
-                <th>Signal</th>
-                <th>Tier</th>
-                <th>Strength</th>
-                <th>Details</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
+        <div class="evidence-grid">
+          <div class="evidence-col">
+            <h3>What we checked</h3>
+            <p id="checkedText" class="muted"></p>
+          </div>
+          <div class="evidence-col">
+            <h3>Sources found</h3>
+            <ul id="sourceList" class="info-list"></ul>
+          </div>
         </div>
 
-        <div class="reasons-warnings-grid">
-          <div class="reasons-col">
-            <h3>Reasons</h3>
-            <ul id="reasonList" class="info-list"></ul>
+        <div class="matches-grid">
+          <div class="matches-col">
+            <h3>What matched</h3>
+            <ul id="matchedList" class="info-list ok"></ul>
           </div>
-          <div class="warnings-col">
-            <h3>Warnings</h3>
-            <ul id="warnList" class="info-list warn"></ul>
+          <div class="matches-col">
+            <h3>What didn't match</h3>
+            <ul id="unmatchedList" class="info-list muted"></ul>
           </div>
+        </div>
+
+        <div id="redFlagsWrap" class="hidden">
+          <h3 class="warn-title">Red flags detected</h3>
+          <ul id="redFlagList" class="info-list warn"></ul>
         </div>
         <div id="recSection" class="rec-section hidden">
           <h2>Similar jobs</h2>

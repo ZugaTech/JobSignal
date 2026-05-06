@@ -93,65 +93,44 @@ function mapUiPhaseFromReport(report) {
   return PHASE.WARNING; // VERIFY, SKIP, or APPLY with uncertainty
 }
 
-function renderTimeline(report) {
-  const container = $("pipelineTimeline");
-  const steps = report.meta?.pipeline_steps || [];
-  container.innerHTML = "";
-  if (!steps.length) {
-    container.parentElement.classList.add("hidden");
-    return;
-  }
-  container.parentElement.classList.remove("hidden");
-  for (const s of steps) {
-    const div = document.createElement("div");
-    div.className = "timeline-step";
-    if (s.status === "ok") div.classList.add("ok");
-    if (s.status === "miss") div.classList.add("active");
-    div.textContent = s.label;
-    container.appendChild(div);
-  }
-}
-
 function renderReport(report) {
   $("verdict").textContent = report.verdict;
   $("confidence").textContent = report.confidence;
 
-  const tbody = $("signalTable").querySelector("tbody");
-  tbody.innerHTML = "";
-  for (const s of report.signals ?? []) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${escapeHtml(s.id)}</td><td>${escapeHtml(s.tier)}</td><td>${escapeHtml(
-      s.strength,
-    )}</td><td>${escapeHtml(s.details ?? "")}</td>`;
-    tbody.appendChild(tr);
-  }
+  $("recommendationText").textContent = report.recommendation || "Proceed with caution.";
+  $("checkedText").textContent = report.what_was_checked || "Analyzed provided inputs.";
 
-  const rl = $("reasonList");
-  rl.innerHTML = "";
-  for (const r of report.reasons ?? []) {
-    const li = document.createElement("li");
-    li.textContent = r.message || `${r.code}: (no message)`;
-    rl.appendChild(li);
-  }
+  const fillList = (id, items) => {
+    const ul = $(id);
+    ul.innerHTML = "";
+    for (const item of items || []) {
+      const li = document.createElement("li");
+      li.textContent = item;
+      ul.appendChild(li);
+    }
+  };
 
-  const wl = $("warnList");
-  wl.innerHTML = "";
-  for (const w of report.warnings ?? []) {
-    const li = document.createElement("li");
-    li.textContent = w.message || `${w.code}: (no message)`;
-    wl.appendChild(li);
+  fillList("sourceList", report.sources);
+  fillList("matchedList", report.what_matched);
+  fillList("unmatchedList", report.what_did_not_match);
+  
+  const rf = report.red_flags || [];
+  fillList("redFlagList", rf);
+  if (rf.length > 0) {
+    $("redFlagsWrap").classList.remove("hidden");
+  } else {
+    $("redFlagsWrap").classList.add("hidden");
   }
 
   const strip = $("uncertaintyStrip");
-  const uncertain = report.verdict === "VERIFY" || report.confidence !== "high" || (report.warnings?.length ?? 0) > 0;
+  const uncertain = report.verdict === "VERIFY" || report.confidence !== "high" || rf.length > 0;
   if (uncertain) {
     strip.classList.remove("hidden");
   } else {
     strip.classList.add("hidden");
   }
-  
-  renderTimeline(report);
 }
+
 
 function renderRecommendations(report) {
   const section = $("recSection");
