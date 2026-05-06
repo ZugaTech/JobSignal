@@ -14,6 +14,23 @@ router = APIRouter()
 class VerifyRequest(BaseModel):
     job_url: Optional[str] = Field(default=None, description="Job posting URL")
     job_description: Optional[str] = Field(default=None, description="Pasted job description text")
+    recommendations_enabled: Optional[bool] = Field(
+        default=None,
+        description="If set, request similar-job recommendations (still requires search config).",
+    )
+
+
+def _coerce_optional_bool(raw: Any) -> Optional[bool]:
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return raw
+    s = str(raw).strip().lower()
+    if s in ("1", "true", "yes", "on"):
+        return True
+    if s in ("0", "false", "no", "off", ""):
+        return False
+    return None
 
 
 def _verify_or_http_exc(**kwargs: Any) -> dict:
@@ -46,11 +63,15 @@ async def verify(request: Request) -> dict:
             raw = await up.read()
             mime = getattr(up, "content_type", None)
 
+        rec_raw = form.get("recommendations_enabled")
+        rec_opt = _coerce_optional_bool(rec_raw)
+
         return _verify_or_http_exc(
             job_url=url_s,
             job_description=text_s,
             image_bytes=raw if raw else None,
             image_media_type=mime,
+            recommendations_enabled=rec_opt,
         )
 
     try:
@@ -68,4 +89,8 @@ async def verify(request: Request) -> dict:
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    return _verify_or_http_exc(job_url=req.job_url, job_description=req.job_description)
+    return _verify_or_http_exc(
+        job_url=req.job_url,
+        job_description=req.job_description,
+        recommendations_enabled=req.recommendations_enabled,
+    )

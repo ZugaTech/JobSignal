@@ -1,0 +1,10 @@
+{
+  "urls": [
+    "https://example.org/similar-role-one",
+    "https://example.org/similar-role-two",
+    "https://careers.example.com/another-listing"
+  ],
+  "by_query_substring": {
+    "acme": ["https://jobs.acme.test/opening-1", "https://jobs.acme.test/opening-2"]
+  }
+}
