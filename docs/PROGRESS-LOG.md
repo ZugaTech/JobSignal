@@ -12,6 +12,13 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 
 ## Log entries (newest first)
 
+### 2026-05-06 — Sprint 10: Redis cache + truthful readiness ping
+
+- **Cache store:** `backend/core/cache_store.py` adds `RedisCache` (lazy import) and `cache_ping(CACHE_URL)` for fast health checks.
+- **Orchestrator:** uses Redis cache automatically when `CACHE_URL` is set; falls back to in-memory for local dev/tests.
+- **Readiness:** `GET /ready` now pings Redis when configured and surfaces `checks.cache_ping` as `ok` / `fail` without leaking secrets.
+- **Tests:** `/ready` ping is monkeypatched in API smoke tests to stay deterministic; full suite still green.
+
 ### 2026-05-06 — Sprint 6: similar jobs (search + verify, max 3)
 
 - **Core:** `backend/core/recommendations.py` — query packs from normalization (+ optional vision fields), provider chain (`SEARCH_PROVIDER_ORDER`: **SerpAPI** + **fixture** stub), bounded URL pool, nested `verify_job(..., skip_recommendations=True)` per candidate; **HIGH** / **MEDIUM** bands from candidate confidence only; hard max 3.
