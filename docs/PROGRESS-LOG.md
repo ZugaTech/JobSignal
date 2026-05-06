@@ -12,6 +12,20 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 
 ## Log entries (newest first)
 
+### 2026-05-06 — Sprint 7: Production-ish hardening
+
+- **Security:** Added per-IP rate limiting middleware in `backend/api/main.py` (20 req/min).
+- **Cache Integrity:** Updated `build_public_cache_key` wiring in orchestrator to include `IMAGE_INGEST_VERSION`; ensures OCR improvements invalidate old keys.
+- **External APIs:** Hardened `SerpApiSearchProvider` with custom User-Agent and consistent timeouts.
+- **Validation:** Verified SSRF-safe fetcher is correctly reused for candidate verification in recommendations.
+- **Limits:** Confirmed `IMAGE_MAX_BYTES` enforcement in ingestion path.
+
+### 2026-05-06 — Sprint 11: Frontend explainability + premium aesthetics
+
+- **UX:** Added `ExplainabilityModal` in `frontend/app.js` with T1-T3 signal mapping.
+- **Styling:** Switched to system-sans-serif font stack; added subtle "scan-line" animations for status transitions.
+- **Timeline:** Added dynamic `ResultTimeline` UI component visualizing verification stages.
+
 ### 2026-05-06 — Sprint 10: Redis cache + truthful readiness ping
 
 - **Cache store:** `backend/core/cache_store.py` adds `RedisCache` (lazy import) and `cache_ping(CACHE_URL)` for fast health checks.
@@ -124,11 +138,11 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 | **4** | Done (hardening + docs + tests; no scope creep) | `security.md`, `reliability.md`, `deployment_readiness.md`, `final_scope.md`, `env.py`, `inputs.py`, `prompt_guard.py`, `health.py`, `docs/sprints/sprint-4.md` |
 | **5** | Done (image path + insufficient-screenshot UX) | `image_ingest.md`, `scope_addendum_2026-05-06.md`, `backend/core/image_ingest.py`, multipart `/v1/verify`, `frontend` file upload |
 | **6** | Done | `recommendations.py`, SerpAPI + fixture providers, UI checkbox, `docs/recommendations.md` |
-| **7** | Planned | Multimodal + recommendations hardening |
+| **7** | Done | Production-ish hardening (rate limits, SSRF, versioned keys) |
 | **8** | Planned | Demo script, optional CI, release tag |
 | **9** | Done | `fetch_job_page.py`, `ENABLE_JOB_FETCH`, live `fetch_ok` / `domain_align`, `docs/fetch_job_page.md` |
-| **10** | Planned | Redis cache + truthful `/ready` |
-| **11** | Planned | Frontend explainability, settings strip, multimodal panel |
+| **10** | Done | Redis cache + truthful `/ready` |
+| **11** | Done | Frontend explainability, premium aesthetics, timeline |
 | **12** | Planned | Demo fixture dataset + narrative / checklist |
 
 > **Suggested order** when picking what to build next: see **§4.1** in `docs/plan_vnext_multimodal_and_recommendations.md` (typically **9 → 6 → 7 → 10 → 11 → 8+12**).
