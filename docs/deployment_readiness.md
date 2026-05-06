@@ -25,6 +25,9 @@ Payload shape: see `backend/core/health.py`.
 - Entry point: `Procfile` runs `uvicorn backend.api.main:app` with `PORT` (defaults to 8080 locally).
 - Set Railway env vars at minimum: `NODE_ENV=production`, `CACHE_URL` (required by strict/staging/prod), `CACHE_DEFAULT_TTL_DAYS`, `SOURCE_PIPELINE_VERSION`, `SCORER_VERSION`.
 - Optional (demo fixtures): `JOBSIGNAL_FIXTURES_PATH=data_sources/fixtures/verify_fixtures.json`
+- Optional (screenshot demo): `ENABLE_IMAGE_VERIFY=1` + `FIREWORKS_API_KEY` + `FIREWORKS_VISION_MODEL`
+- Optional (primary fetch demo): `ENABLE_JOB_FETCH=1` (honors `FETCH_MAX_BYTES` / `FETCH_MAX_REDIRECTS`)
+- Optional (similar jobs): `RECOMMENDATIONS_ENABLED=1` plus either `SERPAPI_API_KEY` or `JOBSIGNAL_SEARCH_FIXTURE_PATH` (and `SEARCH_PROVIDER_ORDER`)
 
 ## 3. Rollback plan
 
