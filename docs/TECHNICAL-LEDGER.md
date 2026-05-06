@@ -73,9 +73,9 @@
 | Item | Status | Notes |
 |------|--------|------|
 | Key derivation + TTL behavior (in-memory) | 🟢 | `cache_key.py`, `cache_store.py` + tests. |
-| Redis-backed cache | 🔴 | Not implemented. |
+| Redis-backed cache | 🟡 | Implemented `RedisCache` when `CACHE_URL` is set (`backend/core/cache_store.py`); lazy dependency import; errors degrade to cache miss. |
 | Shared cache payload privacy guard | 🟢 | `cache_payload.py` + tests incl. forbidden keys. |
-| Readiness cache ping | 🟡 | `health.py` supports `cache_ping_ok` flag, but no real ping. |
+| Readiness cache ping | 🟢 | `/ready` pings Redis when `CACHE_URL` is set; exposes `checks.cache_ping` (`ok`/`fail`) without secrets. |
 
 ---
 
