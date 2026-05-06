@@ -12,6 +12,15 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 
 ## Log entries (newest first)
 
+### 2026-05-06 — Sprint 5: image ingestion + insufficient-screenshot UX
+
+- **Core:** `backend/core/image_ingest.py` (MIME/size validation, strict vision JSON schema, sufficiency gates); `llm_fireworks.extract_job_fields_from_image_vision` (Fireworks/OpenAI-compatible vision call); `inputs.validate_verify_inputs` allows screenshot-only when multipart image present.
+- **Orchestrator:** merges extracted URL/text with user fields; **blocks** image-only path when extraction unusable (VERIFY + `ingestion.status: insufficient` + paste-URL message); cache key gains optional `img:<sha256>`.
+- **API:** `POST /v1/verify` accepts **multipart/form-data** (`job_image` + optional `job_url` / `job_description`) or JSON; `report_schema_version` **1.1.0** with optional `ingestion` object.
+- **Frontend:** file input, preview, multipart submit, ingestion confidence / insufficient message in results.
+- **Docs:** `docs/image_ingestion.md`, `docs/scope_addendum_2026-05-06.md`, `docs/final_scope.md` changelog row; ledger/progress updated.
+- **Tests:** `tests/test_image_ingest.py`, `tests/test_verify_image_flow.py`, cache key + inputs coverage; `python -m pytest` — **64 passed** (deterministic vision monkeypatch).
+
 ### 2026-05-05 — Post–Sprint 4 audit: created technical ledger
 
 - **Ground truth:** re-read `docs/PROGRESS-LOG.md`, `docs/final_scope.md`, `docs/sprints/sprint-4.md` per post-sprint prompt.
@@ -82,6 +91,7 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 | **2** | Done (docs + core modules + tests) | `data_flow.md`, `cache_design.md`, `source_validation.md`, `backend/core/*`, `tests/*`, `docs/sprints/sprint-2.md` |
 | **3** | Done (scoring + static UI + tests; API still mock) | `scoring.md`, `decision_logic.md`, `frontend_flow.md`, `backend/core/scoring.py`, `report.py`, `frontend/*`, `docs/sprints/sprint-3.md` |
 | **4** | Done (hardening + docs + tests; no scope creep) | `security.md`, `reliability.md`, `deployment_readiness.md`, `final_scope.md`, `env.py`, `inputs.py`, `prompt_guard.py`, `health.py`, `docs/sprints/sprint-4.md` |
+| **5** | Done (image path + insufficient-screenshot UX) | `image_ingest.md`, `scope_addendum_2026-05-06.md`, `backend/core/image_ingest.py`, multipart `/v1/verify`, `frontend` file upload |
 
 ---
 

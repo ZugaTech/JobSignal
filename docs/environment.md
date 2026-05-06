@@ -38,8 +38,13 @@ Operational and configuration variables expected at runtime. **Names are stable 
 |----------|----------|---------|
 | `SEARCH_API_KEY` | When search enabled | API key for hosted search |
 | `SEARCH_API_ENDPOINT` | When search enabled | Base URL for search provider |
-| `LLM_API_KEY` | Optional | If LLM extraction enabled |
-| `LLM_MODEL_VERSION` | Optional | Model id for cache/scorer audit trail |
+| `ENABLE_LLM_SIGNALS` | Optional | `1` enables LLM-derived *text-only* signals from job description |
+| `FIREWORKS_API_KEY` | When LLM enabled | Fireworks API key for runtime inference |
+| `FIREWORKS_BASE_URL` | No | Defaults to Fireworks OpenAI-compatible base URL |
+| `FIREWORKS_MODEL` | No | Fireworks model id for chat completions |
+| `FIREWORKS_TIMEOUT_S` | No | LLM request timeout in seconds |
+| `LLM_API_KEY` | Optional | Fallback key name (if not using Fireworks var names) |
+| `LLM_MODEL_VERSION` | Optional | Model id for audit trail (if used elsewhere) |
 
 ## 6. Safety and limits
 

@@ -9,12 +9,12 @@
 - 🔴 **Not started** — no implementation  
 - ⚪ **Blocked** — needs human decision/secret/vendor choice  
 
-**Last verified:** 2026-05-05  
+**Last verified:** 2026-05-06  
 
 **Baseline verification**
 
-- `python -m pytest`: **51 passed** (local; FastAPI smoke added)
-- Latest commit at time of last verification: `56e5449`
+- `python -m pytest`: **62 passed** (local; image ingest + multipart verify)
+- Scope addendum: `docs/scope_addendum_2026-05-06.md`
 
 ---
 
@@ -25,7 +25,7 @@
 | Python runtime / test harness (`pyproject.toml`, pytest) | 🟢 | Core libs + tests run. |
 | HTTP server app (FastAPI) | 🟢 | `backend/api/main.py` (`create_app`) + `Procfile`. |
 | Routes: `/health` + `/ready` | 🟡 | HTTP wiring exists; `/ready` does not ping real cache yet. |
-| Route: `/v1/verify` | 🟡 | Works end-to-end using **fixtures evidence**; no live fetch/search adapters. |
+| Route: `/v1/verify` | 🟡 | JSON + **multipart** (`job_image`); fixtures evidence; optional **Fireworks vision** behind `ENABLE_IMAGE_VERIFY`. |
 | CORS / request id | 🟡 | CORS allows `*` for demo; request-id propagation not yet implemented. |
 
 ---
@@ -40,7 +40,7 @@
 | Evidence ordering | 🟢 | `backend/core/source_evidence.py` + tests. |
 | Scoring + verdict + confidence | 🟢 | `backend/core/scoring.py` + tests. |
 | Public report envelope | 🟢 | `backend/core/report.py` + tests. |
-| Orchestrator function (end-to-end in code) | 🟡 | `backend/core/orchestrator.py` wires validate→normalize→cache→fixtures→score→report. Live collectors pending. |
+| Orchestrator function (end-to-end in code) | 🟡 | `backend/core/orchestrator.py` wires validate→**optional image ingest**→normalize→cache→fixtures→score→report (`report_schema_version` 1.1.0 + `ingestion`). Live collectors pending. |
 
 ---
 
@@ -60,7 +60,7 @@
 |------|--------|------|
 | Minimal UI + states | 🟢 | Static `frontend/*` with phases and uncertainty strip. |
 | Client-side input validation | 🟢 | `frontend/app.js` validates lengths + URL shape. |
-| Replace `mockVerify` with real `fetch` | 🟢 | Frontend calls `http://localhost:8080/v1/verify` by default; override via `window.JOBSIGNAL_API_BASE`. |
+| Replace `mockVerify` with real `fetch` | 🟢 | Frontend calls `http://localhost:8080/v1/verify` by default; **multipart** when a screenshot is selected. |
 | Cache-hit display | 🟢 | Badge overlay wired to `cache.hit` (mocked). |
 | Error handling | 🟡 | Client validation and network error path shown; needs real “API down” manual check in demo script. |
 
@@ -81,7 +81,7 @@
 
 | Item | Status | Notes |
 |------|--------|------|
-| `.env.example` completeness | 🟡 | Has main vars; will need framework-specific vars once API exists. |
+| `.env.example` completeness | 🟡 | Includes `ENABLE_IMAGE_VERIFY`, `FIREWORKS_VISION_MODEL`, `IMAGE_MAX_BYTES`. |
 | `EnvConfig.load(strict=…)` | 🟢 | Enforces TTL range and cache URL in staging/prod/strict. |
 
 ---
@@ -108,7 +108,7 @@
 | Item | Status | Notes |
 |------|--------|------|
 | Demo script | 🔴 | Not written. |
-| “One command” local run | 🔴 | Needs API wiring + optional `python -m http.server` for static UI. |
+| “One command” local run | 🟡 | API + static UI exist; document `uvicorn` + static server for judges. |
 
 ---
 
@@ -117,7 +117,7 @@
 - 🟡 **PSL-naive domain parsing** (`registrable_domain_naive`) may mis-handle some ccTLDs.
 - 🟡 **Prompt guard is heuristic** and must not be treated as proof of safety.
 - 🔴 **No real fetch/search adapters** (largest demo gap).
-- 🟡 **Static UI uses mock**; needs `/v1/verify` before demo is end-to-end.
+- 🟡 **Vision path** needs real `FIREWORKS_API_KEY` + `ENABLE_IMAGE_VERIFY=1` for live screenshot demos; CI uses stubs.
 
 ---
 

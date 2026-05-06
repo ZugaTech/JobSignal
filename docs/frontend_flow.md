@@ -8,7 +8,7 @@
 
 ## 2. Technology
 
-Static **`index.html` + `app.js` + `styles.css`** under `frontend/`. Demo uses an in-file **mock verify** response; replace with `fetch("/v1/verify")` when the API exists.
+Static **`index.html` + `app.js` + `styles.css`** under `frontend/`. The UI calls **`POST /v1/verify`** on `window.JOBSIGNAL_API_BASE` (default `http://localhost:8080`). Serve the folder over HTTP (not `file://`) for reliable `fetch`.
 
 ## 3. UI states (client)
 
@@ -37,7 +37,7 @@ Static **`index.html` + `app.js` + `styles.css`** under `frontend/`. Demo uses a
 ## 6. User flow (happy / unhappy)
 
 1. User pastes URL and/or description → **idle** → submit.
-2. **loading** → client calls API (mock for now).
+2. **loading** → client calls **`POST /v1/verify`**; errors surface in **error** phase (no fabricated verdict).
 3. Response maps to **success** or **warning** from `verdict` + `confidence` + `warnings.length`.
 4. **cache_hit** badge from `cache.hit`.
 5. On fetch exception → **error**, no verdict.
