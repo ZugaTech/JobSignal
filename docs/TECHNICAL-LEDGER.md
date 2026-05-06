@@ -26,7 +26,7 @@
 | Python runtime / test harness (`pyproject.toml`, pytest) | 🟢 | Core libs + tests run. |
 | HTTP server app (FastAPI) | 🟢 | `backend/api/main.py` (`create_app`) + `Procfile`. |
 | Routes: `/health` + `/ready` | 🟡 | HTTP wiring exists; `/ready` does not ping real cache yet. |
-| Route: `/v1/verify` | 🟡 | JSON + **multipart**; optional **`recommendations_enabled`**; fixtures + optional **similar jobs** (SerpAPI/fixture) max 3. |
+| Route: `/v1/verify` | 🟢 | JSON + **multipart**; recommendations; per-IP rate limit (20/min). |
 | CORS / request id | 🟡 | CORS allows `*` for demo; request-id propagation not yet implemented. |
 
 ---
@@ -50,9 +50,9 @@
 
 | Item | Status | Notes |
 |------|--------|------|
-| Search adapter (real provider) | 🟡 | **SerpAPI** wired for recommendations + **JSON fixture** provider; Zenserp/Bing/Google CSE still optional/future. |
-| Fetch adapter (SSRF-safe) | 🟡 | **Primary** URL GET + signals: `backend/core/fetch_job_page.py` behind `ENABLE_JOB_FETCH` (default off); candidate/search fetches still pending (Sprint 6+). |
-| Deterministic fixtures for CI | 🟡 | `data_sources/fixtures/verify_fixtures.json` added; needs real hashes and more cases. |
+| Search adapter (real provider) | 🟢 | **SerpAPI** wired + hardened (User-Agent, timeouts). |
+| Fetch adapter (SSRF-safe) | 🟢 | **Primary** URL GET + signals: `backend/core/fetch_job_page.py`. |
+| Deterministic fixtures for CI | 🟡 | `data_sources/fixtures/verify_fixtures.json` added; needs real hashes. |
 
 ---
 

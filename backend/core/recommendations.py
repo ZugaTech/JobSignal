@@ -90,6 +90,7 @@ class SerpApiSearchProvider:
             r = httpx.get(
                 "https://serpapi.com/search.json",
                 params={"api_key": key, "engine": "google", "q": query, "num": min(limit, 10)},
+                headers={"User-Agent": "JobSignal/1.0 (+https://github.com/jobverification)"},
                 timeout=12.0,
             )
             r.raise_for_status()
