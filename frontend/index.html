@@ -21,6 +21,12 @@
         <label for="jobText">Job description</label>
         <textarea id="jobText" rows="6" placeholder="Paste posting text..." maxlength="100000"></textarea>
 
+        <label for="jobImage">Screenshot (optional PNG/JPEG/WebP)</label>
+        <input id="jobImage" type="file" accept="image/png,image/jpeg,image/webp" />
+        <div id="imagePreviewWrap" class="image-preview-wrap hidden">
+          <img id="imagePreview" alt="Selected screenshot preview" />
+        </div>
+
         <div class="actions">
           <button id="btnRun" type="button">Check posting</button>
           <span id="phaseNote" class="muted" aria-live="polite"></span>
@@ -28,6 +34,7 @@
       </section>
 
       <section id="result" class="panel hidden" aria-live="polite">
+        <p id="ingestionNote" class="muted hidden" aria-live="polite"></p>
         <div id="cacheBadge" class="cache-badge hidden" data-cache-role="hit">Recent shared check</div>
         <div id="uncertaintyStrip" class="strip hidden">Limited certainty — verify on the employer’s official careers channel.</div>
         <div class="verdict-row">
@@ -57,8 +64,8 @@
       </section>
 
       <footer class="footer muted">
-        Static demo UI (Sprint 3). Replace mock in <code>app.js</code> with your API.
-        <!-- ui phases: idle, loading, success, warning, cache_hit (overlay), error -->
+        UI calls <code>POST /v1/verify</code> on the URL shown above (<code>window.JOBSIGNAL_API_BASE</code>).
+        <!-- phases: idle, loading, success, warning, error; cache_hit = result overlay + badge -->
       </footer>
     </main>
     <script>
