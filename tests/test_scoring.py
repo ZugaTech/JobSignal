@@ -97,5 +97,99 @@ def test_public_report_includes_schema_version():
         cache={"hit": True, "ttl_expires_at": "2099-01-01T00:00:00Z", "key_fingerprint": "abc"},
         meta={"pipeline_version": "1", "scorer_version": SCORER_VERSION},
     )
-    assert r["report_schema_version"] == "1.1.0"
+    assert r["report_schema_version"] == "1.2.0"
     assert r["cache"]["hit"] is True
+
+
+# ---------------------------------------------------------------------------
+# Description-only intelligence (Path C + TEXT_PATTERN_MATCH SKIP)
+# ---------------------------------------------------------------------------
+
+
+def _strict_text_only_signals() -> list[dict]:
+    """Signals that satisfy every Path C gate."""
+
+    return [
+        _sig("jd_specificity", "T3", "high"),
+        _sig("jd_employer_identifiability", "T3", "high"),
+        _sig("jd_recruiter_intent_score", "T3", "high"),
+        _sig("jd_scam_indicators", "T3", "none"),
+        _sig("jd_ai_generated_score", "T3", "low"),
+        _sig("jd_content_farm_score", "T3", "low"),
+    ]
+
+
+def test_text_only_apply_promotes_with_strict_combo():
+    d = decide_from_signals(_strict_text_only_signals(), url_provided=False)
+    assert d["verdict"].value == "APPLY"
+    assert d["confidence"] == "medium"
+    codes_w = [w["code"] for w in d["warnings"]]
+    assert "TEXT_ONLY_NOT_CORROBORATED" in codes_w
+    codes_r = [r["code"] for r in d["reasons"]]
+    assert "TEXT_ONLY_APPLY" in codes_r
+
+
+def test_text_only_apply_blocked_when_url_provided():
+    # Even with a strict combo, Path C must not apply once a URL is present.
+    d = decide_from_signals(_strict_text_only_signals(), url_provided=True)
+    # No URL evidence rows present -> should not collapse to APPLY via Path C.
+    assert d["verdict"].value != "APPLY"
+
+
+def test_text_only_apply_blocked_by_any_red_flag():
+    rows = _strict_text_only_signals() + [_sig("jd_red_flags", "T3", "high", "vague,vague,vague")]
+    d = decide_from_signals(rows, url_provided=False)
+    assert d["verdict"].value != "APPLY"
+
+
+def test_severe_text_pattern_skip_two_high():
+    # scam_indicators high + content_farm_score high -> SKIP.
+    rows = [
+        _sig("jd_scam_indicators", "T3", "high", "training_fee, payment_required"),
+        _sig("jd_content_farm_score", "T3", "high"),
+        _sig("jd_specificity", "T3", "low"),
+    ]
+    d = decide_from_signals(rows, url_provided=False)
+    assert d["verdict"].value == "SKIP"
+    codes = [r["code"] for r in d["reasons"]]
+    assert "TEXT_PATTERN_MATCH" in codes
+    # Copy must include a non-accusatory disclaimer; must avoid asserting fraud/scam outright.
+    text = " ".join(r["message"] for r in d["reasons"]).lower()
+    assert "not a fraud claim" in text, "must include explicit non-accusatory disclaimer"
+    for accusation in ("is a scam", "is fraudulent", "fraudulent posting"):
+        assert accusation not in text, f"must not assert: {accusation!r}"
+
+
+def test_severe_text_pattern_skip_token_plus_high():
+    # scam_indicators medium with a token in details + red_flags high -> SKIP.
+    rows = [
+        _sig("jd_scam_indicators", "T3", "medium", "telegram_only_contact"),
+        _sig("jd_red_flags", "T3", "high", "vague,vague,vague,vague"),
+    ]
+    d = decide_from_signals(rows, url_provided=False)
+    assert d["verdict"].value == "SKIP"
+    codes = [r["code"] for r in d["reasons"]]
+    assert "TEXT_PATTERN_MATCH" in codes
+
+
+def test_severe_text_pattern_skip_requires_two_conditions():
+    # Single "high" without a second condition or scam token -> not SKIP.
+    rows = [_sig("jd_red_flags", "T3", "high", "vague,vague,vague")]
+    d = decide_from_signals(rows, url_provided=False)
+    assert d["verdict"].value != "SKIP"
+
+
+def test_text_only_mid_red_flags_yield_strong_verify_copy():
+    rows = [
+        _sig("jd_specificity", "T3", "low"),
+        _sig("jd_red_flags", "T3", "medium", "vague_responsibilities,no_company_info"),
+        _sig("jd_content_farm_score", "T3", "medium"),
+    ]
+    d = decide_from_signals(rows, url_provided=False)
+    assert d["verdict"].value == "VERIFY"
+    codes = [r["code"] for r in d["reasons"]]
+    assert "TEXT_RED_FLAGS" in codes
+
+
+def test_scorer_version_bumped_to_3_1_0():
+    assert SCORER_VERSION == "3.1.0"
