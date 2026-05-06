@@ -9,9 +9,19 @@
   <body>
     <main class="shell" data-ui-phase="idle" data-cache="miss">
       <header class="header">
-        <h1>JobSignal</h1>
+        <div class="top-row">
+          <h1>JobSignal</h1>
+          <button id="btnReset" class="reset-btn" title="Start over">Reset</button>
+        </div>
         <p class="tagline">Advisory check — not a guarantee. Prefer VERIFY when unsure.</p>
-        <p class="muted">API: <code id="apiBase">http://localhost:8080</code></p>
+        <div id="settingsPanel" class="settings-wrap">
+          <button id="toggleSettings" class="settings-toggle">⚙️ API Settings</button>
+          <div id="settingsContent" class="settings-content hidden">
+            <label for="apiBaseInput">API Base URL</label>
+            <input id="apiBaseInput" type="text" value="http://localhost:8080" />
+            <p class="muted">Status: <span id="apiStatus">Checking...</span></p>
+          </div>
+        </div>
       </header>
 
       <section class="panel">
@@ -24,6 +34,7 @@
         <label for="jobImage">Screenshot (optional PNG/JPEG/WebP)</label>
         <input id="jobImage" type="file" accept="image/png,image/jpeg,image/webp" />
         <div id="imagePreviewWrap" class="image-preview-wrap hidden">
+          <div class="scan-line"></div>
           <img id="imagePreview" alt="Selected screenshot preview" />
         </div>
 
@@ -54,6 +65,9 @@
           <div class="confidence-row">
             <div class="confidence-label">Confidence</div>
             <div class="confidence" id="confidence">medium</div>
+          </div>
+          <div class="verdict-actions">
+            <button id="btnCopyJson" class="small-btn">Copy JSON Report</button>
           </div>
         </div>
 

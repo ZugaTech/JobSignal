@@ -235,8 +235,30 @@ function escapeHtml(s) {
 }
 
 function getApiBase() {
+  const stored = localStorage.getItem("JOBSIGNAL_API_BASE");
+  if (stored) return stored;
   return window.JOBSIGNAL_API_BASE || "http://localhost:8080";
 }
+
+async function checkApiStatus() {
+  const base = getApiBase();
+  const el = $("apiStatus");
+  try {
+    const res = await fetch(`${base}/health`, { signal: AbortController.timeout(3000).signal });
+    if (res.ok) {
+      el.textContent = "Online";
+      el.style.color = "var(--ok)";
+    } else {
+      el.textContent = `Error ${res.status}`;
+      el.style.color = "var(--warn)";
+    }
+  } catch {
+    el.textContent = "Offline";
+    el.style.color = "var(--bad)";
+  }
+}
+
+let lastReport = null;
 
 async function runFlow() {
   $("errorPanel").classList.add("hidden");
@@ -255,15 +277,16 @@ async function runFlow() {
 
   try {
     let res;
+    const apiBase = getApiBase();
     if (file) {
       const fd = new FormData();
       if (url) fd.append("job_url", url);
       if (text) fd.append("job_description", text);
       fd.append("job_image", file, file.name || "screenshot.png");
       fd.append("recommendations_enabled", recommendations ? "true" : "false");
-      res = await fetch(`${getApiBase()}/v1/verify`, { method: "POST", body: fd });
+      res = await fetch(`${apiBase}/v1/verify`, { method: "POST", body: fd });
     } else {
-      res = await fetch(`${getApiBase()}/v1/verify`, {
+      res = await fetch(`${apiBase}/v1/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -278,6 +301,7 @@ async function runFlow() {
       throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
     }
     const report = await res.json();
+    lastReport = report;
     renderReport(report);
     renderIngestion(report);
     renderRecommendations(report);
@@ -297,10 +321,52 @@ async function runFlow() {
   }
 }
 
+$("btnCopyJson").addEventListener("click", () => {
+  if (!lastReport) return;
+  const json = JSON.stringify(lastReport, null, 2);
+  navigator.clipboard.writeText(json).then(() => {
+    const btn = $("btnCopyJson");
+    const old = btn.textContent;
+    btn.textContent = "Copied!";
+    setTimeout(() => (btn.textContent = old), 2000);
+  });
+});
+
 $("btnRun").addEventListener("click", () => {
   setPhase(PHASE.IDLE);
   runFlow();
 });
+
+$("btnReset").addEventListener("click", () => {
+  $("jobUrl").value = "";
+  $("jobText").value = "";
+  $("jobImage").value = "";
+  $("recRecommendations").checked = false;
+  $("imagePreviewWrap").classList.add("hidden");
+  $("imagePreview").removeAttribute("src");
+  $("result").classList.add("hidden");
+  $("errorPanel").classList.add("hidden");
+  setPhase(PHASE.IDLE);
+});
+
+$("toggleSettings").addEventListener("click", () => {
+  $("settingsContent").classList.toggle("hidden");
+  if (!$("settingsContent").classList.contains("hidden")) {
+    $("apiBaseInput").value = getApiBase();
+    checkApiStatus();
+  }
+});
+
+$("apiBaseInput").addEventListener("change", () => {
+  const val = $("apiBaseInput").value.trim();
+  if (val) {
+    localStorage.setItem("JOBSIGNAL_API_BASE", val);
+    checkApiStatus();
+  }
+});
+
+// Initial API check
+checkApiStatus();
 
 $("jobImage").addEventListener("change", () => {
   const f = $("jobImage").files?.[0];
