@@ -13,8 +13,9 @@
 
 **Baseline verification**
 
-- `python -m pytest`: **64 passed** (local; image ingest + multipart verify)
+- `python -m pytest`: **85 passed** (local; includes Sprint 9 primary fetch tests)
 - Scope addendum: `docs/scope_addendum_2026-05-06.md`
+- Scorer: `SCORER_VERSION = 3.1.0` (description-only intelligence; cache-invalidating)
 
 ---
 
@@ -38,9 +39,10 @@
 | Normalization (URL/text + hashes) | 🟢 | `backend/core/normalization.py` + tests. |
 | Entity extraction (heuristic) | 🟢 | `backend/core/extraction.py` + tests. |
 | Evidence ordering | 🟢 | `backend/core/source_evidence.py` + tests. |
-| Scoring + verdict + confidence | 🟢 | `backend/core/scoring.py` + tests. |
+| Scoring + verdict + confidence | 🟢 | `backend/core/scoring.py` + tests. **3.1.0** adds `TEXT_PATTERN_MATCH` SKIP + Path C (text-only APPLY exception, capped `medium`). |
+| Description-only LLM signals (T3) | 🟢 | `backend/core/llm_fireworks.map_llm_payload_to_signals` produces `jd_specificity`, `jd_red_flags`, `jd_missing_fields`, `jd_scam_indicators`, `jd_content_farm_score`, `jd_ai_generated_score`, `jd_recruiter_intent_score`, `jd_employer_identifiability` at tier `T3` with user-facing labels. |
 | Public report envelope | 🟢 | `backend/core/report.py` + tests. |
-| Orchestrator function (end-to-end in code) | 🟡 | `backend/core/orchestrator.py` wires validate→**optional image ingest**→normalize→cache→fixtures→score→report (`report_schema_version` 1.1.0 + `ingestion`). Live collectors pending. |
+| Orchestrator function (end-to-end in code) | 🟡 | `backend/core/orchestrator.py` wires validate→**optional image ingest**→normalize→**optional live job fetch** (`ENABLE_JOB_FETCH`)→cache→fixtures→score→report (`report_schema_version` 1.1.0 + `ingestion`). Search/candidate collectors still pending. |
 
 ---
 
@@ -49,7 +51,7 @@
 | Item | Status | Notes |
 |------|--------|------|
 | Search adapter (real provider) | ⚪ | Candidate providers (planned multi-provider fallback): **SerpAPI**, **Zenserp**, **Bing Web Search**, **Google Programmable Search**. |
-| Fetch adapter (SSRF-safe) | 🔴 | Not implemented; fixtures-only evidence currently. |
+| Fetch adapter (SSRF-safe) | 🟡 | **Primary** URL GET + signals: `backend/core/fetch_job_page.py` behind `ENABLE_JOB_FETCH` (default off); candidate/search fetches still pending (Sprint 6+). |
 | Deterministic fixtures for CI | 🟡 | `data_sources/fixtures/verify_fixtures.json` added; needs real hashes and more cases. |
 
 ---
@@ -126,4 +128,12 @@
 1. Expand fixtures: add 3–5 real job URLs and populate `verify_fixtures.json` with their real sha256 keys (documented method).
 2. Add **live** search adapter behind interface with **fixtures-first** and **multiple-provider fallback** (per your preference), preserving CI determinism.
 3. Add Railway “how to run” section + ensure `/ready` semantics match deploy reality (cache ping when Redis configured).
+
+---
+
+## Change log
+
+| Date | Change | Why |
+|------|--------|-----|
+| 2026-05-06 | Description-only intelligence: `SCORER_VERSION` 3.1.0, `TEXT_PATTERN_MATCH` SKIP, Path C (text-only APPLY capped `medium`), expanded T3 LLM signals. Tests 64 → **79**. | Description-only inputs now produce a real, useful answer instead of a generic "VERIFY low". |
 

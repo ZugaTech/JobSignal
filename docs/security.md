@@ -5,7 +5,7 @@
 | Threat | Mitigation |
 |---------|------------|
 | Secret leakage via logs | No full job bodies at `info`; redact API keys; structured logs without env dumps. |
-| SSRF via job URL | Allowlist schemes (`http`, `https` only); block private IP literals in fetch layer (Sprint 2+ wiring); redirect cap (`FETCH_MAX_REDIRECTS`). |
+| SSRF via job URL | Allowlist schemes (`http`, `https` only); **primary** job fetch in `backend/core/fetch_job_page.py` resolves hostnames and blocks private/loopback/link-local/reserved destinations before connect; **each redirect** is re-validated; byte cap `FETCH_MAX_BYTES`; redirect cap `FETCH_MAX_REDIRECTS`. Gated by `ENABLE_JOB_FETCH` (default off for deterministic CI). See `docs/fetch_job_page.md`. |
 | Oversized / abusive payloads | `backend/core/inputs.py` enforces max URL/text sizes before work. |
 | Prompt injection into optional LLM | `backend/core/prompt_guard.py` flags delimiter-style patterns; treat job text as **untrusted data**; no tool execution from model output. |
 | Cross-tenant cache leakage | `strip_tenant_fields` + `assert_shared_cache_json_safe` + expanded forbidden keys; tests in `tests/test_cache_privacy.py`. |
@@ -50,3 +50,4 @@ This document is **not** a penetration-test report; it encodes **explicit assump
 | Date | Change | Why |
 |------|--------|-----|
 | Sprint 4 | Initial `security.md` + code gates (`env`, `inputs`, `prompt_guard`) | Sprint 4 deliverable. |
+| 2026-05-06 | Documented Sprint 9 primary fetch SSRF controls | `fetch_job_page.py` shipped behind `ENABLE_JOB_FETCH`. |
