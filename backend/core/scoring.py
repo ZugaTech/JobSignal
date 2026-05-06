@@ -10,7 +10,92 @@ from typing import Any, List, Mapping, Optional, Tuple, cast
 from backend.core.decision_schema import DecisionResponse, ReasonItem, SignalEvidence, Verdict, WarningItem
 from backend.core.source_evidence import sort_evidence_by_trust, _strength_rank
 
-SCORER_VERSION = "3.0.0"
+SCORER_VERSION = "3.1.0"
+
+# Neutral, non-accusatory tokens for severe low-trust patterns in text-only cases.
+_SEVERE_SCAM_TOKENS = (
+    "training_fee",
+    "payment_required",
+    "payment_up_front",
+    "telegram_only_contact",
+    "whatsapp_only_contact",
+    "personal_email_recruiter",
+    "identity_bait",
+    "wire_transfer",
+    "crypto_payment",
+)
+
+
+def _sig_strength(signals: List[Mapping[str, Any]], sid: str) -> str:
+    s = _get_signal(signals, sid)
+    return str(s.get("strength", "none")) if s else "none"
+
+
+def _sig_details(signals: List[Mapping[str, Any]], sid: str) -> str:
+    s = _get_signal(signals, sid)
+    return str(s.get("details", "")) if s else ""
+
+
+def _has_severe_token(text: str) -> bool:
+    t = (text or "").lower()
+    return any(tok in t for tok in _SEVERE_SCAM_TOKENS)
+
+
+def _severe_text_pattern_skip(signals: List[Mapping[str, Any]], *, url_provided: bool) -> bool:
+    """Description-only SKIP when multiple severe low-trust patterns align.
+
+    This is a pattern match, not a fraud claim.
+    """
+
+    if url_provided:
+        return False
+    scam_st = _sig_strength(signals, "jd_scam_indicators")
+    red_st = _sig_strength(signals, "jd_red_flags")
+    farm_st = _sig_strength(signals, "jd_content_farm_score")
+    token_present = _has_severe_token(_sig_details(signals, "jd_scam_indicators"))
+
+    conditions = 0
+    if scam_st == "high":
+        conditions += 1
+    if red_st == "high":
+        conditions += 1
+    if farm_st == "high":
+        conditions += 1
+    if token_present:
+        conditions += 1
+    return conditions >= 2
+
+
+def _text_only_apply_combo(signals: List[Mapping[str, Any]], *, url_provided: bool) -> bool:
+    """Narrow Path C: allow APPLY without URL when strict text-only combo holds.
+
+    Confidence is capped at medium and must include TEXT_ONLY_NOT_CORROBORATED warning.
+    """
+
+    if url_provided:
+        return False
+
+    if _sig_strength(signals, "jd_specificity") != "high":
+        return False
+    if _sig_strength(signals, "jd_employer_identifiability") != "high":
+        return False
+    if _sig_strength(signals, "jd_recruiter_intent_score") not in ("high", "medium"):
+        return False
+
+    scam_st = _sig_strength(signals, "jd_scam_indicators")
+    if scam_st not in ("none", "low"):
+        return False
+    if _has_severe_token(_sig_details(signals, "jd_scam_indicators")):
+        return False
+
+    if _sig_strength(signals, "jd_ai_generated_score") not in ("none", "low"):
+        return False
+    if _sig_strength(signals, "jd_content_farm_score") not in ("none", "low"):
+        return False
+    if _sig_strength(signals, "jd_red_flags") not in ("none", "low"):
+        return False
+
+    return True
 
 
 def _best_strength_in_tier(signals: List[Mapping[str, Any]], tier: str) -> str:
@@ -178,6 +263,63 @@ def decide_from_signals(
             signals=normalized,
         )
 
+    # Text-only severe-pattern SKIP (neutral, non-accusatory).
+    if _severe_text_pattern_skip(sorted_rows, url_provided=url_provided):
+        reasons.extend(
+            [
+                ReasonItem(
+                    code="TEXT_PATTERN_MATCH",
+                    message=(
+                        "Strong patterns associated with low-trust postings were detected in the description text "
+                        "(this is a pattern match, not a fraud claim)."
+                    ),
+                ),
+                ReasonItem(
+                    code="NEXT_STEP",
+                    message="Retry with the employer’s official posting URL for stronger corroboration.",
+                ),
+            ]
+        )
+        return DecisionResponse(
+            verdict=Verdict.SKIP,
+            confidence="low",
+            reasons=reasons,
+            warnings=[
+                WarningItem(
+                    code="LOW_TRUST_PATTERN",
+                    message="Text-only patterns are not conclusive; prefer an employer URL and verify again.",
+                )
+            ],
+            signals=normalized,
+        )
+
+    # Text-only APPLY exception (Path C): strict combo, capped at medium.
+    if _text_only_apply_combo(sorted_rows, url_provided=url_provided):
+        reasons.extend(
+            [
+                ReasonItem(
+                    code="TEXT_ONLY_APPLY",
+                    message="Description-only signals align under a strict combo; promoting to APPLY with capped confidence.",
+                ),
+                ReasonItem(
+                    code="NO_URL_CORROBORATION",
+                    message="No URL was provided; corroboration against employer-controlled sources was not performed.",
+                ),
+            ]
+        )
+        return DecisionResponse(
+            verdict=Verdict.APPLY,
+            confidence="medium",
+            reasons=reasons,
+            warnings=[
+                WarningItem(
+                    code="TEXT_ONLY_NOT_CORROBORATED",
+                    message="This is based on description text only; confirm on the employer’s official careers page before applying.",
+                )
+            ],
+            signals=normalized,
+        )
+
     had_contradiction = _contradiction_fetch_without_domain(sorted_rows, url_provided)
     fetch_weak = _fetch_insufficient_for_apply(sorted_rows, url_provided)
     t3_only = _t3_only_loudest(sorted_rows)
@@ -224,6 +366,17 @@ def decide_from_signals(
             ReasonItem(
                 code="INSUFFICIENT_CORROBORATION",
                 message="Did not meet APPLY gates: need T1 medium+ with support, or T2 high with support.",
+            )
+        )
+
+    if (not url_provided) and (
+        _sig_strength(sorted_rows, "jd_red_flags") in ("medium", "high")
+        or _sig_strength(sorted_rows, "jd_content_farm_score") in ("medium", "high")
+    ):
+        reasons.append(
+            ReasonItem(
+                code="TEXT_RED_FLAGS",
+                message="Description-only signals include risk patterns; add the posting URL for stronger cross-checks.",
             )
         )
 
