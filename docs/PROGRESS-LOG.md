@@ -12,6 +12,13 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 
 ## Log entries (newest first)
 
+### 2026-05-06 — Description-only intelligence (3.1.0)
+
+- **Scorer (`backend/core/scoring.py`):** bumped `SCORER_VERSION` 3.0.0 → 3.1.0 (cache-invalidating). Added `_severe_text_pattern_skip` → SKIP with non-accusatory `TEXT_PATTERN_MATCH` copy and explicit "pattern match, not a fraud claim" disclaimer. Added `_text_only_apply_combo` (Path C — strict, URL-less APPLY exception capped at `medium` confidence with mandatory `TEXT_ONLY_NOT_CORROBORATED` warning). Stronger VERIFY copy when mid-tier text red flags present.
+- **LLM (`backend/core/llm_fireworks.py`):** expanded JSON contract — `scam_indicators`, `content_farm_score`, `ai_generated_score`, `recruiter_intent_score`, `employer_identifiability`. Extracted pure `map_llm_payload_to_signals` for direct unit testing (no live Fireworks call). All rows emitted at tier `T3` with user-facing labels.
+- **Docs:** `docs/trust_model.md` §4.1.x (Path C) and §4.3.1 (TEXT_PATTERN_MATCH); `docs/decision_logic.md` §3.1 + §5; `docs/scoring.md` §3.1. Each with change-log entries cross-referencing the `SCORER_VERSION` bump.
+- **Tests:** `tests/test_scoring.py` adds Path C APPLY/blocked/red-flag-VERIFY/severe-SKIP/two-condition-bar tests; new `tests/test_llm_signals.py` covers the JSON→SignalEvidence mapping (tier, labels, band clamping, token whitelisting). `python -m pytest` — **79 passed** (was 64).
+
 ### 2026-05-06 — Sprint 5: image ingestion + insufficient-screenshot UX
 
 - **Core:** `backend/core/image_ingest.py` (MIME/size validation, strict vision JSON schema, sufficiency gates); `llm_fireworks.extract_job_fields_from_image_vision` (Fireworks/OpenAI-compatible vision call); `inputs.validate_verify_inputs` allows screenshot-only when multipart image present.
@@ -92,6 +99,15 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 | **3** | Done (scoring + static UI + tests; API still mock) | `scoring.md`, `decision_logic.md`, `frontend_flow.md`, `backend/core/scoring.py`, `report.py`, `frontend/*`, `docs/sprints/sprint-3.md` |
 | **4** | Done (hardening + docs + tests; no scope creep) | `security.md`, `reliability.md`, `deployment_readiness.md`, `final_scope.md`, `env.py`, `inputs.py`, `prompt_guard.py`, `health.py`, `docs/sprints/sprint-4.md` |
 | **5** | Done (image path + insufficient-screenshot UX) | `image_ingest.md`, `scope_addendum_2026-05-06.md`, `backend/core/image_ingest.py`, multipart `/v1/verify`, `frontend` file upload |
+| **6** | Planned | Recommendations (search + verify, max 3) — `docs/plan_vnext_multimodal_and_recommendations.md` |
+| **7** | Planned | Multimodal + recommendations hardening |
+| **8** | Planned | Demo script, optional CI, release tag |
+| **9** | Planned | SSRF-safe **primary** job URL fetch + orchestrator signals |
+| **10** | Planned | Redis cache + truthful `/ready` |
+| **11** | Planned | Frontend explainability, settings strip, multimodal panel |
+| **12** | Planned | Demo fixture dataset + narrative / checklist |
+
+> **Suggested order** when picking what to build next: see **§4.1** in `docs/plan_vnext_multimodal_and_recommendations.md` (typically **9 → 6 → 7 → 10 → 11 → 8+12**).
 
 ---
 
