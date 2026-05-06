@@ -21,6 +21,7 @@ def build_public_cache_key(
     source_set_version: str,
     *,
     image_bytes_sha256: str | None = None,
+    fetch_profile: str | None = None,
 ) -> PublicCacheKey:
     """Build stable cache key string.
 
@@ -48,6 +49,8 @@ def build_public_cache_key(
     ]
     if image_bytes_sha256:
         parts.append(f"img:{image_bytes_sha256}")
+    if fetch_profile and fetch_profile != "off":
+        parts.append(f"fetch:{fetch_profile}")
     materialized = "|".join(parts)
     preview = fingerprint[:16] + ("" if len(fingerprint) <= 16 else "…")
     return PublicCacheKey(materialized=materialized, fingerprint_preview=preview)

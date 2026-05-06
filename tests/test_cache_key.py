@@ -30,3 +30,11 @@ def test_image_sha_changes_materialized_key():
     k1 = build_public_cache_key(n, "1", "a", image_bytes_sha256="abc")
     assert k0.materialized != k1.materialized
     assert "img:abc" in k1.materialized
+
+
+def test_fetch_profile_live_changes_key():
+    n = normalize_job_input("https://example.com/job", "Hello")
+    k0 = build_public_cache_key(n, "1", "a", fetch_profile="off")
+    k1 = build_public_cache_key(n, "1", "a", fetch_profile="live")
+    assert k0.materialized != k1.materialized
+    assert "fetch:live" in k1.materialized
