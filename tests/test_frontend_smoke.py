@@ -18,7 +18,7 @@ def test_frontend_files_exist():
 
 @pytest.mark.parametrize(
     "token",
-    ("idle", "loading", "success", "warning", "cache_hit", "error"),
+    ("idle", "loading", "success", "warning", "cache_hit", "error", "jobImage", "ingestionNote"),
 )
 def test_frontend_documents_ui_phases(token: str):
     html = _read("frontend/index.html")
