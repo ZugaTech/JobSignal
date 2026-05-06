@@ -46,7 +46,7 @@
           <div id="ingestionNote" class="muted hidden" aria-live="polite"></div>
         </div>
         
-        <div id="uncertaintyStrip" class="strip hidden">We’re not fully confident yet—confirm on the employer’s official careers page before you spend time applying.</div>
+        <div id="uncertaintyStrip" class="strip hidden"></div>
         
         <div class="verdict-card">
           <div class="verdict-row">
@@ -58,7 +58,7 @@
             <div class="confidence" id="confidence">medium</div>
           </div>
           <div class="verdict-actions">
-            <button id="btnCopyJson" class="small-btn">Copy JSON Report</button>
+            <button id="btnCopyJson" class="small-btn">Copy result</button>
           </div>
         </div>
 
@@ -66,26 +66,21 @@
           <p id="recommendationText"></p>
         </div>
 
-        <div class="evidence-grid">
-          <div class="evidence-col">
-            <h3>What we checked</h3>
-            <p id="checkedText" class="muted"></p>
-          </div>
-          <div class="evidence-col">
-            <h3>Sources found</h3>
-            <ul id="sourceList" class="info-list"></ul>
-          </div>
+        <p id="checkedText" class="muted checked-text"></p>
+
+        <div id="sourcesWrap" class="hidden">
+          <h3 class="section-label">Sources found</h3>
+          <ul id="sourceList" class="info-list"></ul>
         </div>
 
-        <div class="matches-grid">
-          <div class="matches-col">
-            <h3>What matched</h3>
-            <ul id="matchedList" class="info-list ok"></ul>
-          </div>
-          <div class="matches-col">
-            <h3>What didn't match</h3>
-            <ul id="unmatchedList" class="info-list muted"></ul>
-          </div>
+        <div id="matchedWrap" class="hidden">
+          <h3 class="section-label">What matched</h3>
+          <ul id="matchedList" class="info-list ok"></ul>
+        </div>
+
+        <div id="unmatchedWrap" class="hidden">
+          <h3 class="section-label">What didn't match</h3>
+          <ul id="unmatchedList" class="info-list muted-list"></ul>
         </div>
 
         <div id="redFlagsWrap" class="hidden">
@@ -104,7 +99,7 @@
       </section>
 
       <footer class="footer muted">
-        Verify job listings using AI-driven evidence and honesty-first scoring.
+        JobSignal checks job listings using evidence from official sources.
       </footer>
     </main>
     <script src="app.js" defer></script>

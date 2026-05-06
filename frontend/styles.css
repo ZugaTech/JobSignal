@@ -293,17 +293,23 @@ button:disabled {
   }
 }
 
-.evidence-col h3, .matches-col h3, .warn-title {
-  margin-top: 0;
-  margin-bottom: 12px;
-  font-size: 1rem;
+.section-label {
+  margin: 20px 0 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
 }
 
 .warn-title {
   color: var(--warn);
+}
+
+.checked-text {
+  margin: 0 0 20px;
+  font-size: 0.85rem;
+  line-height: 1.6;
 }
 
 /* Minimalist Grid Additions */

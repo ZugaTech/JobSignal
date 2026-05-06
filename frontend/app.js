@@ -98,33 +98,50 @@ function renderReport(report) {
   $("confidence").textContent = report.confidence;
 
   $("recommendationText").textContent = report.recommendation || "Proceed with caution.";
-  $("checkedText").textContent = report.what_was_checked || "Analyzed provided inputs.";
+  $("checkedText").textContent = report.what_was_checked || "";
 
-  const fillList = (id, items) => {
-    const ul = $(id);
+  const fillAndToggle = (listId, wrapperId, items) => {
+    const ul = $(listId);
+    const wrap = $(wrapperId);
     ul.innerHTML = "";
-    for (const item of items || []) {
+    const clean = (items || []).filter(Boolean);
+    if (clean.length === 0) {
+      wrap.classList.add("hidden");
+      return;
+    }
+    wrap.classList.remove("hidden");
+    for (const item of clean) {
       const li = document.createElement("li");
       li.textContent = item;
       ul.appendChild(li);
     }
   };
 
-  fillList("sourceList", report.sources);
-  fillList("matchedList", report.what_matched);
-  fillList("unmatchedList", report.what_did_not_match);
-  
+  fillAndToggle("sourceList", "sourcesWrap", report.sources);
+  fillAndToggle("matchedList", "matchedWrap", report.what_matched);
+  fillAndToggle("unmatchedList", "unmatchedWrap", report.what_did_not_match);
+
   const rf = report.red_flags || [];
-  fillList("redFlagList", rf);
-  if (rf.length > 0) {
-    $("redFlagsWrap").classList.remove("hidden");
+  const rfList = $("redFlagList");
+  const rfWrap = $("redFlagsWrap");
+  rfList.innerHTML = "";
+  if (rf.filter(Boolean).length > 0) {
+    rfWrap.classList.remove("hidden");
+    for (const item of rf.filter(Boolean)) {
+      const li = document.createElement("li");
+      li.textContent = item;
+      rfList.appendChild(li);
+    }
   } else {
-    $("redFlagsWrap").classList.add("hidden");
+    rfWrap.classList.add("hidden");
   }
 
   const strip = $("uncertaintyStrip");
-  const uncertain = report.verdict === "VERIFY" || report.confidence !== "high" || rf.length > 0;
-  if (uncertain) {
+  if (report.verdict === "VERIFY") {
+    strip.textContent = "We recommend checking the company's official careers page before applying.";
+    strip.classList.remove("hidden");
+  } else if (report.verdict === "SKIP") {
+    strip.textContent = "Do not apply without verifying this listing independently.";
     strip.classList.remove("hidden");
   } else {
     strip.classList.add("hidden");
