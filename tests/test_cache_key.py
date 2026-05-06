@@ -22,3 +22,11 @@ def test_fingerprint_includes_text_when_url_missing():
     key = build_public_cache_key(n, "1", "a")
     assert "t:" in key.materialized
     assert "u:" not in key.materialized
+
+
+def test_image_sha_changes_materialized_key():
+    n = normalize_job_input("https://example.com/job", "Hello")
+    k0 = build_public_cache_key(n, "1", "a", image_bytes_sha256=None)
+    k1 = build_public_cache_key(n, "1", "a", image_bytes_sha256="abc")
+    assert k0.materialized != k1.materialized
+    assert "img:abc" in k1.materialized

@@ -97,5 +97,5 @@ def test_public_report_includes_schema_version():
         cache={"hit": True, "ttl_expires_at": "2099-01-01T00:00:00Z", "key_fingerprint": "abc"},
         meta={"pipeline_version": "1", "scorer_version": SCORER_VERSION},
     )
-    assert r["report_schema_version"] == "1.0.0"
+    assert r["report_schema_version"] == "1.1.0"
     assert r["cache"]["hit"] is True
