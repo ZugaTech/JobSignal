@@ -1,7 +1,6 @@
 /**
- * JobSignal minimal UI (Sprint 3).
- * Phases: idle, loading, success, warning, error. cache_hit is an overlay on success/warning.
- * Replace mockVerify with fetch("/v1/verify") when the API is available.
+ * JobSignal UI — calls POST /v1/verify (see window.JOBSIGNAL_API_BASE).
+ * Phases: idle, loading, success, warning, error; cache hit badge on result when report.cache.hit.
  */
 
 const $ = (id) => document.getElementById(id);
@@ -17,16 +16,24 @@ const PHASE = {
 // Mirrors backend/core/inputs.py limits for early client-side rejection.
 const MAX_URL_CHARS = 2048;
 const MAX_TEXT_CHARS = 100000;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function readInputs() {
-  return { url: $("jobUrl").value, text: $("jobText").value };
+  return {
+    url: $("jobUrl").value,
+    text: $("jobText").value,
+    file: $("jobImage").files?.[0] ?? null,
+  };
 }
 
-function validateClientInputs(urlRaw, textRaw) {
+function validateClientInputs(urlRaw, textRaw, file) {
   const url = String(urlRaw ?? "").trim();
   const text = String(textRaw ?? "").trim();
-  if (!url && !text) {
-    return { ok: false, message: "Enter a job URL and/or pasted description." };
+  if (!url && !text && !file) {
+    return { ok: false, message: "Enter a job URL, pasted description, and/or a screenshot." };
+  }
+  if (file && file.size > MAX_IMAGE_BYTES) {
+    return { ok: false, message: "Screenshot must be 5MB or smaller." };
   }
   if (url.includes("\u0000") || text.includes("\u0000")) {
     return { ok: false, message: "Input contains disallowed NUL bytes." };
@@ -124,6 +131,29 @@ function renderReport(report) {
   }
 }
 
+function renderIngestion(report) {
+  const el = $("ingestionNote");
+  const ing = report.ingestion;
+  if (!ing) {
+    el.classList.add("hidden");
+    el.textContent = "";
+    el.classList.remove("warn");
+    return;
+  }
+  el.classList.remove("hidden");
+  if (ing.status === "insufficient") {
+    el.textContent =
+      ing.message ||
+      "Screenshot alone was not readable enough — paste the job URL (preferred) or full job text.";
+    el.classList.add("warn");
+    return;
+  }
+  el.classList.remove("warn");
+  const conf = ing.extraction_confidence ?? "n/a";
+  const mime = ing.detected_mime ? ` • ${ing.detected_mime}` : "";
+  el.textContent = `Screenshot extraction confidence: ${conf}${mime}`;
+}
+
 function escapeHtml(s) {
   return String(s)
     .replaceAll("&", "&amp;")
@@ -139,8 +169,8 @@ function getApiBase() {
 async function runFlow() {
   $("errorPanel").classList.add("hidden");
   $("result").classList.add("hidden");
-  const { url, text } = readInputs();
-  const validation = validateClientInputs(url, text);
+  const { url, text, file } = readInputs();
+  const validation = validateClientInputs(url, text, file);
   if (!validation.ok) {
     setPhase(PHASE.ERROR);
     $("errorText").textContent = validation.message;
@@ -152,17 +182,27 @@ async function runFlow() {
   $("btnRun").disabled = true;
 
   try {
-    const res = await fetch(`${getApiBase()}/v1/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ job_url: url || null, job_description: text || null }),
-    });
+    let res;
+    if (file) {
+      const fd = new FormData();
+      if (url) fd.append("job_url", url);
+      if (text) fd.append("job_description", text);
+      fd.append("job_image", file, file.name || "screenshot.png");
+      res = await fetch(`${getApiBase()}/v1/verify`, { method: "POST", body: fd });
+    } else {
+      res = await fetch(`${getApiBase()}/v1/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_url: url || null, job_description: text || null }),
+      });
+    }
     if (!res.ok) {
       const body = await res.text();
       throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
     }
     const report = await res.json();
     renderReport(report);
+    renderIngestion(report);
 
     const uiPhase = mapUiPhaseFromReport(report);
     setPhase(uiPhase);
@@ -182,4 +222,17 @@ async function runFlow() {
 $("btnRun").addEventListener("click", () => {
   setPhase(PHASE.IDLE);
   runFlow();
+});
+
+$("jobImage").addEventListener("change", () => {
+  const f = $("jobImage").files?.[0];
+  const wrap = $("imagePreviewWrap");
+  const img = $("imagePreview");
+  if (!f) {
+    wrap.classList.add("hidden");
+    img.removeAttribute("src");
+    return;
+  }
+  img.src = URL.createObjectURL(f);
+  wrap.classList.remove("hidden");
 });
