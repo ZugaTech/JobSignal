@@ -52,6 +52,7 @@ class CacheMeta(TypedDict):
 class ResponseMeta(TypedDict):
     pipeline_version: str
     scorer_version: str
+    pipeline_steps: NotRequired[List[dict[str, str]]]
 
 
 class VerifyResponse(DecisionResponse):

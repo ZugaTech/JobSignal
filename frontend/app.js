@@ -93,6 +93,25 @@ function mapUiPhaseFromReport(report) {
   return PHASE.WARNING; // VERIFY, SKIP, or APPLY with uncertainty
 }
 
+function renderTimeline(report) {
+  const container = $("pipelineTimeline");
+  const steps = report.meta?.pipeline_steps || [];
+  container.innerHTML = "";
+  if (!steps.length) {
+    container.parentElement.classList.add("hidden");
+    return;
+  }
+  container.parentElement.classList.remove("hidden");
+  for (const s of steps) {
+    const div = document.createElement("div");
+    div.className = "timeline-step";
+    if (s.status === "ok") div.classList.add("ok");
+    if (s.status === "miss") div.classList.add("active");
+    div.textContent = s.label;
+    container.appendChild(div);
+  }
+}
+
 function renderReport(report) {
   $("verdict").textContent = report.verdict;
   $("confidence").textContent = report.confidence;
@@ -130,6 +149,8 @@ function renderReport(report) {
   } else {
     strip.classList.add("hidden");
   }
+  
+  renderTimeline(report);
 }
 
 function renderRecommendations(report) {
@@ -164,8 +185,10 @@ function renderRecommendations(report) {
     const badgeClass = band === "HIGH" ? "badge-high" : "badge-medium";
     const reasons = (r.similarity_reasons || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("");
     li.innerHTML = `
-      <span class="badge ${badgeClass}">${escapeHtml(band)}</span>
-      <span class="muted">Verdict: ${escapeHtml(r.verdict || "—")}</span>
+      <div class="rec-card-header">
+        <span class="badge ${badgeClass}">${escapeHtml(band)}</span>
+        <span class="muted">Verdict: ${escapeHtml(r.verdict || "—")}</span>
+      </div>
       <div class="rec-url"></div>
       <ul class="rec-reasons">${reasons}</ul>
     `;

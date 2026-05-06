@@ -186,19 +186,28 @@ def verify_job(
         pipeline_version=cfg.source_pipeline_version,
         source_set_version="fixtures-v1",
         image_bytes_sha256=image_sha,
+        image_ingest_version=IMAGE_INGEST_VERSION if has_image else None,
         fetch_profile=fetch_profile,
     )
 
+    steps = []
+    steps.append({"id": "normalize", "label": "Normalized input"})
+    
     cache = _get_cache(cfg)
     cached = cache.get(cache_key.materialized)
     if cached:
+        steps.append({"id": "cache", "label": "Cache hit", "status": "ok"})
         payload = json.loads(cached)
         signals = payload.get("signals", [])
         decision = decide_from_signals(signals, url_provided=bool(norm.canonical_url))
         report = build_public_report(
             decision,
             cache={"hit": True, "ttl_expires_at": None, "key_fingerprint": cache_key.fingerprint_preview},
-            meta={"pipeline_version": cfg.source_pipeline_version, "scorer_version": SCORER_VERSION},
+            meta={
+                "pipeline_version": cfg.source_pipeline_version, 
+                "scorer_version": SCORER_VERSION,
+                "pipeline_steps": steps
+            },
             ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="cache"),
         )
         _maybe_attach_recommendations(
@@ -210,6 +219,7 @@ def verify_job(
         )
         return report
 
+    steps.append({"id": "cache", "label": "Cache miss", "status": "miss"})
     signals: List[Dict[str, Any]] = []
     warnings: List[Dict[str, str]] = list(ingest_warnings)
 
@@ -239,11 +249,13 @@ def verify_job(
 
     live_fetch_attempted = False
     if norm.canonical_url and job_fetch_enabled():
+        steps.append({"id": "fetch", "label": "Live page fetch"})
         fx = run_job_page_fetch(norm.canonical_url, cfg)
         live_fetch_attempted = fx.attempted
         signals.extend(fx.signals)
         warnings.extend(fx.warnings)
 
+    steps.append({"id": "evidence", "label": "Evidence collection"})
     fixtures_path = os.environ.get("JOBSIGNAL_FIXTURES_PATH", "data_sources/fixtures/verify_fixtures.json")
     fe = load_fixture_evidence(
         fixtures_path=fixtures_path,
@@ -264,17 +276,23 @@ def verify_job(
             }
         )
 
+    steps.append({"id": "llm", "label": "AI intelligence (T3)"})
     llm = build_llm_signals(job_text=norm.description_text or "")
     if llm.signals:
         signals.extend(llm.signals)
     if llm.warnings:
         warnings.extend(llm.warnings)
 
+    steps.append({"id": "score", "label": "Scoring engine"})
     decision = decide_from_signals(signals, url_provided=bool(norm.canonical_url))
     report = build_public_report(
         decision,
         cache={"hit": False, "ttl_expires_at": None, "key_fingerprint": cache_key.fingerprint_preview},
-        meta={"pipeline_version": cfg.source_pipeline_version, "scorer_version": SCORER_VERSION},
+        meta={
+            "pipeline_version": cfg.source_pipeline_version, 
+            "scorer_version": SCORER_VERSION,
+            "pipeline_steps": steps
+        },
         ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="live"),
     )
     _maybe_attach_recommendations(

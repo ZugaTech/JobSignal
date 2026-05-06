@@ -39,29 +39,54 @@
       </section>
 
       <section id="result" class="panel hidden" aria-live="polite">
-        <p id="ingestionNote" class="muted hidden" aria-live="polite"></p>
-        <div id="cacheBadge" class="cache-badge hidden" data-cache-role="hit">Recent shared check</div>
-        <div id="uncertaintyStrip" class="strip hidden">We’re not fully confident yet—confirm on the employer’s official careers page before you spend time applying.</div>
-        <div class="verdict-row">
-          <div class="verdict" id="verdict">VERIFY</div>
-          <div class="confidence" id="confidence">medium</div>
+        <div class="result-header">
+          <div id="cacheBadge" class="cache-badge hidden" data-cache-role="hit">Recent shared check</div>
+          <div id="ingestionNote" class="muted hidden" aria-live="polite"></div>
         </div>
-        <h2>Signals</h2>
-        <table class="table" id="signalTable">
-          <thead>
-            <tr>
-              <th>Signal</th>
-              <th>Tier</th>
-              <th>Strength</th>
-              <th>Details</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-        <h2>Reasons</h2>
-        <ul id="reasonList"></ul>
-        <h2>Warnings</h2>
-        <ul id="warnList"></ul>
+        
+        <div id="uncertaintyStrip" class="strip hidden">We’re not fully confident yet—confirm on the employer’s official careers page before you spend time applying.</div>
+        
+        <div class="verdict-card">
+          <div class="verdict-row">
+            <div class="verdict-label">Verdict</div>
+            <div class="verdict" id="verdict">VERIFY</div>
+          </div>
+          <div class="confidence-row">
+            <div class="confidence-label">Confidence</div>
+            <div class="confidence" id="confidence">medium</div>
+          </div>
+        </div>
+
+        <div class="timeline-container">
+          <h3>Pipeline timeline</h3>
+          <div id="pipelineTimeline" class="timeline"></div>
+        </div>
+
+        <h3>Signals</h3>
+        <div class="table-wrap">
+          <table class="table" id="signalTable">
+            <thead>
+              <tr>
+                <th>Signal</th>
+                <th>Tier</th>
+                <th>Strength</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="reasons-warnings-grid">
+          <div class="reasons-col">
+            <h3>Reasons</h3>
+            <ul id="reasonList" class="info-list"></ul>
+          </div>
+          <div class="warnings-col">
+            <h3>Warnings</h3>
+            <ul id="warnList" class="info-list warn"></ul>
+          </div>
+        </div>
         <div id="recSection" class="rec-section hidden">
           <h2>Similar jobs</h2>
           <p id="recMeta" class="muted"></p>
