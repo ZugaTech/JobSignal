@@ -1,31 +1,59 @@
 {
   "by_url_sha256": {
-    "REPLACE_WITH_REAL_URL_SHA256": {
+    "925165acb1d431ae935e31ef477d6edd1b8b4ac46982191c0fba6b455a045660": {
       "signals": [
         {
           "id": "fetch_ok",
-          "label": "fetch_ok",
+          "label": "Live page fetch",
           "tier": "T1",
           "strength": "high",
-          "details": "Fixture: posting page fetched successfully (mocked)."
+          "details": "Evidence: Google careers page fetched successfully (mocked)."
         },
         {
           "id": "domain_align",
-          "label": "domain_align",
+          "label": "Domain alignment",
           "tier": "T1",
-          "strength": "medium",
-          "details": "Fixture: registrable domain aligns with employer-controlled domain."
-        },
-        {
-          "id": "search_corroboration",
-          "label": "search_corroboration",
-          "tier": "T2",
-          "strength": "medium",
-          "details": "Fixture: corroborating results from reputable sources."
+          "strength": "high",
+          "details": "Evidence: Registrable domain aligns with Google LLC official presence."
         }
       ],
       "warnings": []
+    },
+    "d001433ef1d9943bad705a52def94d033e7db535c6c2f0fbf64611d57d413473": {
+      "signals": [
+        {
+          "id": "fetch_ok",
+          "label": "Live page fetch",
+          "tier": "T1",
+          "strength": "low",
+          "details": "Evidence: URL resolved to a known URL shortener (bit.ly) with multiple redirects."
+        }
+      ],
+      "warnings": [
+        {
+          "code": "SUSPECT_DOMAIN",
+          "message": "This URL uses a shortener often associated with phishing; exercise caution."
+        }
+      ]
     }
   },
-  "by_text_sha256": {}
+  "by_text_sha256": {
+    "86a6c466ca02806f327aa3df9cb028e21462578d133533fae442d62ea65eeeb3": {
+      "signals": [
+        {
+          "id": "prompt_guard",
+          "label": "Safety signals",
+          "tier": "T3",
+          "strength": "low",
+          "details": "Detected high-pressure language ('Urgent hire') and unusual contact methods (Telegram)."
+        }
+      ],
+      "warnings": [
+        {
+          "code": "SCAM_VIBES",
+          "message": "Job description contains markers often seen in work-from-home scams."
+        }
+      ]
+    }
+  }
 }

@@ -62,3 +62,15 @@
 
 ## 6) Conclusion
 **Narrative:** *"JobSignal isn't about giving you a green light every time. It's about giving you the evidence to make a safe decision. No fabricated data, no false certainties. Just honest verification."*
+
+---
+
+## 7) Submission Checklist
+- [ ] **Python Version:** 3.10+ (compatible with `typing_extensions`).
+- [ ] **Dependencies:** Run `pip install -r requirements.txt`.
+- [ ] **Environment:** Copy `.env.example` to `.env`.
+- [ ] **Verification:** Run `pytest` to ensure all 89 tests pass locally.
+- [ ] **Service Start:**
+  - Backend: `uvicorn backend.api.main:app --host 0.0.0.0 --port 8080 --reload`
+  - Frontend: `python -m http.server 3000 --directory frontend` (or any static server).
+- [ ] **Fixtures Mode:** Ensure `JOBSIGNAL_SEARCH_FIXTURE_PATH` is set for offline demos.
