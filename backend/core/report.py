@@ -20,6 +20,7 @@ class PublicVerifyReport(TypedDict, total=False):
     cache: CacheMeta
     meta: ResponseMeta
     ingestion: dict[str, Any]
+    recommendations: list[dict[str, Any]]
 
 
 def build_public_report(
@@ -30,7 +31,7 @@ def build_public_report(
     ingestion: Optional[dict[str, Any]] = None,
 ) -> PublicVerifyReport:
     payload = decision_to_jsonable(decision)
-    merged: dict[str, Any] = {"report_schema_version": "1.1.0", **payload}
+    merged: dict[str, Any] = {"report_schema_version": "1.2.0", **payload}
     if cache is not None:
         merged["cache"] = cache
     if meta is not None:

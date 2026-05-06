@@ -27,7 +27,7 @@ from backend.core.image_ingest import (
 )
 from backend.core.inputs import InputValidationError, validate_verify_inputs
 from backend.core.llm_fireworks import build_llm_signals
-from backend.core.normalization import normalize_job_input
+from backend.core.normalization import NormalizationResult, normalize_job_input
 from backend.core.report import build_public_report
 from backend.core.scoring import SCORER_VERSION, decide_from_signals
 
@@ -96,12 +96,45 @@ def _insufficient_image_report(
     )
 
 
+def _maybe_attach_recommendations(
+    report: Dict[str, Any],
+    *,
+    norm: NormalizationResult,
+    merged_fields: Optional[ExtractedVisionFields],
+    skip_recommendations: bool,
+    recommendations_enabled: Optional[bool],
+) -> None:
+    if skip_recommendations:
+        return
+    from backend.core.recommendations import extend_report_with_recommendations
+
+    def verify_candidate(candidate_url: str) -> Dict[str, Any]:
+        return verify_job(
+            candidate_url,
+            None,
+            skip_recommendations=True,
+            recommendations_enabled=False,
+            image_bytes=None,
+            image_media_type=None,
+        )
+
+    extend_report_with_recommendations(
+        report,
+        norm,
+        merged_fields,
+        user_requested=recommendations_enabled,
+        verify_candidate=verify_candidate,
+    )
+
+
 def verify_job(
     job_url: Optional[str],
     job_description: Optional[str],
     *,
     image_bytes: Optional[bytes] = None,
     image_media_type: Optional[str] = None,
+    skip_recommendations: bool = False,
+    recommendations_enabled: Optional[bool] = None,
 ) -> Dict[str, Any]:
     cfg = EnvConfig.load(strict=False)
     has_image = image_bytes is not None
@@ -151,12 +184,20 @@ def verify_job(
         payload = json.loads(cached)
         signals = payload.get("signals", [])
         decision = decide_from_signals(signals, url_provided=bool(norm.canonical_url))
-        return build_public_report(
+        report = build_public_report(
             decision,
             cache={"hit": True, "ttl_expires_at": None, "key_fingerprint": cache_key.fingerprint_preview},
             meta={"pipeline_version": cfg.source_pipeline_version, "scorer_version": SCORER_VERSION},
             ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="cache"),
         )
+        _maybe_attach_recommendations(
+            report,
+            norm=norm,
+            merged_fields=merged_fields,
+            skip_recommendations=skip_recommendations,
+            recommendations_enabled=recommendations_enabled,
+        )
+        return report
 
     signals: List[Dict[str, Any]] = []
     warnings: List[Dict[str, str]] = list(ingest_warnings)
@@ -224,6 +265,13 @@ def verify_job(
         cache={"hit": False, "ttl_expires_at": None, "key_fingerprint": cache_key.fingerprint_preview},
         meta={"pipeline_version": cfg.source_pipeline_version, "scorer_version": SCORER_VERSION},
         ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="live"),
+    )
+    _maybe_attach_recommendations(
+        report,
+        norm=norm,
+        merged_fields=merged_fields,
+        skip_recommendations=skip_recommendations,
+        recommendations_enabled=recommendations_enabled,
     )
 
     shared_payload = strip_tenant_fields(
