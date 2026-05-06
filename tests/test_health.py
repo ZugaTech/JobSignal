@@ -13,6 +13,12 @@ def test_ready_dev_without_cache_still_ready(monkeypatch):
     cfg = EnvConfig.load(strict=False)
     r = build_ready_payload(cfg, cache_ping_ok=None)
     assert r["status"] == "ready"
+    assert r["checks"]["search_configured"] in (True, False)
+    assert r["checks"]["recommendations_default_enabled"] in (True, False)
+    assert r["checks"]["job_fetch_enabled"] in (True, False)
+    assert r["checks"]["image_verify_enabled"] in (True, False)
+    assert r["checks"]["llm_signals_enabled"] in (True, False)
+    assert r["checks"]["fireworks_key_present"] in (True, False)
 
 
 def test_ready_staging_without_cache_not_ready():
