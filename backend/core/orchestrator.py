@@ -16,6 +16,7 @@ from backend.core.cache_payload import serialize_payload, strip_tenant_fields
 from backend.core.cache_store import InMemoryCache
 from backend.core.decision_schema import DecisionResponse, ReasonItem, Verdict, WarningItem
 from backend.core.env import EnvConfig
+from backend.core.fetch_job_page import job_fetch_enabled, run_job_page_fetch
 from backend.core.fixtures import load_fixture_evidence
 from backend.core.image_ingest import (
     IMAGE_INGEST_VERSION,
@@ -136,11 +137,13 @@ def verify_job(
 
     norm = normalize_job_input(effective_url, effective_text)
     image_sha = hashlib.sha256(image_bytes).hexdigest() if has_image and image_bytes else None
+    fetch_profile = "live" if job_fetch_enabled() else "off"
     cache_key = build_public_cache_key(
         norm,
         pipeline_version=cfg.source_pipeline_version,
         source_set_version="fixtures-v1",
         image_bytes_sha256=image_sha,
+        fetch_profile=fetch_profile,
     )
 
     cached = _MEM_CACHE.get(cache_key.materialized)
@@ -162,12 +165,32 @@ def verify_job(
         signals.append(
             {
                 "id": "url_canonical",
-                "label": "url_canonical",
+                "label": "Posting URL",
                 "tier": "none",
                 "strength": "low",
                 "details": norm.canonical_url[:256],
             }
         )
+    elif (norm.description_text or "").strip():
+        signals.append(
+            {
+                "id": "input_text_only",
+                "label": "What we checked",
+                "tier": "none",
+                "strength": "low",
+                "details": (
+                    "You shared pasted text only (no job link). We can read the description, but we can’t yet "
+                    "cross-check the employer careers page or listing history—add the URL for a stronger result."
+                ),
+            }
+        )
+
+    live_fetch_attempted = False
+    if norm.canonical_url and job_fetch_enabled():
+        fx = run_job_page_fetch(norm.canonical_url, cfg)
+        live_fetch_attempted = fx.attempted
+        signals.extend(fx.signals)
+        warnings.extend(fx.warnings)
 
     fixtures_path = os.environ.get("JOBSIGNAL_FIXTURES_PATH", "data_sources/fixtures/verify_fixtures.json")
     fe = load_fixture_evidence(
@@ -176,7 +199,10 @@ def verify_job(
         description_full_sha256=norm.description_full_sha256,
     )
     if fe:
-        signals.extend(fe.signals)
+        fsigs = fe.signals
+        if live_fetch_attempted:
+            fsigs = [s for s in fsigs if str(s.get("id")) not in ("fetch_ok", "domain_align")]
+        signals.extend(fsigs)
         warnings.extend(fe.warnings)
     else:
         warnings.append(
