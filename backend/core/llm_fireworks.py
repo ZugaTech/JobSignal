@@ -75,7 +75,6 @@ def extract_job_fields_from_image_vision(
         )
         return None, warnings
 
-    _ = mime_type  # reserved for logging / provider-specific paths
     model = (
         _get("FIREWORKS_VISION_MODEL")
         or _get("FIREWORKS_MODEL")
@@ -100,6 +99,7 @@ def extract_job_fields_from_image_vision(
         "- job_url_hint only if a URL is clearly visible (http/https).\n"
         "- extracted_job_text should be plain text of visible posting content, or empty if unreadable.\n"
         "- notes: one short sentence about limitations.\n"
+        f"(Image MIME hint for debugging: {mime_type}.)\n"
     )
 
     try:
