@@ -29,12 +29,14 @@ def test_effective_max_hard_caps_at_three(monkeypatch):
 
 
 def test_collect_search_returns_urls(stub_path):
-    urls, w = collect_search_urls(["acme hiring"], limit=4)
+    _ = stub_path
+    urls, _w = collect_search_urls(["acme hiring"], limit=4)
     assert len(urls) == 4
     assert all(u.startswith("https://") for u in urls)
 
 
 def test_build_recommendations_max_three_and_high_first(stub_path):
+    _ = stub_path
     norm = normalize_job_input("https://seed.example/posting", "We need a senior engineer for acme")
     calls: list[str] = []
 
@@ -65,10 +67,11 @@ def test_build_recommendations_max_three_and_high_first(stub_path):
 
 
 def test_provider_fallback_empty_then_fixture(monkeypatch, stub_path):
+    _ = stub_path
     class EmptySerp:
         name = "serpapi"
 
-        def search(self, query: str, *, limit: int) -> list[str]:
+        def search(self, _query: str, *, limit: int) -> list[str]:
             return []
 
     monkeypatch.setenv("SEARCH_PROVIDER_ORDER", "serpapi,fixture")
@@ -80,6 +83,7 @@ def test_provider_fallback_empty_then_fixture(monkeypatch, stub_path):
 
 
 def test_extend_report_respects_explicit_false(monkeypatch, stub_path):
+    _ = stub_path
     monkeypatch.setenv("RECOMMENDATIONS_ENABLED", "1")
     norm = normalize_job_input("https://x.example/j", "role")
     report: dict = {"verdict": "VERIFY", "confidence": "low", "warnings": [], "reasons": [], "signals": []}
@@ -129,3 +133,24 @@ def test_by_query_substring_fixture(tmp_path, monkeypatch):
     monkeypatch.setenv("SEARCH_PROVIDER_ORDER", "fixture")
     urls, _ = collect_search_urls(["widget engineer"], limit=5)
     assert urls == ["https://widget.co/a", "https://widget.co/b"]
+
+
+def test_search_empty_sets_empty_status(monkeypatch, tmp_path):
+    p = tmp_path / "s.json"
+    p.write_text("{\"urls\": []}", encoding="utf-8")
+    monkeypatch.setenv("JOBSIGNAL_SEARCH_FIXTURE_PATH", str(p))
+    monkeypatch.setenv("SEARCH_PROVIDER_ORDER", "fixture")
+    monkeypatch.setenv("RECOMMENDATIONS_ENABLED", "1")
+
+    norm = normalize_job_input("https://seed.example/posting", "some role text")
+    report: dict = {
+        "verdict": "VERIFY",
+        "confidence": "low",
+        "warnings": [],
+        "reasons": [{"code": "r1", "message": "m1"}, {"code": "r2", "message": "m2"}],
+        "signals": [],
+        "meta": {"pipeline_version": "1", "scorer_version": "1"},
+    }
+    extend_report_with_recommendations(report, norm, None, user_requested=None, verify_candidate=lambda u: report)
+    assert report.get("recommendations") == []
+    assert report["meta"].get("recommendations_status") == "empty"

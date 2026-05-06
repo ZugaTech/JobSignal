@@ -19,7 +19,14 @@
 ## 3. Health checks
 
 - `backend/core/health.py` exposes `build_health_payload` for **`/health`** (liveness) and **`/ready`** (readiness) contracts.
-- Readiness may include optional dependency pings (cache URL present, search endpoint configured) — **boolean flags only**, no secrets in response body.
+- Readiness includes optional dependency booleans — **boolean flags only**, no secrets in response body:
+  - `cache_url_configured`
+  - `search_configured` (recommendations/search)
+  - `recommendations_default_enabled`
+  - `job_fetch_enabled`
+  - `image_verify_enabled`
+  - `llm_signals_enabled`
+  - `fireworks_key_present`
 
 ## 4. Observability (minimal production)
 
