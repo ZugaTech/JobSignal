@@ -13,7 +13,7 @@
 
 **Baseline verification**
 
-- `python -m pytest`: **85 passed** (local; includes Sprint 9 primary fetch tests)
+- `python -m pytest`: **94 passed** (local; Sprint 6 recommendations + Sprint 9 fetch)
 - Scope addendum: `docs/scope_addendum_2026-05-06.md`
 - Scorer: `SCORER_VERSION = 3.1.0` (description-only intelligence; cache-invalidating)
 
@@ -26,7 +26,7 @@
 | Python runtime / test harness (`pyproject.toml`, pytest) | 🟢 | Core libs + tests run. |
 | HTTP server app (FastAPI) | 🟢 | `backend/api/main.py` (`create_app`) + `Procfile`. |
 | Routes: `/health` + `/ready` | 🟡 | HTTP wiring exists; `/ready` does not ping real cache yet. |
-| Route: `/v1/verify` | 🟡 | JSON + **multipart** (`job_image`); fixtures evidence; optional **Fireworks vision** behind `ENABLE_IMAGE_VERIFY`. |
+| Route: `/v1/verify` | 🟡 | JSON + **multipart**; optional **`recommendations_enabled`**; fixtures + optional **similar jobs** (SerpAPI/fixture) max 3. |
 | CORS / request id | 🟡 | CORS allows `*` for demo; request-id propagation not yet implemented. |
 
 ---
@@ -42,7 +42,7 @@
 | Scoring + verdict + confidence | 🟢 | `backend/core/scoring.py` + tests. **3.1.0** adds `TEXT_PATTERN_MATCH` SKIP + Path C (text-only APPLY exception, capped `medium`). |
 | Description-only LLM signals (T3) | 🟢 | `backend/core/llm_fireworks.map_llm_payload_to_signals` produces `jd_specificity`, `jd_red_flags`, `jd_missing_fields`, `jd_scam_indicators`, `jd_content_farm_score`, `jd_ai_generated_score`, `jd_recruiter_intent_score`, `jd_employer_identifiability` at tier `T3` with user-facing labels. |
 | Public report envelope | 🟢 | `backend/core/report.py` + tests. |
-| Orchestrator function (end-to-end in code) | 🟡 | `backend/core/orchestrator.py` wires validate→**optional image ingest**→normalize→**optional live job fetch** (`ENABLE_JOB_FETCH`)→cache→fixtures→score→report (`report_schema_version` 1.1.0 + `ingestion`). Search/candidate collectors still pending. |
+| Orchestrator function (end-to-end in code) | 🟡 | Orchestrator: image ingest → normalize → live fetch → verify → **`recommendations` attach** (`report_schema_version` **1.2.0** + `ingestion`). |
 
 ---
 
@@ -50,7 +50,7 @@
 
 | Item | Status | Notes |
 |------|--------|------|
-| Search adapter (real provider) | ⚪ | Candidate providers (planned multi-provider fallback): **SerpAPI**, **Zenserp**, **Bing Web Search**, **Google Programmable Search**. |
+| Search adapter (real provider) | 🟡 | **SerpAPI** wired for recommendations + **JSON fixture** provider; Zenserp/Bing/Google CSE still optional/future. |
 | Fetch adapter (SSRF-safe) | 🟡 | **Primary** URL GET + signals: `backend/core/fetch_job_page.py` behind `ENABLE_JOB_FETCH` (default off); candidate/search fetches still pending (Sprint 6+). |
 | Deterministic fixtures for CI | 🟡 | `data_sources/fixtures/verify_fixtures.json` added; needs real hashes and more cases. |
 

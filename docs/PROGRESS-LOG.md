@@ -12,6 +12,14 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 
 ## Log entries (newest first)
 
+### 2026-05-06 — Sprint 6: similar jobs (search + verify, max 3)
+
+- **Core:** `backend/core/recommendations.py` — query packs from normalization (+ optional vision fields), provider chain (`SEARCH_PROVIDER_ORDER`: **SerpAPI** + **fixture** stub), bounded URL pool, nested `verify_job(..., skip_recommendations=True)` per candidate; **HIGH** / **MEDIUM** bands from candidate confidence only; hard max 3.
+- **API / report:** `recommendations_enabled` on JSON + multipart; `report_schema_version` **1.2.0**; `recommendations[]` + `meta.recommendations_status`; explicit `false` skips; no shared-cache payload change for recs.
+- **Frontend:** checkbox + similar-jobs section with badges and honesty copy.
+- **Docs:** `docs/recommendations.md`, `.env.example`, `docs/environment.md`.
+- **Tests:** `tests/test_recommendations.py`; `python -m pytest` — **94 passed**.
+
 ### 2026-05-06 — Sprint 9: SSRF-safe primary job URL fetch
 
 - **Core:** `backend/core/fetch_job_page.py` — DNS resolution + IP blocklist before connect, manual redirects with per-hop validation, bounded streaming read; adds **`fetch_ok`** + **`domain_align`** (T1) from live GET when `ENABLE_JOB_FETCH=1`.
@@ -108,7 +116,7 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 | **3** | Done (scoring + static UI + tests; API still mock) | `scoring.md`, `decision_logic.md`, `frontend_flow.md`, `backend/core/scoring.py`, `report.py`, `frontend/*`, `docs/sprints/sprint-3.md` |
 | **4** | Done (hardening + docs + tests; no scope creep) | `security.md`, `reliability.md`, `deployment_readiness.md`, `final_scope.md`, `env.py`, `inputs.py`, `prompt_guard.py`, `health.py`, `docs/sprints/sprint-4.md` |
 | **5** | Done (image path + insufficient-screenshot UX) | `image_ingest.md`, `scope_addendum_2026-05-06.md`, `backend/core/image_ingest.py`, multipart `/v1/verify`, `frontend` file upload |
-| **6** | Planned | Recommendations (search + verify, max 3) — `docs/plan_vnext_multimodal_and_recommendations.md` |
+| **6** | Done | `recommendations.py`, SerpAPI + fixture providers, UI checkbox, `docs/recommendations.md` |
 | **7** | Planned | Multimodal + recommendations hardening |
 | **8** | Planned | Demo script, optional CI, release tag |
 | **9** | Done | `fetch_job_page.py`, `ENABLE_JOB_FETCH`, live `fetch_ok` / `domain_align`, `docs/fetch_job_page.md` |

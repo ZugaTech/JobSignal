@@ -36,8 +36,14 @@ Operational and configuration variables expected at runtime. **Names are stable 
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `SEARCH_API_KEY` | When search enabled | API key for hosted search |
+| `SEARCH_API_KEY` | When search enabled | API key for hosted search (also used by SerpAPI adapter) |
 | `SEARCH_API_ENDPOINT` | When search enabled | Base URL for search provider |
+| `SERPAPI_API_KEY` | Optional | SerpAPI key for similar-job search (`recommendations`) |
+| `JOBSIGNAL_SEARCH_FIXTURE_PATH` | Optional | JSON fixture for offline search results (tests/demos) |
+| `SEARCH_PROVIDER_ORDER` | No | e.g. `serpapi,fixture` — try providers in order |
+| `RECOMMENDATIONS_ENABLED` | No | Default off; client can pass `recommendations_enabled` to override per request |
+| `RECOMMENDATIONS_MAX` | No | Hard-capped at **3** in code |
+| `RECOMMENDATIONS_CANDIDATE_POOL` | No | Max URLs to pull from search before verify (default 8) |
 | `ENABLE_LLM_SIGNALS` | Optional | `1` enables LLM-derived *text-only* signals from job description |
 | `FIREWORKS_API_KEY` | When LLM enabled | Fireworks API key for runtime inference |
 | `FIREWORKS_BASE_URL` | No | Defaults to Fireworks OpenAI-compatible base URL |

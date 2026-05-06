@@ -34,3 +34,4 @@
 |------|--------|-----|
 | Sprint 4 | Frozen scope statement | Sprint 4 deliverable. |
 | 2026-05-06 | Optional screenshot input + vision extraction (see `docs/scope_addendum_2026-05-06.md`) | Sprint 5 / vNext multimodal plan |
+| 2026-05-06 | Optional **similar jobs** (max 3, search + verify, not a job board — `docs/recommendations.md`) | Sprint 6 |
