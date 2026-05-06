@@ -1,7 +1,7 @@
 # JobSignal — vNext plan: screenshots + optional “similar jobs” (hackathon-style sprints)
 
-**Status:** planning only (no implementation in this step).  
-**Date:** 2026-05-06  
+**Status:** planning (Sprint 5 shipped; Sprints 6–12 are backlog / execution order is suggestive only).  
+**Date:** 2026-05-06 (expanded 2026-05-06 with Sprints 9–12 for gap closure).  
 **Authority:** aligns with `.cursor/rules/JOBSIGNAL-RULES.mdc`, `docs/trust_model.md`, `docs/cache_design.md`, `docs/security.md`, and the post–Sprint 4 integration baseline (`docs/TECHNICAL-LEDGER.md`).
 
 ## 0) Scope acknowledgment (explicit expansion)
@@ -211,6 +211,154 @@ From `local-session-archive.md` (private reference; not committed): the hackatho
 
 ---
 
+### Suggested execution order (dependencies)
+
+Use this when choosing **which sprint to run next**; adjust for hackathon deadlines.
+
+| Order | Sprint | Why |
+|-------|--------|-----|
+| 1 | **9** — Primary job fetch | Biggest credibility gap: real page read for user-supplied URL (SSRF-safe). Feeds stronger `fetch_ok` / domain signals before recommendations. |
+| 2 | **6** — Recommendations | Reuses the same safe fetch pattern for **candidate** URLs; search router + max 3 + labeled confidence. |
+| 3 | **7** — Hardening | Tighten caps, abuse paths, cache-key versioning for recommender/OCR; `/ready` booleans without leaking secrets. |
+| 4 | **10** — Redis + `/ready` | Production-leaning shared cache + readiness that matches deploy story. |
+| 5 | **11** — Frontend explainability | Timeline, signal detail, settings, “from image” fields — high judge impact, can parallelize after API is stable. |
+| 6 | **8** + **12** | CI, tag, demo script (**8**) + credible fixture dataset and narrative depth (**12**); merge if time-constrained. |
+
+**UI-first shortcut:** If the deadline is visual only, do **11** earlier; keep **9** on the critical path before claiming “we verified the live posting.”
+
+---
+
+### Sprint 9 — Live primary job URL fetch (SSRF-safe evidence)
+
+**Goal:** When the user supplies a **canonical job URL**, the backend **fetches that page once** (within strict limits) and derives **real** evidence signals (e.g. fetch success, size, final URL, safe excerpt/hash hooks) so scoring is not fixtures-only for that path.
+
+**Scope**
+
+- SSRF protections: block private/reserved IPs, non-HTTP(S), redirect cap, total byte cap, total time cap (align with `FETCH_MAX_BYTES` / `FETCH_MAX_REDIRECTS` / env).
+- No tenant or secret data in shared cache payloads; optional content hash / length only in signals.
+- Feature flag or `NODE_ENV`-style gating if needed for CI (fixtures mode remains default for deterministic tests).
+- Orchestrator: after normalize, if URL present and fetch enabled → attach signals; on failure → VERIFY-leaning warnings, never invented page text.
+
+**Tasks**
+
+1. Docs: extend `docs/security.md` + short `docs/fetch_adapter.md` (threats, limits, failure modes).
+2. Core: `fetch_job_page.py` (or equivalent) + interface for tests; wire into `orchestrator.py`.
+3. Tests: local HTTP stub or `respx`/`httpx` mock; tests for SSRF blocks, redirect loop, oversize body.
+4. Update `docs/TECHNICAL-LEDGER.md` + `docs/PROGRESS-LOG.md`.
+
+**Done criteria**
+
+- `pytest` green with **no live network** in default suite.
+- With fetch disabled or URL absent, behavior unchanged vs current baseline.
+- With fetch enabled and stub “200 OK”, new signals appear and are documented.
+
+**Risks**
+
+- Misconfigured allowlists; mitigate with conservative defaults and tests for blocked hosts.
+
+**Fallback**
+
+- Ship with fetch off; fixtures-only path remains.
+
+---
+
+### Sprint 10 — Shared cache (Redis) + truthful `/ready`
+
+**Goal:** Optional **Redis**-backed cache via `CACHE_URL` for multi-instance deploys; **`/ready`** reflects real dependency health (cache reachable, optional “search configured” boolean) **without** exposing secrets.
+
+**Scope**
+
+- Implement `CacheStore` backend that speaks Redis when `CACHE_URL` set; retain in-memory for local dev.
+- `EnvConfig.load(strict=True)` / production path already expects `CACHE_URL` — align implementation and docs.
+- `/ready`: return 503 when strict dependencies fail; JSON fields are booleans + short codes only.
+
+**Tasks**
+
+1. Core: Redis cache adapter + connection timeout; fall back documented.
+2. API: wire `/ready` to ping cache (and optionally flag file for “search keys present”).
+3. Docs: `docs/deployment_readiness.md`, `.env.example`, `deployment/RUNBOOK.md`.
+4. Tests: use `fakeredis` or container optional marker; unit tests for adapter contract.
+
+**Done criteria**
+
+- Local dev works with **no** `CACHE_URL` (in-memory).
+- With fake/redis test double, `/ready` flips deterministically in tests.
+
+**Risks**
+
+- Redis TLS URL variants; document one supported format first.
+
+**Fallback**
+
+- Stay on in-memory cache; document single-instance deploy only.
+
+---
+
+### Sprint 11 — Frontend: explainability, settings, multimodal surfacing
+
+**Goal:** Make the **honesty story obvious** in the UI: what ran, what was uncertain, and what came from the screenshot — without inventing certainty.
+
+**Scope**
+
+- **Pipeline timeline** (compact): normalize → cache → evidence → score (copy from server meta where available; client-side labels OK for static steps if API does not yet expose a full trace).
+- **Signal detail:** expandable rows or “why this signal” using existing `signals[]`, `reasons[]`, `warnings[]`.
+- **Settings strip:** API base URL (existing), toggles for features that exist (recommendations, vision) even if some are no-ops until backend ships — show disabled reason from `/ready` or static copy.
+- **From image:** when `ingestion` + model fields exist, show a small read-only panel (title/company/URL hint) distinct from user paste.
+- **Polish:** loading skeleton, mobile spacing, focus/aria for dynamic regions.
+
+**Tasks**
+
+1. `docs/frontend_flow.md` update (states + new sections).
+2. `frontend/index.html` + `app.js` + `styles.css` (incremental; no framework migration required).
+3. Optional: lightweight `GET /v1/capabilities` later — out of scope unless it reduces guesswork; prefer `/ready` JSON fields first.
+
+**Done criteria**
+
+- Manual pass: URL-only, text-only, screenshot-only (stub), and error path all readable.
+- No verdict or APPLY styling that implies legal proof.
+
+**Risks**
+
+- Over-building “fake progress” steps; only show steps that reflect real backend behavior.
+
+**Fallback**
+
+- Ship timeline as 3 bullets + expanded signals table only.
+
+---
+
+### Sprint 12 — Demo dataset, narrative depth, submission crispness
+
+**Goal:** Judges see **repeatable** outcomes: real URLs in `verify_fixtures.json` (correct hashes), a **2–3 minute script** with expected screenshots, and a checklist so “works on my machine” is minimized.
+
+**Scope**
+
+- Curate **3–5** real job postings (or stable archived pages if allowed); document how hashes were generated; expand fixtures.
+- `docs/demo_script.md`: problem → verify (URL + screenshot) → optional recommendations → honesty disclaimer.
+- Submission checklist: env template, `uvicorn` + static server commands, what works without API keys.
+- Optional: screen recording storyboard (bullet list).
+
+**Tasks**
+
+1. Data: `data_sources/fixtures/verify_fixtures.json` + README in `data_sources/fixtures/`.
+2. Docs: demo script + checklist; link from root `README.md` (one paragraph).
+3. Align with Sprint **8** (CI/tag): same release commit can satisfy both.
+
+**Done criteria**
+
+- Fresh clone + `.env.example` only → **fixtures mode** demo runs end-to-end.
+- At least one **live** demo path documented (keys required) vs **fixtures** path.
+
+**Risks**
+
+- Jobs expire offline; mitigate with fixture-backed primary judge path + optional live URL.
+
+**Fallback**
+
+- Fixtures-only demo with fictional but stable text fingerprints (document clearly).
+
+---
+
 ## 5) Environment variables (planning list — implement later)
 
 **OCR / extraction**
@@ -234,9 +382,10 @@ From `local-session-archive.md` (private reference; not committed): the hackatho
 
 ## 6) “Next actions” for when you say proceed
 
-1. Add **`docs/scope_addendum_2026-05-06.md`** + update `docs/final_scope.md` pointers (explicit vNext bullets).
-2. Implement Sprint 5 behind flags with fixtures-first tests.
-3. Implement Sprint 6 provider router + max-3 ranking rules + UI labeling.
+1. ~~Add **`docs/scope_addendum_2026-05-06.md`** + update `docs/final_scope.md` pointers~~ (done for image scope).
+2. ~~Implement Sprint 5 behind flags with fixtures-first tests.~~ (shipped.)
+3. Pick next sprint from **§4.1 Suggested execution order** (typical: **9** then **6**).
+4. Track implementation in `docs/PROGRESS-LOG.md` + `docs/TECHNICAL-LEDGER.md` after each sprint.
 
 ---
 
@@ -245,3 +394,4 @@ From `local-session-archive.md` (private reference; not committed): the hackatho
 | Date | Change | Why |
 |------|--------|-----|
 | 2026-05-06 | Created vNext sprint plan doc | User-approved scope expansion planning; execution deferred. |
+| 2026-05-06 | Added **Sprints 9–12** + **§4.1 execution order** | Close ledger gaps: SSRF primary fetch, Redis/`/ready`, frontend explainability, demo dataset; align with backlog discussion. |
