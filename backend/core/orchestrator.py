@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from backend.core.cache_key import build_public_cache_key
 from backend.core.cache_payload import serialize_payload, strip_tenant_fields
-from backend.core.cache_store import InMemoryCache
+from backend.core.cache_store import CacheStore, InMemoryCache, RedisCache
 from backend.core.decision_schema import DecisionResponse, ReasonItem, Verdict, WarningItem
 from backend.core.env import EnvConfig
 from backend.core.fetch_job_page import job_fetch_enabled, run_job_page_fetch
@@ -32,6 +32,16 @@ from backend.core.report import build_public_report
 from backend.core.scoring import SCORER_VERSION, decide_from_signals
 
 _MEM_CACHE = InMemoryCache()
+_REDIS_CACHE: CacheStore | None = None
+
+
+def _get_cache(cfg: EnvConfig) -> CacheStore:
+    global _REDIS_CACHE  # noqa: PLW0603 - simple module cache
+    if cfg.cache_url:
+        if _REDIS_CACHE is None:
+            _REDIS_CACHE = RedisCache(cfg.cache_url)
+        return _REDIS_CACHE
+    return _MEM_CACHE
 
 
 def _ttl_seconds(ttl_days: int) -> int:
@@ -179,7 +189,8 @@ def verify_job(
         fetch_profile=fetch_profile,
     )
 
-    cached = _MEM_CACHE.get(cache_key.materialized)
+    cache = _get_cache(cfg)
+    cached = cache.get(cache_key.materialized)
     if cached:
         payload = json.loads(cached)
         signals = payload.get("signals", [])
@@ -285,5 +296,5 @@ def verify_job(
             "coverage": "partial" if signals else "none",
         }
     )
-    _MEM_CACHE.set(cache_key.materialized, serialize_payload(shared_payload), ttl_seconds=_ttl_seconds(cfg.cache_ttl_days))
+    cache.set(cache_key.materialized, serialize_payload(shared_payload), ttl_seconds=_ttl_seconds(cfg.cache_ttl_days))
     return report

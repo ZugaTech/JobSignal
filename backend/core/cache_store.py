@@ -1,4 +1,8 @@
-"""Minimal cache store interface + in-memory implementation for tests."""
+"""Cache store interface + implementations.
+
+- In-memory TTL cache (default for local dev/tests).
+- Optional Redis cache when CACHE_URL is configured (Sprint 10).
+"""
 
 from __future__ import annotations
 
@@ -34,3 +38,47 @@ class InMemoryCache:
 
     def set(self, key: str, value: str, ttl_seconds: int) -> None:
         self._data[key] = (self.now_fn() + ttl_seconds, value)
+
+
+class RedisCache:
+    """Redis-backed cache store (string values).
+
+    Redis dependency is imported lazily so unit tests can run without it.
+    """
+
+    def __init__(self, url: str, *, connect_timeout_s: float = 1.0, timeout_s: float = 1.0) -> None:
+        self._url = url
+        self._connect_timeout_s = float(connect_timeout_s)
+        self._timeout_s = float(timeout_s)
+
+    def _client(self):
+        import redis  # type: ignore
+
+        return redis.Redis.from_url(
+            self._url,
+            socket_connect_timeout=self._connect_timeout_s,
+            socket_timeout=self._timeout_s,
+            decode_responses=True,
+        )
+
+    def get(self, key: str) -> Optional[str]:
+        try:
+            return self._client().get(key)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def set(self, key: str, value: str, ttl_seconds: int) -> None:
+        try:
+            self._client().set(name=key, value=value, ex=int(ttl_seconds))
+        except Exception:  # noqa: BLE001
+            return None
+
+
+def cache_ping(cache_url: str) -> bool:
+    """Return True if Redis responds to PING quickly."""
+
+    try:
+        c = RedisCache(cache_url)._client()
+        return bool(c.ping())
+    except Exception:  # noqa: BLE001
+        return False
