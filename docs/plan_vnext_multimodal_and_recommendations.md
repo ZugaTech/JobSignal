@@ -228,7 +228,7 @@ Use this when choosing **which sprint to run next**; adjust for hackathon deadli
 
 ---
 
-### Sprint 9 — Live primary job URL fetch (SSRF-safe evidence)
+### Sprint 9 — Live primary job URL fetch (SSRF-safe evidence) — **shipped**
 
 **Goal:** When the user supplies a **canonical job URL**, the backend **fetches that page once** (within strict limits) and derives **real** evidence signals (e.g. fetch success, size, final URL, safe excerpt/hash hooks) so scoring is not fixtures-only for that path.
 

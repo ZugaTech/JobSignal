@@ -12,6 +12,15 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 
 ## Log entries (newest first)
 
+### 2026-05-06 — Sprint 9: SSRF-safe primary job URL fetch
+
+- **Core:** `backend/core/fetch_job_page.py` — DNS resolution + IP blocklist before connect, manual redirects with per-hop validation, bounded streaming read; adds **`fetch_ok`** + **`domain_align`** (T1) from live GET when `ENABLE_JOB_FETCH=1`.
+- **Orchestrator:** runs live fetch before fixtures; strips fixture `fetch_ok` / `domain_align` when live fetch attempted so evidence is not duplicated.
+- **Cache:** `build_public_cache_key(..., fetch_profile=live|off)` so enabling fetch invalidates prior rows.
+- **Docs:** `docs/fetch_job_page.md`; `docs/security.md` SSRF row updated; `.env.example` adds `ENABLE_JOB_FETCH`.
+- **Tests:** `tests/test_fetch_job_page.py` (MockTransport + patched `getaddrinfo`); cache key test for `fetch:live`.
+- **Note:** Default remains **off** for deterministic CI; turn on locally/demo with `ENABLE_JOB_FETCH=1`.
+
 ### 2026-05-06 — Description-only intelligence (3.1.0)
 
 - **Scorer (`backend/core/scoring.py`):** bumped `SCORER_VERSION` 3.0.0 → 3.1.0 (cache-invalidating). Added `_severe_text_pattern_skip` → SKIP with non-accusatory `TEXT_PATTERN_MATCH` copy and explicit "pattern match, not a fraud claim" disclaimer. Added `_text_only_apply_combo` (Path C — strict, URL-less APPLY exception capped at `medium` confidence with mandatory `TEXT_ONLY_NOT_CORROBORATED` warning). Stronger VERIFY copy when mid-tier text red flags present.
@@ -102,7 +111,7 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 | **6** | Planned | Recommendations (search + verify, max 3) — `docs/plan_vnext_multimodal_and_recommendations.md` |
 | **7** | Planned | Multimodal + recommendations hardening |
 | **8** | Planned | Demo script, optional CI, release tag |
-| **9** | Planned | SSRF-safe **primary** job URL fetch + orchestrator signals |
+| **9** | Done | `fetch_job_page.py`, `ENABLE_JOB_FETCH`, live `fetch_ok` / `domain_align`, `docs/fetch_job_page.md` |
 | **10** | Planned | Redis cache + truthful `/ready` |
 | **11** | Planned | Frontend explainability, settings strip, multimodal panel |
 | **12** | Planned | Demo fixture dataset + narrative / checklist |

@@ -52,6 +52,7 @@ Operational and configuration variables expected at runtime. **Names are stable 
 |----------|----------|---------|
 | `RATE_LIMIT_PER_MINUTE_IP` | No | Default e.g. `30` |
 | `RATE_LIMIT_PER_MINUTE_TENANT` | No | Default e.g. `120` |
+| `ENABLE_JOB_FETCH` | No | `1` runs SSRF-bounded GET of the primary job URL (`backend/core/fetch_job_page.py`); default off for CI |
 | `FETCH_MAX_BYTES` | No | Upper bound on downloaded job page |
 | `FETCH_MAX_REDIRECTS` | No | Prevent redirect loops |
 
