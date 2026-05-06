@@ -4,6 +4,7 @@ from fastapi import APIRouter, Response, status
 
 from backend.core.env import EnvConfig
 from backend.core.health import build_health_payload, build_ready_payload
+from backend.core.cache_store import cache_ping
 
 router = APIRouter()
 
@@ -21,7 +22,8 @@ def ready() -> Response:
         # Misconfigured env => not ready
         return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content='{"status":"not_ready"}', media_type="application/json")
 
-    payload = build_ready_payload(cfg, cache_ping_ok=None)
+    ping_ok = cache_ping(cfg.cache_url) if cfg.cache_url else None
+    payload = build_ready_payload(cfg, cache_ping_ok=ping_ok)
     code = int(payload.get("http", 200))
     return Response(status_code=code, content=__import__("json").dumps(payload), media_type="application/json")
 

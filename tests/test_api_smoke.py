@@ -12,6 +12,10 @@ def test_health_ok():
 
 def test_ready_returns_json():
     c = TestClient(app)
+    # Avoid live Redis network in tests.
+    import backend.api.routes.health as health_route
+
+    health_route.cache_ping = lambda _url: True  # type: ignore[assignment]
     r = c.get("/ready")
     assert r.status_code in (200, 503)
     assert "status" in r.json()

@@ -52,3 +52,19 @@ def test_ready_fails_when_cache_ping_false():
     )
     r = build_ready_payload(cfg, cache_ping_ok=False)
     assert r["status"] == "not_ready"
+
+
+def test_ready_includes_cache_ping_when_provided():
+    cfg = EnvConfig(
+        node_env="development",
+        cache_ttl_days=14,
+        source_pipeline_version="1",
+        scorer_version="1",
+        fetch_max_bytes=2_097_152,
+        fetch_max_redirects=5,
+        cache_url="redis://localhost",
+        search_api_endpoint=None,
+        log_level="info",
+    )
+    r = build_ready_payload(cfg, cache_ping_ok=True)
+    assert r["checks"]["cache_ping"] == "ok"
