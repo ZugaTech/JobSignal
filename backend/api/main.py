@@ -17,17 +17,6 @@ def create_app() -> FastAPI:
         description="Job listing verification engine — Accuracy-First doctrine.",
     )
 
-    _raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
-    _origins = [o.strip() for o in _raw_origins.split(",") if o.strip()] or ["*"]
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_origins,
-        allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
     app.include_router(health_router)
     app.include_router(verify_router)
 
@@ -63,6 +52,19 @@ def create_app() -> FastAPI:
             
         history.append(now)
         return await call_next(request)
+
+    # CORSMiddleware must be added LAST to be the OUTERMOST middleware
+    # (FastAPI executes them in reverse order of addition).
+    _raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
+    _origins = [o.strip() for o in _raw_origins.split(",") if o.strip()] or ["*"]
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     return app
 

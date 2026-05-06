@@ -42,62 +42,6 @@ body {
   position: relative;
 }
 
-.reset-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border);
-  padding: 4px 12px;
-  font-size: 0.75rem;
-  border-radius: 20px;
-  cursor: pointer;
-  width: auto;
-  margin-top: 0;
-  transition: all 0.2s ease;
-}
-
-.reset-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: var(--muted);
-}
-
-.settings-wrap {
-  margin-top: 12px;
-}
-
-.settings-toggle {
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  font-size: 0.8rem;
-  cursor: pointer;
-  width: auto;
-  margin: 0;
-  padding: 4px 8px;
-}
-
-.settings-toggle:hover {
-  color: var(--text);
-}
-
-.settings-content {
-  margin: 8px auto;
-  max-width: 300px;
-  padding: 12px;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  text-align: left;
-}
-
-.settings-content label {
-  margin-top: 0;
-  font-size: 0.7rem;
-}
-
-.settings-content input {
-  padding: 6px 10px;
-  font-size: 0.8rem;
-}
-
 .header h1 {
   margin: 0 0 8px;
   font-size: 2.5rem;

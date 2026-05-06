@@ -42,10 +42,13 @@ def _has_severe_token(text: str) -> bool:
 
 
 def _severe_text_pattern_skip(signals: List[Mapping[str, Any]], *, url_provided: bool) -> bool:
-    """Description-only SKIP when multiple severe low-trust patterns align.
-
-    This is a pattern match, not a fraud claim.
-    """
+    """Description-only SKIP when multiple severe low-trust patterns align, or evidence bundle fails."""
+    
+    official = _get_signal(signals, "official_careers_page")
+    dup_risk = _get_signal(signals, "duplicate_repost_risk")
+    
+    if not official and dup_risk:
+        return True
 
     if url_provided:
         return False
@@ -160,6 +163,12 @@ def _t3_only_loudest(signals: List[Mapping[str, Any]]) -> bool:
 
 
 def _apply_path(signals: List[Mapping[str, Any]]) -> bool:
+    official = _get_signal(signals, "official_careers_page")
+    if not official:
+        return False
+    if _get_signal(signals, "duplicate_repost_risk"):
+        return False
+        
     t1_best = _best_strength_in_tier(signals, "T1")
     t2_best = _best_strength_in_tier(signals, "T2")
     medium_plus = _count_strength_at_least(signals, "medium")
@@ -381,11 +390,10 @@ def decide_from_signals(
         )
 
     if len(reasons) < 2:
-        score = _internal_score(sorted_rows, url_provided)
         reasons.append(
             ReasonItem(
-                code="INTERNAL_SCORE",
-                message=f"Internal coverage score (debug): {score}/100 — not a user-facing guarantee.",
+                code="INCOMPLETE_EVIDENCE",
+                message="Evidence collection was partial. Unable to build a complete profile for this role.",
             )
         )
 

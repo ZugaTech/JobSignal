@@ -19,12 +19,17 @@ class ExtractionResult:
     company_hint: Optional[str]
     title_hint: Optional[str]
     location_hint: Optional[str]
+    posting_url_hint: Optional[str]
+    date_hint: Optional[str]
+    recruiter_name_hint: Optional[str]
 
 
 _TITLE_PREFIX = re.compile(r"^\s*(title|job title|position)\s*:\s*", re.I)
 _LOCATIONISH = re.compile(
     r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*[A-Z]{2})\b"  # City, ST
 )
+_DATE_REGEX = re.compile(r"\b(posted|published)\s+on\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|[A-Z][a-z]+\s+\d{1,2},?\s+\d{4})\b", re.I)
+_RECRUITER_REGEX = re.compile(r"(?:recruiter|hiring manager)\s*:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})", re.I)
 
 
 def _company_from_domain(domain: Optional[str]) -> Optional[str]:
@@ -56,13 +61,27 @@ def extract_entities(norm: NormalizationResult) -> ExtractionResult:
 
     title = _first_meaningful_line(norm.description_text)
     loc = None
+    date_hint = None
+    rec_hint = None
+    
     if norm.description_text:
-        m = _LOCATIONISH.search(norm.description_text)
-        if m:
-            loc = m.group(1)
+        m_loc = _LOCATIONISH.search(norm.description_text)
+        if m_loc:
+            loc = m_loc.group(1)
+            
+        m_date = _DATE_REGEX.search(norm.description_text)
+        if m_date:
+            date_hint = m_date.group(2)
+            
+        m_rec = _RECRUITER_REGEX.search(norm.description_text)
+        if m_rec:
+            rec_hint = m_rec.group(1)
 
     return ExtractionResult(
         company_hint=company,
         title_hint=title,
         location_hint=loc,
+        posting_url_hint=norm.canonical_url,
+        date_hint=date_hint,
+        recruiter_name_hint=rec_hint,
     )

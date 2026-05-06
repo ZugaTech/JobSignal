@@ -255,6 +255,17 @@ def verify_job(
         warnings.extend(fx.warnings)
 
     steps.append({"id": "evidence", "label": "Evidence collection"})
+    
+    from backend.core.extraction import extract_entities
+    from backend.core.evidence import build_evidence_bundle
+    
+    # Extract structural hints from the raw inputs
+    ext = extract_entities(norm)
+    
+    # Build the concrete evidence bundle
+    bundle = build_evidence_bundle(norm, ext)
+    signals.extend(bundle.signals)
+    warnings.extend(bundle.warnings)
 
     steps.append({"id": "llm", "label": "AI intelligence (T3)"})
     llm = build_llm_signals(job_text=norm.description_text or "")

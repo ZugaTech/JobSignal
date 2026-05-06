@@ -47,7 +47,7 @@ def test_verify_job_image_only_proceeds_with_stubbed_vision(monkeypatch):
     r = orchestrator.verify_job(None, None, image_bytes=MINI_PNG, image_media_type="image/png")
     assert r["verdict"] in ("APPLY", "VERIFY", "SKIP")
     assert r.get("ingestion", {}).get("status") == "ok"
-    assert r["report_schema_version"] == "1.2.0"
+    assert r["report_schema_version"] == "2.0.0"
 
 
 def test_api_multipart_image_hits_verify(monkeypatch):

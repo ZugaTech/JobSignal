@@ -23,6 +23,7 @@ def test_policy_skip_returns_skip():
 
 def test_apply_when_t1_strong_with_support():
     signals = [
+        _sig("official_careers_page", "T1", "high"),
         _sig("fetch_ok", "T1", "high"),
         _sig("domain_align", "T1", "medium"),
         _sig("search_corroboration", "T2", "medium"),
@@ -61,10 +62,11 @@ def test_verify_t3_only_loudest():
 
 
 def test_honesty_guard_downgrades_borderline_apply():
-    # Exactly two medium+ T1 rows: passes APPLY gates but lands in low confidence band.
+    # Exactly two medium+ T1 rows: passes APPLY gates but lands in low confidence band (<45).
     signals = [
+        _sig("official_careers_page", "T1", "medium"),
         _sig("fetch_ok", "T1", "medium"),
-        _sig("domain_align", "T1", "medium"),
+        _sig("domain_align", "T1", "low"),
     ]
     d = decide_from_signals(signals, url_provided=True)
     assert d["verdict"].value == "VERIFY"
@@ -97,7 +99,7 @@ def test_public_report_includes_schema_version():
         cache={"hit": True, "ttl_expires_at": "2099-01-01T00:00:00Z", "key_fingerprint": "abc"},
         meta={"pipeline_version": "1", "scorer_version": SCORER_VERSION},
     )
-    assert r["report_schema_version"] == "1.2.0"
+    assert r["report_schema_version"] == "2.0.0"
     assert r["cache"]["hit"] is True
 
 

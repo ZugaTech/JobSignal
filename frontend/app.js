@@ -235,34 +235,20 @@ function escapeHtml(s) {
 }
 
 function getApiBase() {
-  const stored = localStorage.getItem("JOBSIGNAL_API_BASE");
-  if (stored) return stored;
-  return window.JOBSIGNAL_API_BASE || "http://localhost:8080";
-}
-
-async function checkApiStatus() {
-  const base = getApiBase();
-  const el = $("apiStatus");
-  try {
-    const res = await fetch(`${base}/health`, { signal: AbortController.timeout(3000).signal });
-    if (res.ok) {
-      el.textContent = "Online";
-      el.style.color = "var(--ok)";
-    } else {
-      el.textContent = `Error ${res.status}`;
-      el.style.color = "var(--warn)";
-    }
-  } catch {
-    el.textContent = "Offline";
-    el.style.color = "var(--bad)";
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0") {
+    return "http://127.0.0.1:8080";
   }
+  return ""; // Relative path for production
 }
 
 let lastReport = null;
 
 async function runFlow() {
+  // Auto-reset UI state on new run
   $("errorPanel").classList.add("hidden");
   $("result").classList.add("hidden");
+  
   const { url, text, file, recommendations } = readInputs();
   const validation = validateClientInputs(url, text, file);
   if (!validation.ok) {
@@ -314,7 +300,7 @@ async function runFlow() {
   } catch (e) {
     setPhase(PHASE.ERROR);
     const msg = e && e.message ? String(e.message) : "Unknown error";
-    $("errorText").textContent = `Network or server error — no verdict fabricated. (${msg})`;
+    $("errorText").textContent = `Network or server error (no verdict could be reached). Details: ${msg}`;
     $("errorPanel").classList.remove("hidden");
   } finally {
     $("btnRun").disabled = false;
@@ -336,37 +322,6 @@ $("btnRun").addEventListener("click", () => {
   setPhase(PHASE.IDLE);
   runFlow();
 });
-
-$("btnReset").addEventListener("click", () => {
-  $("jobUrl").value = "";
-  $("jobText").value = "";
-  $("jobImage").value = "";
-  $("recRecommendations").checked = false;
-  $("imagePreviewWrap").classList.add("hidden");
-  $("imagePreview").removeAttribute("src");
-  $("result").classList.add("hidden");
-  $("errorPanel").classList.add("hidden");
-  setPhase(PHASE.IDLE);
-});
-
-$("toggleSettings").addEventListener("click", () => {
-  $("settingsContent").classList.toggle("hidden");
-  if (!$("settingsContent").classList.contains("hidden")) {
-    $("apiBaseInput").value = getApiBase();
-    checkApiStatus();
-  }
-});
-
-$("apiBaseInput").addEventListener("change", () => {
-  const val = $("apiBaseInput").value.trim();
-  if (val) {
-    localStorage.setItem("JOBSIGNAL_API_BASE", val);
-    checkApiStatus();
-  }
-});
-
-// Initial API check
-checkApiStatus();
 
 $("jobImage").addEventListener("change", () => {
   const f = $("jobImage").files?.[0];
