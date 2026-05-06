@@ -21,6 +21,7 @@ def build_public_cache_key(
     source_set_version: str,
     *,
     image_bytes_sha256: str | None = None,
+    image_ingest_version: str | None = None,
     fetch_profile: str | None = None,
 ) -> PublicCacheKey:
     """Build stable cache key string.
@@ -49,6 +50,8 @@ def build_public_cache_key(
     ]
     if image_bytes_sha256:
         parts.append(f"img:{image_bytes_sha256}")
+    if image_ingest_version:
+        parts.append(f"imgv:{image_ingest_version}")
     if fetch_profile and fetch_profile != "off":
         parts.append(f"fetch:{fetch_profile}")
     materialized = "|".join(parts)
