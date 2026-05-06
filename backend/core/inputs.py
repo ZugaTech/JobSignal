@@ -16,10 +16,16 @@ class InputValidationError(ValueError):
         self.code = code
 
 
-def validate_raw_job_inputs(job_url: Optional[str], job_text: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+def validate_verify_inputs(
+    job_url: Optional[str],
+    job_text: Optional[str],
+    *,
+    has_image: bool = False,
+) -> Tuple[Optional[str], Optional[str]]:
     """Return stripped ``(url, text)`` or raise ``InputValidationError``.
 
-    At least one of URL or text must be present with non-trivial content.
+    Without an image, at least one of URL or text must be present. With an image,
+    URL and text may both be absent (screenshot-only).
     """
 
     url = job_url.strip() if job_url else None
@@ -30,7 +36,7 @@ def validate_raw_job_inputs(job_url: Optional[str], job_text: Optional[str]) -> 
     if text == "":
         text = None
 
-    if url is None and text is None:
+    if url is None and text is None and not has_image:
         raise InputValidationError("EMPTY", "Provide a job URL and/or pasted job description.")
 
     if url is not None:
@@ -51,3 +57,9 @@ def validate_raw_job_inputs(job_url: Optional[str], job_text: Optional[str]) -> 
             raise InputValidationError("TEXT_NUL", "Description contains disallowed NUL bytes.")
 
     return url, text
+
+
+def validate_raw_job_inputs(job_url: Optional[str], job_text: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """Backward-compatible alias: no image; requires URL and/or text."""
+
+    return validate_verify_inputs(job_url, job_text, has_image=False)
