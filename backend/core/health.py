@@ -18,28 +18,34 @@ def build_health_payload() -> Dict[str, Any]:
 
 
 def build_ready_payload(cfg: EnvConfig, *, cache_ping_ok: Optional[bool] = None) -> Dict[str, Any]:
-    """Readiness: strict env implies cache URL present; optional ping results."""
+    """Readiness with explicit pass/fail/skip checks and degraded mode."""
 
-    checks: Dict[str, Any] = {
-        "config_loaded": "ok",
-        "node_env": cfg.node_env,
-        "cache_url_configured": bool(cfg.cache_url),
-        "search_configured": any_search_configured(),
-        "recommendations_default_enabled": env_recommendations_default_on(),
-        "job_fetch_enabled": job_fetch_enabled(),
-        "image_verify_enabled": image_verify_enabled(),
-        "llm_signals_enabled": llm_enabled(),
-        "fireworks_key_present": bool((os.environ.get("FIREWORKS_API_KEY") or os.environ.get("LLM_API_KEY"))),
+    has_llm_key = bool((os.environ.get("FIREWORKS_API_KEY") or os.environ.get("LLM_API_KEY")))
+    rec_enabled = env_recommendations_default_on()
+    has_serp_key = bool((os.environ.get("SERPAPI_API_KEY") or os.environ.get("SEARCH_API_KEY")))
+
+    checks: Dict[str, str] = {
+        "redis": "skip",
+        "llm_key": "pass" if has_llm_key else "fail",
+        "serp_key_for_recommendations": "skip",
     }
-    if cache_ping_ok is not None:
-        checks["cache_ping"] = "ok" if cache_ping_ok else "fail"
+    if cfg.cache_url:
+        checks["redis"] = "pass" if cache_ping_ok else "fail"
+    if rec_enabled:
+        checks["serp_key_for_recommendations"] = "pass" if has_serp_key else "fail"
 
-    ready = True
-    if cfg.node_env in ("production", "staging") and not cfg.cache_url:
-        ready = False
-    if cache_ping_ok is False:
-        ready = False
-
-    status = "ready" if ready else "not_ready"
-    http_code_hint = 200 if ready else 503
-    return {"status": status, "checks": checks, "http": http_code_hint}
+    hard_fail = checks["redis"] == "fail"
+    degraded = checks["llm_key"] == "fail" or checks["serp_key_for_recommendations"] == "fail"
+    status = "unavailable" if hard_fail else ("degraded" if degraded else "ready")
+    return {
+        "status": status,
+        "checks": checks,
+        "features": {
+            "search_configured": any_search_configured(),
+            "recommendations_default_enabled": rec_enabled,
+            "job_fetch_enabled": job_fetch_enabled(),
+            "image_verify_enabled": image_verify_enabled(),
+            "llm_signals_enabled": llm_enabled(),
+        },
+        "http": 503 if status == "unavailable" else 200,
+    }

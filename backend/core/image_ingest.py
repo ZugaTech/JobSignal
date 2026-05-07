@@ -20,7 +20,7 @@ _DEFAULT_MAX_IMAGE_BYTES = 5_242_880
 
 
 def _max_image_bytes() -> int:
-    raw = os.environ.get("IMAGE_MAX_BYTES", str(_DEFAULT_MAX_IMAGE_BYTES))
+    raw = os.environ.get("MAX_UPLOAD_BYTES", os.environ.get("IMAGE_MAX_BYTES", str(_DEFAULT_MAX_IMAGE_BYTES)))
     try:
         n = int(raw)
     except ValueError:

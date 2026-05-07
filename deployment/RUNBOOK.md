@@ -1,23 +1,28 @@
-# JobSignal — Operator runbook (Sprint 4 stub)
+# JobSignal - Operator runbook
+
+## Readiness semantics
+
+- `status=ready`: all required runtime checks pass.
+- `status=degraded`: core verification works, but optional sources are limited.
+- `status=unavailable`: deployment should not receive traffic.
+- Redis check is `skip` when `CACHE_URL` is unset.
+- Recommendations SERP check is `skip` when `RECOMMENDATIONS_ENABLED=0`.
 
 ## Incident: elevated 5xx or readiness failures
 
-1. Check `/ready` returns `200` and `checks.cache_ping` is `ok` (when ping wired).
-2. If deploy-related: roll back to previous image tag per `docs/deployment_readiness.md` §3.
-3. If cache poisoned (hypothetical): flush keys matching fingerprint prefix only after security review.
+1. Check `/health`, `/ready`, and `/metrics`.
+2. If `/ready` is `unavailable`, inspect `CACHE_URL` and Redis connectivity.
+3. If `/ready` is `degraded`, verify `FIREWORKS_API_KEY` or `LLM_API_KEY`, and SERP key when recommendations are enabled.
+4. Roll back to prior Railway deployment if incident persists.
 
 ## Incident: suspected cache leakage
 
-1. Stop writes: set maintenance mode (load balancer) if available.
-2. Inspect recent shared payloads for forbidden keys (`tenant_id`, `password`, …) using audit tooling.
-3. Patch serializer (`cache_payload.py`) if new forbidden key class found; bump `SOURCE_PIPELINE_VERSION`.
+1. Stop writes via maintenance mode or gateway block.
+2. Inspect payload sanitizer in `backend/core/cache_payload.py`.
+3. Rotate Redis credentials if exposure is suspected.
 
 ## Incident: false APPLY reports
 
-1. Set emergency **VERIFY-only** mode at gateway (recommended flag from `deployment_readiness.md` when implemented).
-2. Bump `SCORER_VERSION` to invalidate cached verdicts if verdicts were cached (future storage decision).
-
-## Contacts / links
-
-- Deep checklist: `docs/deployment_readiness.md`
-- Security assumptions: `docs/security.md`
+1. Set temporary policy to force `VERIFY`.
+2. Bump `SCORER_VERSION` to invalidate impacted cache entries.
+3. Re-run smoke checks with known fixtures before reopening.

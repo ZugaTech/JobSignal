@@ -4,8 +4,9 @@ import json
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
+from backend.core.metrics import METRICS
 from backend.core.orchestrator import verify_job
 
 router = APIRouter()
@@ -66,13 +67,17 @@ async def verify(request: Request) -> dict:
         rec_raw = form.get("recommendations_enabled")
         rec_opt = _coerce_optional_bool(rec_raw)
 
-        return _verify_or_http_exc(
+        report = _verify_or_http_exc(
             job_url=url_s,
             job_description=text_s,
             image_bytes=raw if raw else None,
             image_media_type=mime,
             recommendations_enabled=rec_opt,
+            request_id=getattr(request.state, "request_id", "unknown"),
         )
+        report["request_id"] = getattr(request.state, "request_id", "unknown")
+        METRICS.record_verification(str(report.get("verdict", "VERIFY")), cache_hit=bool(report.get("cache", {}).get("hit")))
+        return report
 
     try:
         body = await request.json()
@@ -86,11 +91,15 @@ async def verify(request: Request) -> dict:
 
     try:
         req = VerifyRequest.model_validate(body)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors()) from e
 
-    return _verify_or_http_exc(
+    report = _verify_or_http_exc(
         job_url=req.job_url,
         job_description=req.job_description,
         recommendations_enabled=req.recommendations_enabled,
+        request_id=getattr(request.state, "request_id", "unknown"),
     )
+    report["request_id"] = getattr(request.state, "request_id", "unknown")
+    METRICS.record_verification(str(report.get("verdict", "VERIFY")), cache_hit=bool(report.get("cache", {}).get("hit")))
+    return report

@@ -3,7 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>JobSignal | Verify</title>
+    <title>JobSignal | Verify Job Posts with Confidence</title>
+    <meta name="description" content="JobSignal verifies job postings using multi-source trust signals so you can apply safely." />
+    <meta property="og:title" content="JobSignal | Verify Job Posts with Confidence" />
+    <meta property="og:description" content="Check if a job post looks legitimate before you apply. URL, text, and screenshot supported." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -14,6 +17,7 @@
   </head>
   <body>
     <main class="shell" data-ui-phase="idle" data-cache="miss">
+      <div id="degradedBanner" class="strip hidden">Some verification sources are limited right now - results may be less complete.</div>
       <header class="top-nav">
         <div class="brand">JobSignal</div>
         <div class="tagline">Know before you apply.</div>
@@ -120,6 +124,8 @@
         </div>
 
         <div class="meaning-box" id="meaningBox">What this means for you: Proceed carefully and verify key details.</div>
+        <div class="muted" id="requestIdLine"></div>
+        <div class="muted"><a id="reportIssueLink" href="https://github.com/issues/new" target="_blank" rel="noopener noreferrer">Report an issue</a></div>
       </section>
 
       <section id="errorPanel" class="panel error hidden">

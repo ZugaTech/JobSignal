@@ -63,7 +63,8 @@ function validateClientInputs(urlRaw, textRaw, file) {
 function setPhase(phase) {
   const root = document.querySelector(".shell");
   root.dataset.uiPhase = phase;
-  $("phaseNote").textContent = phase === PHASE.LOADING ? "Verifying with trusted sources..." : "";
+  const mode = $("jobImage").files?.[0] ? "URL/Text + Screenshot" : (($("jobUrl").value.trim() && $("jobText").value.trim()) ? "URL + Description" : ($("jobUrl").value.trim() ? "URL" : "Description"));
+  $("phaseNote").textContent = phase === PHASE.LOADING ? `Verifying (${mode}) with trusted sources...` : "";
   const loading = phase === PHASE.LOADING;
   $("skeletonPanel").classList.toggle("hidden", !loading);
   $("btnSpinner").classList.toggle("hidden", !loading);
@@ -162,6 +163,7 @@ function renderReport(report) {
   }
 
   $("meaningBox").textContent = `What this means for you: ${summarizeForUser(report)}`;
+  $("requestIdLine").textContent = report.request_id ? `Request ID: ${report.request_id}` : "";
 
   const strip = $("uncertaintyStrip");
   const uncertain = report.verdict === "VERIFY" || report.confidence !== "high" || (report.warnings?.length ?? 0) > 0;
@@ -335,6 +337,19 @@ async function runFlow() {
   }
 }
 
+async function checkReadyStatus() {
+  try {
+    const apiBase = getApiBase();
+    const res = await fetch(`${apiBase}/ready`);
+    if (!res.ok) return;
+    const payload = await res.json();
+    const degraded = payload.status === "degraded";
+    $("degradedBanner").classList.toggle("hidden", !degraded);
+  } catch (_e) {
+    // Ignore readiness banner failures in client.
+  }
+}
+
 $("btnCopyJson").addEventListener("click", () => {
   if (!lastReport) return;
   const json = JSON.stringify(lastReport, null, 2);
@@ -390,3 +405,5 @@ $("jobText").addEventListener("input", () => {
   const { url, text, file } = readInputs();
   syncHeroEmptyText(url, text, file);
 });
+
+checkReadyStatus();

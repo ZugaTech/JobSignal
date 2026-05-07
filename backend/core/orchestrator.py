@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from backend.core.cache_key import build_public_cache_key
@@ -29,6 +31,7 @@ from backend.core.llm_fireworks import build_llm_signals
 from backend.core.normalization import NormalizationResult, normalize_job_input
 from backend.core.report import build_public_report
 from backend.core.scoring import SCORER_VERSION, decide_from_signals
+from backend.core.structured_log import log_stage
 
 _MEM_CACHE = InMemoryCache()
 _REDIS_CACHE: CacheStore | None = None
@@ -144,9 +147,13 @@ def verify_job(
     image_media_type: Optional[str] = None,
     skip_recommendations: bool = False,
     recommendations_enabled: Optional[bool] = None,
+    request_id: str = "unknown",
 ) -> Dict[str, Any]:
+    t0 = time.perf_counter()
     cfg = EnvConfig.load(strict=False)
+    data_freshness = datetime.now(timezone.utc).isoformat()
     has_image = image_bytes is not None
+    log_stage(request_id=request_id, stage="input_received", duration_ms=0.0)
 
     try:
         url, text = validate_verify_inputs(job_url, job_description, has_image=has_image)
@@ -208,7 +215,9 @@ def verify_job(
                 "pipeline_steps": steps
             },
             ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="cache"),
+            data_freshness=data_freshness,
         )
+        log_stage(request_id=request_id, stage="cache_hit", duration_ms=(time.perf_counter() - t0) * 1000)
         _maybe_attach_recommendations(
             report,
             norm=norm,
@@ -216,9 +225,17 @@ def verify_job(
             skip_recommendations=skip_recommendations,
             recommendations_enabled=recommendations_enabled,
         )
+        report["similar_jobs"] = list(report.get("recommendations") or [])
+        log_stage(
+            request_id=request_id,
+            stage="report_returned",
+            duration_ms=(time.perf_counter() - t0) * 1000,
+            verdict=str(report.get("verdict", "")),
+        )
         return report
 
     steps.append({"id": "cache", "label": "Cache miss", "status": "miss"})
+    log_stage(request_id=request_id, stage="cache_miss", duration_ms=(time.perf_counter() - t0) * 1000)
     signals: List[Dict[str, Any]] = []
     warnings: List[Dict[str, str]] = list(ingest_warnings)
 
@@ -266,6 +283,7 @@ def verify_job(
     bundle = build_evidence_bundle(norm, ext)
     signals.extend(bundle.signals)
     warnings.extend(bundle.warnings)
+    log_stage(request_id=request_id, stage="evidence_gathered", duration_ms=(time.perf_counter() - t0) * 1000)
 
     steps.append({"id": "llm", "label": "AI intelligence (T3)"})
     llm = build_llm_signals(job_text=norm.description_text or "")
@@ -276,6 +294,7 @@ def verify_job(
 
     steps.append({"id": "score", "label": "Scoring engine"})
     decision = decide_from_signals(signals, url_provided=bool(norm.canonical_url))
+    log_stage(request_id=request_id, stage="score_computed", duration_ms=(time.perf_counter() - t0) * 1000, verdict=decision["verdict"].value)
     report = build_public_report(
         decision,
         cache={"hit": False, "ttl_expires_at": None, "key_fingerprint": cache_key.fingerprint_preview},
@@ -285,6 +304,8 @@ def verify_job(
             "pipeline_steps": steps
         },
         ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="live"),
+        evidence_sources=getattr(bundle, "evidence_sources", None),
+        data_freshness=data_freshness,
     )
     _maybe_attach_recommendations(
         report,
@@ -293,6 +314,7 @@ def verify_job(
         skip_recommendations=skip_recommendations,
         recommendations_enabled=recommendations_enabled,
     )
+    report["similar_jobs"] = list(report.get("recommendations") or [])
 
     shared_payload = strip_tenant_fields(
         {
@@ -306,4 +328,10 @@ def verify_job(
         }
     )
     cache.set(cache_key.materialized, serialize_payload(shared_payload), ttl_seconds=_ttl_seconds(cfg.cache_ttl_days))
+    log_stage(
+        request_id=request_id,
+        stage="report_returned",
+        duration_ms=(time.perf_counter() - t0) * 1000,
+        verdict=str(report.get("verdict", "")),
+    )
     return report
