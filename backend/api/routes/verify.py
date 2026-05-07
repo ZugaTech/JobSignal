@@ -1,15 +1,27 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, ValidationError
 
 from backend.core.metrics import METRICS
 from backend.core.orchestrator import verify_job
 
 router = APIRouter()
+
+
+_JOB_URL_PATTERNS = {
+    "linkedin": re.compile(r"linkedin\.com/jobs", re.I),
+    "indeed": re.compile(r"indeed\.com/(viewjob|jobs)", re.I),
+    "greenhouse": re.compile(r"greenhouse\.io", re.I),
+    "lever": re.compile(r"lever\.co", re.I),
+    "workday": re.compile(r"workday\.(com|jobs)", re.I),
+}
+
+_JOB_HINT_PATTERN = re.compile(r"(job|jobs|career|careers|position|apply|hiring)", re.I)
 
 
 class VerifyRequest(BaseModel):
@@ -39,6 +51,22 @@ def _verify_or_http_exc(**kwargs: Any) -> dict:
         return verify_job(**kwargs)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/v1/classify-url")
+async def classify_url(url: str = Query(..., min_length=4, max_length=4096)) -> dict:
+    value = url.strip()
+    if not re.match(r"^https?://", value, re.I):
+        return {"is_job_posting": False, "confidence": 0.0, "platform": None}
+
+    for platform, pattern in _JOB_URL_PATTERNS.items():
+        if pattern.search(value):
+            return {"is_job_posting": True, "confidence": 0.95, "platform": platform}
+
+    if _JOB_HINT_PATTERN.search(value):
+        return {"is_job_posting": True, "confidence": 0.7, "platform": "unknown"}
+
+    return {"is_job_posting": False, "confidence": 0.2, "platform": None}
 
 
 @router.post("/v1/verify")

@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;600&family=Inter:wght@300;400;600&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="styles.css" />
@@ -19,8 +19,13 @@
     <main class="shell" data-ui-phase="idle" data-cache="miss">
       <div id="degradedBanner" class="strip hidden">Some verification sources are limited right now - results may be less complete.</div>
       <header class="top-nav">
-        <div class="brand">JobSignal</div>
-        <div class="tagline">Know before you apply.</div>
+        <div class="nav-left">
+          <div class="brand"><span>Job</span><span class="brand-accent">Signal</span></div>
+          <div class="tagline">Know before you apply.</div>
+        </div>
+        <div class="nav-right">
+          <a href="#how" class="how-it-works-link">How it works</a>
+        </div>
       </header>
 
       <section class="hero panel">
@@ -31,38 +36,84 @@
 
         <div class="input-tabs" role="tablist" aria-label="Input methods">
           <button type="button" class="tab-chip is-active" data-tab-target="urlPane" aria-pressed="true">Paste URL</button>
-          <button type="button" class="tab-chip is-active" data-tab-target="textPane" aria-pressed="true">Paste Description</button>
-          <button type="button" class="tab-chip is-active" data-tab-target="imagePane" aria-pressed="true">Upload Screenshot</button>
+          <button type="button" class="tab-chip" data-tab-target="batchPane">Batch URLs</button>
+          <button type="button" class="tab-chip" data-tab-target="textPane">Paste Description</button>
+          <button type="button" class="tab-chip" data-tab-target="imagePane">Upload Screenshot</button>
+        </div>
+
+        <div class="clipboard-actions">
+          <button id="btnClipboardPaste" class="ghost-btn clipboard-btn" type="button">📋 Paste from clipboard</button>
+          <div id="clipboardHint" class="muted hidden">Clipboard access unavailable. Use Ctrl+V/Cmd+V.</div>
         </div>
 
         <div id="urlPane" class="input-pane">
           <label for="jobUrl">Job URL</label>
+          <div id="urlClipboardBadge" class="clipboard-badge hidden">
+            <span>From clipboard</span>
+            <button id="dismissUrlBadge" type="button" aria-label="Dismiss clipboard badge">×</button>
+          </div>
           <input id="jobUrl" type="url" placeholder="https://company.com/jobs/123" autocomplete="off" maxlength="2048" />
         </div>
 
-        <div id="textPane" class="input-pane">
-          <label for="jobText">Job description</label>
-          <textarea id="jobText" rows="6" placeholder="Paste job details..." maxlength="100000"></textarea>
+        <div id="batchPane" class="input-pane hidden">
+          <label for="batchUrls">Batch URLs (one per line, up to 50)</label>
+          <textarea id="batchUrls" placeholder="https://linkedin.com/jobs/view/123&#10;https://indeed.com/viewjob?jk=456" rows="5"></textarea>
         </div>
 
-        <div id="imagePane" class="input-pane">
-          <label for="jobImage">Screenshot (PNG/JPEG/WebP)</label>
+        <div id="textPane" class="input-pane hidden">
+          <label for="jobText">Job description</label>
+          <div id="textClipboardBadge" class="clipboard-badge hidden">
+            <span>From clipboard</span>
+            <button id="dismissTextBadge" type="button" aria-label="Dismiss clipboard badge">×</button>
+          </div>
+          <textarea id="jobText" placeholder="Paste job requirements, responsibilities, etc. here..." rows="5"></textarea>
+        </div>
+
+        <div id="imagePane" class="input-pane hidden">
+          <label for="jobImage">Upload Screenshot (optional)</label>
           <input id="jobImage" type="file" accept="image/png,image/jpeg,image/webp" />
           <div id="imagePreviewWrap" class="image-preview-wrap hidden">
-            <img id="imagePreview" alt="Selected screenshot preview" />
+            <img id="imagePreview" alt="Screenshot preview" />
           </div>
         </div>
 
-        <label class="checkbox-row">
-          <input id="recRecommendations" type="checkbox" />
-          <span>Include similar jobs (max 3, advisory)</span>
-        </label>
+        <div class="input-options">
+          <label class="check-container">
+            <input type="checkbox" id="recRecommendations" />
+            <span class="check-label">Include similar jobs (max 3, advisory)</span>
+          </label>
+        </div>
 
         <button id="btnRun" class="btn-primary" type="button">
-          <span class="btn-spinner hidden" id="btnSpinner"></span>
-          <span id="btnLabel">Check posting</span>
+          <div class="btn-content-wrapper">
+            <span id="btnSpinner" class="spinner hidden"></span>
+            <span id="btnLabel">Check posting</span>
+          </div>
         </button>
-        <div id="phaseNote" class="phase-note" aria-live="polite"></div>
+        <p id="phaseNote" class="muted mt-2 center"></p>
+
+        <div id="howItWorks" class="how-it-works-panel hidden">
+          <div class="how-steps">
+            <div class="step">
+              <div class="step-num">1</div>
+              <p>We analyze the job URL and description against known trust patterns.</p>
+            </div>
+            <div class="step">
+              <div class="step-num">2</div>
+              <p>We cross-reference the posting with official company domains and public search signals.</p>
+            </div>
+            <div class="step">
+              <div class="step-num">3</div>
+              <p>You get an evidence-backed verdict: Apply, Verify, or Skip.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="errorPanel" class="panel error hidden">
+        <h3>Analysis Interrupted</h3>
+        <p id="errorText"></p>
+        <button id="btnRetry" class="btn-primary">Try again</button>
       </section>
 
       <section id="skeletonPanel" class="panel skeleton hidden" aria-hidden="true">
@@ -76,15 +127,20 @@
         </div>
       </section>
 
-      <section id="result" class="panel result-card hidden" aria-live="polite">
+      <section id="batchResult" class="panel hidden">
+        <h3>Batch Analysis Results</h3>
+        <p class="muted">Ranked shortlist of your provided URLs.</p>
+        <div id="batchList" class="batch-list"></div>
+        <button id="btnBatchReset" class="ghost-btn mt-2">Clear results</button>
+      </section>
+
+      <section id="result" class="panel result-panel hidden" aria-live="polite">
         <div class="result-top">
-          <div id="cacheBadge" class="cache-badge hidden" data-cache-role="hit">Recent shared check</div>
+          <div id="cacheBadge" class="cache-badge hidden" data-cache-role="hit">Recent shared check (cache hit)</div>
           <div id="ingestionNote" class="muted hidden"></div>
         </div>
 
-        <div id="uncertaintyStrip" class="strip hidden">
-          Limited certainty — verify on the employer's official careers page.
-        </div>
+        <div id="uncertaintyStrip" class="strip hidden">Limited certainty — verify on the employer's official careers page.</div>
 
         <div class="verdict-band" id="verdictBand">
           <div class="verdict-chip" id="verdictChip">
@@ -107,7 +163,7 @@
         <ul id="signalChecklist" class="signal-checklist"></ul>
 
         <details class="evidence-accordion">
-          <summary>See evidence</summary>
+          <summary>See evidence <span class="chevron">▼</span></summary>
           <div class="evidence-content">
             <h3 class="evidence-label">Reasons</h3>
             <ul id="reasonList"></ul>
@@ -128,11 +184,30 @@
         <div class="muted"><a id="reportIssueLink" href="https://github.com/issues/new" target="_blank" rel="noopener noreferrer">Report an issue</a></div>
       </section>
 
-      <section id="errorPanel" class="panel error hidden">
-        <p id="errorText">Something went wrong.</p>
-        <button id="btnRetry" type="button" class="ghost-btn">Retry</button>
-      </section>
+      <footer class="app-footer">
+        <div class="footer-content">
+          <div class="footer-left">
+            <p>&copy; 2026 JobSignal. All rights reserved.</p>
+          </div>
+          <div class="footer-right">
+            <p>Built for AMD &times; LabLab AI</p>
+          </div>
+        </div>
+      </footer>
     </main>
-    <script src="app.js" defer></script>
+
+    <div id="clipboardToast" class="clipboard-toast hidden">
+      <span id="clipboardToastText">Job content detected in clipboard - analyze it?</span>
+      <div class="clipboard-toast-actions">
+        <button id="clipboardAnalyzeNow" class="btn-primary mini">Analyze Now</button>
+        <button id="clipboardDismiss" class="ghost-btn mini">Dismiss</button>
+      </div>
+    </div>
+
+    <button id="quickAnalyzeFab" class="fab hidden" title="Quick Analyze Clipboard">
+      🚀 Quick Analyze
+    </button>
+
+    <script src="app.js"></script>
   </body>
 </html>

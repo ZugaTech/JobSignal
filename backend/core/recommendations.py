@@ -79,11 +79,43 @@ class FixtureSearchProvider:
         return []
 
 
+class SerperSearchProvider:
+    name = "serper"
+
+    def search(self, query: str, *, limit: int) -> List[str]:
+        key = _get("SERPER_API_KEY") or _get("SEARCH_API_KEY")
+        if not key:
+            return []
+        try:
+            r = httpx.post(
+                "https://google.serper.dev/search",
+                headers={
+                    "X-API-KEY": key,
+                    "Content-Type": "application/json",
+                    "User-Agent": "JobSignal/1.0 (+https://github.com/jobverification)",
+                },
+                json={"q": query, "num": min(limit, 10)},
+                timeout=12.0,
+            )
+            r.raise_for_status()
+            payload = r.json()
+        except Exception:  # noqa: BLE001
+            return []
+        out: List[str] = []
+        for row in payload.get("organic") or []:
+            link = row.get("link")
+            if isinstance(link, str) and link.startswith(("http://", "https://")):
+                out.append(link)
+            if len(out) >= limit:
+                break
+        return out
+
+
 class SerpApiSearchProvider:
     name = "serpapi"
 
     def search(self, query: str, *, limit: int) -> List[str]:
-        key = _get("SERPAPI_API_KEY") or _get("SEARCH_API_KEY")
+        key = _get("SERPAPI_API_KEY")
         if not key:
             return []
         try:
@@ -108,7 +140,7 @@ class SerpApiSearchProvider:
 
 
 def _provider_order() -> List[str]:
-    raw = _get("SEARCH_PROVIDER_ORDER", "serpapi,fixture") or "serpapi,fixture"
+    raw = _get("SEARCH_PROVIDER_ORDER", "serper,serpapi,fixture") or "serper,serpapi,fixture"
     return [p.strip().lower() for p in raw.split(",") if p.strip()]
 
 
@@ -117,6 +149,7 @@ def build_provider_chain() -> List[SearchProvider]:
     fx_path = _get("JOBSIGNAL_SEARCH_FIXTURE_PATH")
     if fx_path and os.path.isfile(fx_path):
         providers["fixture"] = FixtureSearchProvider(fx_path)
+    providers["serper"] = SerperSearchProvider()
     providers["serpapi"] = SerpApiSearchProvider()
 
     ordered: List[SearchProvider] = []

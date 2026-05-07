@@ -108,37 +108,61 @@ async def _serp_search_async(
     retries: int,
 ) -> tuple[List[Dict[str, Any]], str, Optional[Dict[str, str]]]:
     if not key:
-        return [], "unverified", {"code": "SERP_UNVERIFIED", "message": "SERP key missing; search signals unverified."}
-    params = {"api_key": key, "engine": "google", "q": query, "num": min(max(num, 1), 10)}
+        return [], "unverified", {"code": "SERP_UNVERIFIED", "message": "Search API key missing; search signals unverified."}
+    
+    is_serper = "serper.dev" in endpoint.lower()
     last_error: Optional[str] = None
+    
     for _ in range(retries + 1):
         try:
-            r = await client.get(
-                endpoint,
-                params=params,
-                headers={"User-Agent": "JobSignal/1.0"},
-                timeout=float(timeout_s),
-            )
+            if is_serper:
+                # Serper.dev uses POST + X-API-KEY header
+                r = await client.post(
+                    endpoint,
+                    headers={"X-API-KEY": key, "Content-Type": "application/json", "User-Agent": "JobSignal/1.0"},
+                    json={"q": query, "num": min(max(num, 1), 10)},
+                    timeout=float(timeout_s),
+                )
+            else:
+                # SerpApi uses GET + api_key param
+                r = await client.get(
+                    endpoint,
+                    params={"api_key": key, "engine": "google", "q": query, "num": min(max(num, 1), 10)},
+                    headers={"User-Agent": "JobSignal/1.0"},
+                    timeout=float(timeout_s),
+                )
+            
             if r.status_code in (401, 403, 429):
                 return [], "unverified", {
                     "code": "SERP_UNVERIFIED",
-                    "message": "SERP auth/quota/rate-limited; search signals unverified.",
+                    "message": f"{'Serper' if is_serper else 'SERP'} auth/quota/rate-limited; search signals unverified.",
                 }
             r.raise_for_status()
-            rows = r.json().get("organic_results") or []
+            data = r.json()
+            # Serper organic results are in 'organic', SerpApi in 'organic_results'
+            rows = data.get("organic") if is_serper else data.get("organic_results")
             if not isinstance(rows, list):
                 rows = []
             return rows, "verified", None
         except (httpx.HTTPError, ValueError, TypeError) as e:
             last_error = type(e).__name__
-    return [], "unverified", {"code": "SERP_UNVERIFIED", "message": f"SERP call failed ({last_error}); search signals unverified."}
+    
+    return [], "unverified", {"code": "SERP_UNVERIFIED", "message": f"Search call failed ({last_error}); search signals unverified."}
 
 
 async def _collect_serp_queries(base_query: str, company: str, title: str) -> Dict[str, Any]:
-    key = _env("SERPAPI_API_KEY") or _env("SEARCH_API_KEY")
-    endpoint = _env("SEARCH_API_ENDPOINT", "https://serpapi.com/search.json") or "https://serpapi.com/search.json"
+    # Support both SERPAPI_API_KEY and SERPER_API_KEY
+    key = _env("SERPER_API_KEY") or _env("SERPAPI_API_KEY") or _env("SEARCH_API_KEY")
+    
+    # Auto-detect endpoint if key is specifically for Serper
+    default_endpoint = "https://serpapi.com/search.json"
+    if _env("SERPER_API_KEY"):
+        default_endpoint = "https://google.serper.dev/search"
+    
+    endpoint = _env("SEARCH_API_ENDPOINT", default_endpoint) or default_endpoint
     timeout_s = _env_int("SEARCH_TIMEOUT_S", 10)
     retries = _env_int("SEARCH_RETRY_COUNT", 2)
+    
     async with httpx.AsyncClient() as client:
         tasks = {
             "careers": _serp_search_async(client, f"{base_query} careers".strip(), num=8, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),

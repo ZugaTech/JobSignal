@@ -1,6 +1,6 @@
 /**
- * JobSignal UI — calls POST /v1/verify (see window.JOBSIGNAL_API_BASE).
- * Phases: idle, loading, success, warning, error; cache hit badge on result when report.cache.hit.
+ * JobSignal UI — calls POST /v1/verify.
+ * Supports: Single URL, Description, Screenshot, and Batch URLs.
  */
 
 const $ = (id) => document.getElementById(id);
@@ -13,10 +13,11 @@ const PHASE = {
   ERROR: "error",
 };
 
-// Mirrors backend/core/inputs.py limits for early client-side rejection.
 const MAX_URL_CHARS = 2048;
 const MAX_TEXT_CHARS = 100000;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const JOB_URL_HINTS = ["job", "jobs", "career", "careers", "position", "apply", "hiring", "linkedin.com/jobs", "indeed.com", "greenhouse.io", "lever.co", "workday"];
+const JOB_TEXT_HINTS = ["responsibilities", "requirements", "salary", "experience", "apply", "qualifications", "role", "benefits"];
 
 function readInputs() {
   return {
@@ -36,66 +37,26 @@ function validateClientInputs(urlRaw, textRaw, file) {
   if (file && file.size > MAX_IMAGE_BYTES) {
     return { ok: false, message: "Screenshot must be 5MB or smaller." };
   }
-  if (url.includes("\u0000") || text.includes("\u0000")) {
-    return { ok: false, message: "Input contains disallowed NUL bytes." };
-  }
-  if (url.length > MAX_URL_CHARS) {
-    return { ok: false, message: `URL exceeds ${MAX_URL_CHARS} characters.` };
-  }
-  if (text.length > MAX_TEXT_CHARS) {
-    return { ok: false, message: `Description exceeds ${MAX_TEXT_CHARS} characters.` };
-  }
-  if (url && !/^https?:\/\//i.test(url)) {
-    return { ok: false, message: "Only http(s) URLs are supported." };
-  }
-  try {
-    // Basic host presence check (matches server-side intent).
-    if (url) {
-      const u = new URL(url);
-      if (!u.hostname) return { ok: false, message: "URL must include a host." };
-    }
-  } catch {
-    return { ok: false, message: "URL is not valid." };
-  }
+  if (url.length > MAX_URL_CHARS) return { ok: false, message: `URL exceeds ${MAX_URL_CHARS} characters.` };
+  if (text.length > MAX_TEXT_CHARS) return { ok: false, message: `Description exceeds ${MAX_TEXT_CHARS} characters.` };
+  if (url && !/^https?:\/\//i.test(url)) return { ok: false, message: "Only http(s) URLs are supported." };
   return { ok: true, message: "" };
 }
 
 function setPhase(phase) {
   const root = document.querySelector(".shell");
   root.dataset.uiPhase = phase;
-  const mode = $("jobImage").files?.[0] ? "URL/Text + Screenshot" : (($("jobUrl").value.trim() && $("jobText").value.trim()) ? "URL + Description" : ($("jobUrl").value.trim() ? "URL" : "Description"));
-  $("phaseNote").textContent = phase === PHASE.LOADING ? `Verifying (${mode}) with trusted sources...` : "";
   const loading = phase === PHASE.LOADING;
   $("skeletonPanel").classList.toggle("hidden", !loading);
   $("btnSpinner").classList.toggle("hidden", !loading);
   $("btnLabel").textContent = loading ? "Checking..." : "Check posting";
-  $("btnRun").setAttribute("aria-busy", loading ? "true" : "false");
+  $("btnRun").disabled = loading;
 }
 
 function setCacheOverlay(hit) {
   const root = document.querySelector(".shell");
   root.dataset.cache = hit ? "hit" : "miss";
-  const badge = $("cacheBadge");
-  if (hit) {
-    badge.classList.remove("hidden");
-    badge.textContent = "Recent shared check (cache hit)";
-  } else {
-    badge.classList.add("hidden");
-  }
-}
-
-function confidenceToPercent(confidence) {
-  if (String(confidence).toLowerCase() === "high") return 88;
-  if (String(confidence).toLowerCase() === "medium") return 62;
-  return 34;
-}
-
-function mapUiPhaseFromReport(report) {
-  const v = report.verdict;
-  const c = report.confidence;
-  const warns = report.warnings?.length ?? 0;
-  if (v === "APPLY" && c === "high" && warns === 0) return PHASE.SUCCESS;
-  return PHASE.WARNING; // VERIFY, SKIP, or APPLY with uncertainty
+  $("cacheBadge").classList.toggle("hidden", !hit);
 }
 
 function verdictStyle(verdict) {
@@ -106,179 +67,151 @@ function verdictStyle(verdict) {
 
 function classifySignal(signal) {
   const st = String(signal?.strength || "").toLowerCase();
-  if (st === "high") return { icon: "✓", color: "#22c55e" };
-  if (st === "medium") return { icon: "?", color: "#f59e0b" };
-  return { icon: "✕", color: "#ef4444" };
+  if (st === "high") return { color: "#22c55e" };
+  if (st === "warning") return { color: "#f59e0b" };
+  return { color: "#ef4444" };
 }
 
 function summarizeForUser(report) {
-  const verdict = String(report.verdict || "VERIFY");
-  if (verdict === "APPLY") return "Signals look strong, but still verify details before applying.";
-  if (verdict === "SKIP") return "This posting shows enough risk patterns to skip unless independently verified.";
-  return "Treat this as uncertain and verify on official employer channels first.";
+  const v = report.verdict;
+  if (v === "APPLY") return "Signals look strong, but still verify details before applying.";
+  if (v === "SKIP") return "This posting shows enough risk patterns to skip.";
+  return "Treat this as uncertain and verify on official channels.";
 }
 
 function renderReport(report) {
   $("verdict").textContent = report.verdict;
-  $("confidence").textContent = report.confidence;
   const style = verdictStyle(report.verdict);
-  $("verdictChip").style.color = style.color;
-  $("verdictChip").style.borderColor = `${style.color}66`;
+  $("verdictChip").dataset.verdict = report.verdict;
   $("verdictIcon").textContent = style.icon;
 
-  const pct = confidenceToPercent(report.confidence);
+  const pct = report.confidence === "high" ? 88 : (report.confidence === "medium" ? 62 : 34);
   $("confidencePct").textContent = `${pct}%`;
   $("confidenceFill").style.width = `${pct}%`;
+  $("confidence").textContent = report.confidence;
 
   const checklist = $("signalChecklist");
   checklist.innerHTML = "";
-  for (const s of report.signals || []) {
+  (report.signals || []).forEach(s => {
     const state = classifySignal(s);
     const li = document.createElement("li");
     li.className = "signal-item";
     li.innerHTML = `
-      <span class="signal-icon" style="color:${state.color}">${state.icon}</span>
-      <div>
-        <div class="signal-name">${escapeHtml(s.label || s.id || "Signal")}</div>
-        <div class="signal-detail">${escapeHtml(s.details || "")}</div>
+      <div class="signal-left">
+        <span class="signal-dot" style="background-color:${state.color}"></span>
+        <span class="signal-name">${s.label || s.id}</span>
       </div>
+      <span class="signal-badge" style="color:${state.color}; border-color:${state.color}66">${s.strength}</span>
     `;
     checklist.appendChild(li);
-  }
+  });
 
-  const reasons = $("reasonList");
-  reasons.innerHTML = "";
-  for (const r of report.reasons || []) {
-    const li = document.createElement("li");
-    li.textContent = `${r.code}: ${r.message}`;
-    reasons.appendChild(li);
-  }
-
-  const warns = $("warnList");
-  warns.innerHTML = "";
-  for (const w of report.warnings || []) {
-    const li = document.createElement("li");
-    li.textContent = `${w.code}: ${w.message}`;
-    warns.appendChild(li);
-  }
-
+  $("reasonList").innerHTML = (report.reasons || []).map(r => `<li>${r.code}: ${r.message}</li>`).join("");
+  $("warnList").innerHTML = (report.warnings || []).map(w => `<li>${w.code}: ${w.message}</li>`).join("");
   $("meaningBox").textContent = `What this means for you: ${summarizeForUser(report)}`;
   $("requestIdLine").textContent = report.request_id ? `Request ID: ${report.request_id}` : "";
-
-  const strip = $("uncertaintyStrip");
-  const uncertain = report.verdict === "VERIFY" || report.confidence !== "high" || (report.warnings?.length ?? 0) > 0;
-  if (uncertain) {
-    strip.textContent = "Limited certainty — verify on the employer's official careers page.";
-    strip.classList.remove("hidden");
-  } else {
-    strip.classList.add("hidden");
-  }
+  
+  const uncertain = report.verdict === "VERIFY" || report.confidence !== "high";
+  $("uncertaintyStrip").classList.toggle("hidden", !uncertain);
 }
-
 
 function renderRecommendations(report) {
   const section = $("recSection");
-  const meta = $("recMeta");
   const list = $("recList");
-  const recs = report.recommendations;
-  const st = report.meta?.recommendations_status;
-  if (st == null && (!recs || recs.length === 0)) {
-    section.classList.add("hidden");
-    return;
-  }
+  const recs = report.recommendations || [];
+  if (!recs.length) { section.classList.add("hidden"); return; }
   section.classList.remove("hidden");
-  if (st === "unavailable") {
-    meta.textContent =
-      report.meta?.recommendations_message ||
-      "Similar jobs need search configuration on the server (see API docs).";
-    list.innerHTML = "";
-    return;
-  }
-  if (!recs?.length) {
-    meta.textContent = "No similar postings returned for this query (limits, search results, or verify filters).";
-    list.innerHTML = "";
-    return;
-  }
-  meta.textContent = "Advisory matches only — not endorsements. Confirm each posting yourself.";
-  list.innerHTML = "";
-  for (const r of recs) {
-    const li = document.createElement("article");
-    li.className = "rec-card";
-    const band = r.confidence_band === "HIGH" ? "HIGH" : "MEDIUM";
-    const badgeClass = band === "HIGH" ? "badge-high" : "badge-medium";
-    const reasons = (r.similarity_reasons || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("") || "<li>No reason supplied.</li>";
-    li.innerHTML = `
+  $("recMeta").textContent = "Similar postings from our verified dataset.";
+  list.innerHTML = recs.map(r => `
+    <article class="rec-card">
       <div class="rec-head">
-        <span class="badge ${badgeClass}">${escapeHtml(band)}</span>
-        <span class="muted">Verdict: ${escapeHtml(r.verdict || "—")}</span>
+        <span class="badge badge-${r.confidence_band === "HIGH" ? "high" : "medium"}">${r.confidence_band}</span>
+        <span class="muted">${r.verdict}</span>
       </div>
-      <a class="rec-url" href="${escapeHtml(String(r.job_url || "#"))}" target="_blank" rel="noopener noreferrer">${escapeHtml(
-      String(r.job_url || "View posting"),
-    )}</a>
-      <ul class="rec-reasons">${reasons}</ul>
-    `;
-    list.appendChild(li);
-  }
+      <a class="rec-url" href="${r.job_url}" target="_blank">${r.job_url.substring(0, 40)}...</a>
+    </article>
+  `).join("");
 }
 
 function renderIngestion(report) {
   const el = $("ingestionNote");
   const ing = report.ingestion;
-  if (!ing) {
-    el.classList.add("hidden");
-    el.textContent = "";
-    el.classList.remove("warn");
-    return;
-  }
+  if (!ing) { el.classList.add("hidden"); return; }
   el.classList.remove("hidden");
-  if (ing.status === "insufficient") {
-    el.textContent =
-      ing.message ||
-      "Screenshot alone was not readable enough — paste the job URL (preferred) or full job text.";
-    el.classList.add("warn");
-    return;
-  }
-  el.classList.remove("warn");
-  const conf = ing.extraction_confidence ?? "n/a";
-  const mime = ing.detected_mime ? ` • ${ing.detected_mime}` : "";
-  el.textContent = `Screenshot extraction confidence: ${conf}${mime}`;
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+  el.textContent = ing.status === "insufficient" ? "Screenshot was unreadable." : `Extraction confidence: ${ing.extraction_confidence}`;
 }
 
 function getApiBase() {
-  if (window.location.protocol === "file:") {
-    return "http://127.0.0.1:8080";
-  }
   const host = window.location.hostname;
-  if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0") {
-    return "http://127.0.0.1:8080";
-  }
-  return ""; // Relative path for production
+  return (host === "localhost" || host === "127.0.0.1") ? "http://localhost:8080" : "";
 }
 
-let lastReport = null;
+function activateTab(targetId) {
+  document.querySelectorAll(".input-pane").forEach(p => p.classList.add("hidden"));
+  $(targetId).classList.remove("hidden");
+  document.querySelectorAll(".tab-chip").forEach(t => {
+    const active = t.dataset.tabTarget === targetId;
+    t.classList.toggle("is-active", active);
+    t.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
 
-function syncHeroEmptyText(url, text, file) {
-  const hasAny = Boolean((url || "").trim() || (text || "").trim() || file);
-  $("emptyStateText").textContent = hasAny
-    ? "Ready to verify. You can combine URL, description, and screenshot."
-    : "Drop a job link or paste a description to begin.";
+function applyPrefillState(kind) {
+  const input = kind === "url" ? $("jobUrl") : $("jobText");
+  const badge = kind === "url" ? $("urlClipboardBadge") : $("textClipboardBadge");
+  input.classList.add("prefilled");
+  badge.classList.remove("hidden");
+}
+
+function clearPrefillState(kind) {
+  const input = kind === "url" ? $("jobUrl") : $("jobText");
+  const badge = kind === "url" ? $("urlClipboardBadge") : $("textClipboardBadge");
+  input.classList.remove("prefilled");
+  badge.classList.add("hidden");
+}
+
+async function runBatchFlow(urls) {
+  $("batchResult").classList.remove("hidden");
+  const list = $("batchList");
+  list.innerHTML = "";
+  setPhase(PHASE.LOADING);
+  for (const url of urls) {
+    const item = document.createElement("div");
+    item.className = "batch-item loading";
+    item.innerHTML = `<span class="muted">${url}</span> <span class="spinner mini"></span>`;
+    list.appendChild(item);
+    try {
+      const res = await fetch(`${getApiBase()}/v1/verify`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_url: url })
+      });
+      const report = await res.json();
+      const style = verdictStyle(report.verdict);
+      item.className = `batch-item ${report.verdict.toLowerCase()}`;
+      item.innerHTML = `
+        <span class="batch-verdict" style="color:${style.color}">${style.icon} ${report.verdict}</span>
+        <span class="batch-url">${url}</span>
+        <span class="muted">${report.confidence}</span>
+      `;
+    } catch {
+      item.className = "batch-item error";
+      item.innerHTML = `<span class="error-text">ERR</span> <span class="batch-url">${url}</span>`;
+    }
+  }
+  setPhase(PHASE.IDLE);
 }
 
 async function runFlow() {
-  // Auto-reset UI state on new run
   $("errorPanel").classList.add("hidden");
   $("result").classList.add("hidden");
+  $("batchResult").classList.add("hidden");
   
+  if (!$("batchPane").classList.contains("hidden")) {
+    const urls = $("batchUrls").value.split("\n").map(u => u.trim()).filter(u => u.startsWith("http"));
+    if (urls.length) { await runBatchFlow(urls); return; }
+  }
+
   const { url, text, file, recommendations } = readInputs();
-  syncHeroEmptyText(url, text, file);
   const validation = validateClientInputs(url, text, file);
   if (!validation.ok) {
     setPhase(PHASE.ERROR);
@@ -288,122 +221,63 @@ async function runFlow() {
   }
 
   setPhase(PHASE.LOADING);
-  $("btnRun").disabled = true;
-
   try {
     let res;
-    const apiBase = getApiBase();
     if (file) {
       const fd = new FormData();
       if (url) fd.append("job_url", url);
       if (text) fd.append("job_description", text);
-      fd.append("job_image", file, file.name || "screenshot.png");
+      fd.append("job_image", file);
       fd.append("recommendations_enabled", recommendations ? "true" : "false");
-      res = await fetch(`${apiBase}/v1/verify`, { method: "POST", body: fd });
+      res = await fetch(`${getApiBase()}/v1/verify`, { method: "POST", body: fd });
     } else {
-      res = await fetch(`${apiBase}/v1/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          job_url: url || null,
-          job_description: text || null,
-          recommendations_enabled: recommendations,
-        }),
+      res = await fetch(`${getApiBase()}/v1/verify`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_url: url || null, job_description: text || null, recommendations_enabled: recommendations })
       });
     }
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
-    }
+    if (!res.ok) throw new Error(await res.text());
     const report = await res.json();
-    lastReport = report;
     renderReport(report);
     renderIngestion(report);
     renderRecommendations(report);
-
-    const uiPhase = mapUiPhaseFromReport(report);
-    setPhase(uiPhase);
-    setCacheOverlay(Boolean(report.cache?.hit));
-
+    setPhase(report.verdict === "APPLY" && report.confidence === "high" ? PHASE.SUCCESS : PHASE.WARNING);
+    setCacheOverlay(report.cache?.hit);
     $("result").classList.remove("hidden");
   } catch (e) {
     setPhase(PHASE.ERROR);
-    const msg = e && e.message ? String(e.message) : "Unknown error";
-    $("errorText").textContent = `Network or server error (no verdict could be reached). Details: ${msg}`;
+    $("errorText").textContent = e.message;
     $("errorPanel").classList.remove("hidden");
   } finally {
     $("btnRun").disabled = false;
-    $("skeletonPanel").classList.add("hidden");
   }
 }
 
-async function checkReadyStatus() {
-  try {
-    const apiBase = getApiBase();
-    const res = await fetch(`${apiBase}/ready`);
-    if (!res.ok) return;
-    const payload = await res.json();
-    const degraded = payload.status === "degraded";
-    $("degradedBanner").classList.toggle("hidden", !degraded);
-  } catch (_e) {
-    // Ignore readiness banner failures in client.
-  }
+// Event Listeners
+$("btnRun").addEventListener("click", runFlow);
+$("btnRetry").addEventListener("click", runFlow);
+$("btnBatchReset").addEventListener("click", () => { $("batchUrls").value = ""; $("batchList").innerHTML = ""; $("batchResult").classList.add("hidden"); });
+
+document.querySelectorAll(".tab-chip").forEach(tab => {
+  tab.addEventListener("click", () => activateTab(tab.dataset.tabTarget));
+});
+
+$("jobUrl").addEventListener("input", () => clearPrefillState("url"));
+$("jobText").addEventListener("input", () => clearPrefillState("text"));
+
+// Clipboard & UI init
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("drop", e => e.preventDefault());
+document.querySelector(".hero").addEventListener("drop", e => {
+  e.preventDefault();
+  const data = e.dataTransfer.getData("text/plain");
+  if (data && /^https?:\/\//i.test(data)) { $("jobUrl").value = data; activateTab("urlPane"); }
+});
+
+document.querySelector(".how-it-works-link").addEventListener("click", e => { e.preventDefault(); $("howItWorks").classList.toggle("hidden"); });
+
+async function handleUrlParams() {
+  const p = new URLSearchParams(window.location.search);
+  if (p.get("job_url")) { $("jobUrl").value = p.get("job_url"); activateTab("urlPane"); await runFlow(); }
 }
-
-$("btnCopyJson").addEventListener("click", () => {
-  if (!lastReport) return;
-  const json = JSON.stringify(lastReport, null, 2);
-  navigator.clipboard.writeText(json).then(() => {
-    const btn = $("btnCopyJson");
-    const old = btn.textContent;
-    btn.textContent = "Copied!";
-    setTimeout(() => (btn.textContent = old), 2000);
-  });
-});
-
-$("btnRun").addEventListener("click", () => {
-  setPhase(PHASE.IDLE);
-  runFlow();
-});
-
-$("btnRetry").addEventListener("click", () => {
-  $("errorPanel").classList.add("hidden");
-  runFlow();
-});
-
-$("jobImage").addEventListener("change", () => {
-  const f = $("jobImage").files?.[0];
-  const wrap = $("imagePreviewWrap");
-  const img = $("imagePreview");
-  if (!f) {
-    wrap.classList.add("hidden");
-    img.removeAttribute("src");
-    return;
-  }
-  img.src = URL.createObjectURL(f);
-  wrap.classList.remove("hidden");
-  const { url, text, file } = readInputs();
-  syncHeroEmptyText(url, text, file);
-});
-
-for (const tab of document.querySelectorAll(".tab-chip")) {
-  tab.addEventListener("click", () => {
-    const pane = $(tab.dataset.tabTarget);
-    if (!pane) return;
-    pane.classList.toggle("hidden");
-    tab.classList.toggle("is-active", !pane.classList.contains("hidden"));
-    tab.setAttribute("aria-pressed", tab.classList.contains("is-active") ? "true" : "false");
-  });
-}
-
-$("jobUrl").addEventListener("input", () => {
-  const { url, text, file } = readInputs();
-  syncHeroEmptyText(url, text, file);
-});
-
-$("jobText").addEventListener("input", () => {
-  const { url, text, file } = readInputs();
-  syncHeroEmptyText(url, text, file);
-});
-
-checkReadyStatus();
+handleUrlParams();

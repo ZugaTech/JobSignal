@@ -221,11 +221,18 @@ def build_llm_signals(*, job_text: str) -> LlmSignalResult:
         )
 
     try:
-        data = json.loads(content)
+        # Robust JSON extraction: look for the first { and last }
+        start = content.find('{')
+        end = content.rfind('}')
+        if start != -1 and end != -1:
+            json_str = content[start:end+1]
+        else:
+            json_str = content
+        data = json.loads(json_str)
     except Exception:  # noqa: BLE001 - surfaced as warning only
         return LlmSignalResult(
             signals=[],
-            warnings=[{"code": "LLM_MALFORMED", "message": "LLM returned non-JSON output; continuing without LLM signals."}],
+            warnings=[{"code": "LLM_MALFORMED", "message": f"LLM returned non-JSON output; continuing without LLM signals. Raw: {content[:100]}..."}],
         )
 
     specificity = str(data.get("specificity") or "").lower()

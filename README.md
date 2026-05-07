@@ -45,3 +45,16 @@ Editor and agent guidance: [`.cursor/rules/JOBSIGNAL-RULES.mdc`](.cursor/rules/J
 ## Local configuration
 
 Copy `.env.example` to `.env` for local development when implementation begins. Never commit secrets.
+
+## Chrome Extension (Sprint 7)
+
+To use the JobSignal Chrome Extension:
+
+1.  Open Chrome and navigate to `chrome://extensions/`
+2.  Enable **Developer mode** (top-right toggle)
+3.  Click **Load unpacked**
+4.  Select the `extension/` folder in this repository
+5.  Pin the extension for quick access
+6.  Navigate to any job listing (LinkedIn, Indeed, etc.) and click the icon to verify the job inline.
+
+Note: By default, the extension connects to `http://localhost:8080`. You can change the backend URL in the extension settings (gear icon).
