@@ -4,103 +4,128 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>JobSignal | Verify</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="shell" data-ui-phase="idle" data-cache="miss">
-      <header class="header">
-        <div class="top-row">
-          <h1>JobSignal</h1>
-        </div>
-        <p class="tagline">Smart verification support for your job search. We recommend manual checking if you feel uncertain.</p>
+      <header class="top-nav">
+        <div class="brand">JobSignal</div>
+        <div class="tagline">Know before you apply.</div>
       </header>
 
-      <section class="panel">
-        <label for="jobUrl">Job URL (optional if you paste text)</label>
-        <input id="jobUrl" type="url" placeholder="https://..." autocomplete="off" maxlength="2048" />
+      <section class="hero panel">
+        <h1 class="hero-title">Verify a job posting in seconds</h1>
+        <p class="hero-subtitle" id="emptyStateText">
+          Drop a job link or paste a description to begin.
+        </p>
 
-        <label for="jobText">Job description</label>
-        <textarea id="jobText" rows="6" placeholder="Paste posting text..." maxlength="100000"></textarea>
+        <div class="input-tabs" role="tablist" aria-label="Input methods">
+          <button type="button" class="tab-chip is-active" data-tab-target="urlPane">Paste URL</button>
+          <button type="button" class="tab-chip is-active" data-tab-target="textPane">Paste Description</button>
+          <button type="button" class="tab-chip is-active" data-tab-target="imagePane">Upload Screenshot</button>
+        </div>
 
-        <label for="jobImage">Screenshot (optional PNG/JPEG/WebP)</label>
-        <input id="jobImage" type="file" accept="image/png,image/jpeg,image/webp" />
-        <div id="imagePreviewWrap" class="image-preview-wrap hidden">
-          <div class="scan-line"></div>
-          <img id="imagePreview" alt="Selected screenshot preview" />
+        <div id="urlPane" class="input-pane">
+          <label for="jobUrl">Job URL</label>
+          <input id="jobUrl" type="url" placeholder="https://company.com/jobs/123" autocomplete="off" maxlength="2048" />
+        </div>
+
+        <div id="textPane" class="input-pane">
+          <label for="jobText">Job description</label>
+          <textarea id="jobText" rows="6" placeholder="Paste job details..." maxlength="100000"></textarea>
+        </div>
+
+        <div id="imagePane" class="input-pane">
+          <label for="jobImage">Screenshot (PNG/JPEG/WebP)</label>
+          <input id="jobImage" type="file" accept="image/png,image/jpeg,image/webp" />
+          <div id="imagePreviewWrap" class="image-preview-wrap hidden">
+            <img id="imagePreview" alt="Selected screenshot preview" />
+          </div>
         </div>
 
         <label class="checkbox-row">
           <input id="recRecommendations" type="checkbox" />
-          <span>Find and cross-check similar listings for extra confidence (max 3)</span>
+          <span>Include similar jobs (max 3, advisory)</span>
         </label>
 
-        <div class="actions">
-          <button id="btnRun" type="button">Check posting</button>
-          <span id="phaseNote" class="muted" aria-live="polite"></span>
+        <button id="btnRun" class="btn-primary" type="button">
+          <span class="btn-spinner hidden" id="btnSpinner"></span>
+          <span id="btnLabel">Check posting</span>
+        </button>
+        <div id="phaseNote" class="phase-note" aria-live="polite"></div>
+      </section>
+
+      <section id="skeletonPanel" class="panel skeleton hidden" aria-hidden="true">
+        <div class="skeleton-row w-40"></div>
+        <div class="skeleton-row w-90"></div>
+        <div class="skeleton-row w-75"></div>
+        <div class="skeleton-grid">
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
         </div>
       </section>
 
-      <section id="result" class="panel hidden" aria-live="polite">
-        <div class="result-header">
+      <section id="result" class="panel result-card hidden" aria-live="polite">
+        <div class="result-top">
           <div id="cacheBadge" class="cache-badge hidden" data-cache-role="hit">Recent shared check</div>
-          <div id="ingestionNote" class="muted hidden" aria-live="polite"></div>
+          <div id="ingestionNote" class="muted hidden"></div>
         </div>
-        
-        <div id="uncertaintyStrip" class="strip hidden"></div>
-        
-        <div class="verdict-card">
-          <div class="verdict-row">
-            <div class="verdict-label">Verdict</div>
-            <div class="verdict" id="verdict">VERIFY</div>
+
+        <div id="uncertaintyStrip" class="strip hidden">
+          Limited certainty — verify on the employer's official careers page.
+        </div>
+
+        <div class="verdict-band" id="verdictBand">
+          <div class="verdict-chip" id="verdictChip">
+            <span class="chip-icon" id="verdictIcon">?</span>
+            <span class="chip-label" id="verdict">VERIFY</span>
           </div>
-          <div class="confidence-row">
-            <div class="confidence-label">Confidence</div>
-            <div class="confidence" id="confidence">medium</div>
+          <div class="confidence-block">
+            <div class="confidence-line">
+              <span>Confidence</span>
+              <strong id="confidencePct">60%</strong>
+            </div>
+            <div class="confidence-track">
+              <div class="confidence-fill" id="confidenceFill"></div>
+            </div>
+            <div class="confidence-text" id="confidence">medium</div>
           </div>
-          <div class="verdict-actions">
-            <button id="btnCopyJson" class="small-btn">Copy result</button>
+        </div>
+
+        <h2 class="section-title">Trust signals</h2>
+        <ul id="signalChecklist" class="signal-checklist"></ul>
+
+        <details class="evidence-accordion">
+          <summary>See evidence</summary>
+          <div class="evidence-content">
+            <h3 class="evidence-label">Reasons</h3>
+            <ul id="reasonList"></ul>
+            <h3 class="evidence-label">Warnings</h3>
+            <ul id="warnList"></ul>
+            <button id="btnCopyJson" type="button" class="ghost-btn">Copy raw response JSON</button>
           </div>
-        </div>
+        </details>
 
-        <div class="recommendation-box" id="recommendationBox">
-          <p id="recommendationText"></p>
-        </div>
-
-        <p id="checkedText" class="muted checked-text"></p>
-
-        <div id="sourcesWrap" class="hidden">
-          <h3 class="section-label">Sources found</h3>
-          <ul id="sourceList" class="info-list"></ul>
-        </div>
-
-        <div id="matchedWrap" class="hidden">
-          <h3 class="section-label">What matched</h3>
-          <ul id="matchedList" class="info-list ok"></ul>
-        </div>
-
-        <div id="unmatchedWrap" class="hidden">
-          <h3 class="section-label">What didn't match</h3>
-          <ul id="unmatchedList" class="info-list muted-list"></ul>
-        </div>
-
-        <div id="redFlagsWrap" class="hidden">
-          <h3 class="warn-title">Red flags detected</h3>
-          <ul id="redFlagList" class="info-list warn"></ul>
-        </div>
         <div id="recSection" class="rec-section hidden">
-          <h2>Similar jobs</h2>
+          <h2 class="section-title">Similar jobs</h2>
           <p id="recMeta" class="muted"></p>
-          <ul id="recList" class="rec-list"></ul>
+          <div id="recList" class="rec-row"></div>
         </div>
+
+        <div class="meaning-box" id="meaningBox">What this means for you: Proceed carefully and verify key details.</div>
       </section>
 
       <section id="errorPanel" class="panel error hidden">
         <p id="errorText">Something went wrong.</p>
+        <button id="btnRetry" type="button" class="ghost-btn">Retry</button>
       </section>
-
-      <footer class="footer muted">
-        JobSignal checks job listings using evidence from official sources.
-      </footer>
     </main>
     <script src="app.js" defer></script>
   </body>

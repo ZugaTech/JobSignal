@@ -63,14 +63,11 @@ function validateClientInputs(urlRaw, textRaw, file) {
 function setPhase(phase) {
   const root = document.querySelector(".shell");
   root.dataset.uiPhase = phase;
-  const note = $("phaseNote");
-  if (phase === PHASE.LOADING) {
-    note.textContent = "Checking sources…";
-  } else if (phase === PHASE.IDLE) {
-    note.textContent = "";
-  } else {
-    note.textContent = "";
-  }
+  $("phaseNote").textContent = phase === PHASE.LOADING ? "Verifying with trusted sources..." : "";
+  const loading = phase === PHASE.LOADING;
+  $("skeletonPanel").classList.toggle("hidden", !loading);
+  $("btnSpinner").classList.toggle("hidden", !loading);
+  $("btnLabel").textContent = loading ? "Checking..." : "Check posting";
 }
 
 function setCacheOverlay(hit) {
@@ -85,6 +82,12 @@ function setCacheOverlay(hit) {
   }
 }
 
+function confidenceToPercent(confidence) {
+  if (String(confidence).toLowerCase() === "high") return 88;
+  if (String(confidence).toLowerCase() === "medium") return 62;
+  return 34;
+}
+
 function mapUiPhaseFromReport(report) {
   const v = report.verdict;
   const c = report.confidence;
@@ -93,55 +96,76 @@ function mapUiPhaseFromReport(report) {
   return PHASE.WARNING; // VERIFY, SKIP, or APPLY with uncertainty
 }
 
+function verdictStyle(verdict) {
+  if (verdict === "APPLY") return { color: "#22c55e", icon: "✓" };
+  if (verdict === "SKIP") return { color: "#ef4444", icon: "✕" };
+  return { color: "#f59e0b", icon: "?" };
+}
+
+function classifySignal(signal) {
+  const st = String(signal?.strength || "").toLowerCase();
+  if (st === "high") return { icon: "✓", color: "#22c55e" };
+  if (st === "medium") return { icon: "?", color: "#f59e0b" };
+  return { icon: "✕", color: "#ef4444" };
+}
+
+function summarizeForUser(report) {
+  const verdict = String(report.verdict || "VERIFY");
+  if (verdict === "APPLY") return "Signals look strong, but still verify details before applying.";
+  if (verdict === "SKIP") return "This posting shows enough risk patterns to skip unless independently verified.";
+  return "Treat this as uncertain and verify on official employer channels first.";
+}
+
 function renderReport(report) {
   $("verdict").textContent = report.verdict;
   $("confidence").textContent = report.confidence;
+  const style = verdictStyle(report.verdict);
+  $("verdictChip").style.color = style.color;
+  $("verdictChip").style.borderColor = `${style.color}66`;
+  $("verdictIcon").textContent = style.icon;
 
-  $("recommendationText").textContent = report.recommendation || "Proceed with caution.";
-  $("checkedText").textContent = report.what_was_checked || "";
+  const pct = confidenceToPercent(report.confidence);
+  $("confidencePct").textContent = `${pct}%`;
+  $("confidenceFill").style.width = `${pct}%`;
 
-  const fillAndToggle = (listId, wrapperId, items) => {
-    const ul = $(listId);
-    const wrap = $(wrapperId);
-    ul.innerHTML = "";
-    const clean = (items || []).filter(Boolean);
-    if (clean.length === 0) {
-      wrap.classList.add("hidden");
-      return;
-    }
-    wrap.classList.remove("hidden");
-    for (const item of clean) {
-      const li = document.createElement("li");
-      li.textContent = item;
-      ul.appendChild(li);
-    }
-  };
-
-  fillAndToggle("sourceList", "sourcesWrap", report.sources);
-  fillAndToggle("matchedList", "matchedWrap", report.what_matched);
-  fillAndToggle("unmatchedList", "unmatchedWrap", report.what_did_not_match);
-
-  const rf = report.red_flags || [];
-  const rfList = $("redFlagList");
-  const rfWrap = $("redFlagsWrap");
-  rfList.innerHTML = "";
-  if (rf.filter(Boolean).length > 0) {
-    rfWrap.classList.remove("hidden");
-    for (const item of rf.filter(Boolean)) {
-      const li = document.createElement("li");
-      li.textContent = item;
-      rfList.appendChild(li);
-    }
-  } else {
-    rfWrap.classList.add("hidden");
+  const checklist = $("signalChecklist");
+  checklist.innerHTML = "";
+  for (const s of report.signals || []) {
+    const state = classifySignal(s);
+    const li = document.createElement("li");
+    li.className = "signal-item";
+    li.innerHTML = `
+      <span class="signal-icon" style="color:${state.color}">${state.icon}</span>
+      <div>
+        <div class="signal-name">${escapeHtml(s.label || s.id || "Signal")}</div>
+        <div class="signal-detail">${escapeHtml(s.details || "")}</div>
+      </div>
+    `;
+    checklist.appendChild(li);
   }
 
+  const reasons = $("reasonList");
+  reasons.innerHTML = "";
+  for (const r of report.reasons || []) {
+    const li = document.createElement("li");
+    li.textContent = `${r.code}: ${r.message}`;
+    reasons.appendChild(li);
+  }
+
+  const warns = $("warnList");
+  warns.innerHTML = "";
+  for (const w of report.warnings || []) {
+    const li = document.createElement("li");
+    li.textContent = `${w.code}: ${w.message}`;
+    warns.appendChild(li);
+  }
+
+  $("meaningBox").textContent = `What this means for you: ${summarizeForUser(report)}`;
+
   const strip = $("uncertaintyStrip");
-  if (report.verdict === "VERIFY") {
-    strip.textContent = "We recommend checking the company's official careers page before applying.";
-    strip.classList.remove("hidden");
-  } else if (report.verdict === "SKIP") {
-    strip.textContent = "Do not apply without verifying this listing independently.";
+  const uncertain = report.verdict === "VERIFY" || report.confidence !== "high" || (report.warnings?.length ?? 0) > 0;
+  if (uncertain) {
+    strip.textContent = "Limited certainty — verify on the employer's official careers page.";
     strip.classList.remove("hidden");
   } else {
     strip.classList.add("hidden");
@@ -175,26 +199,21 @@ function renderRecommendations(report) {
   meta.textContent = "Advisory matches only — not endorsements. Confirm each posting yourself.";
   list.innerHTML = "";
   for (const r of recs) {
-    const li = document.createElement("li");
+    const li = document.createElement("article");
     li.className = "rec-card";
     const band = r.confidence_band === "HIGH" ? "HIGH" : "MEDIUM";
     const badgeClass = band === "HIGH" ? "badge-high" : "badge-medium";
-    const reasons = (r.similarity_reasons || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("");
+    const reasons = (r.similarity_reasons || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("") || "<li>No reason supplied.</li>";
     li.innerHTML = `
-      <div class="rec-card-header">
+      <div class="rec-head">
         <span class="badge ${badgeClass}">${escapeHtml(band)}</span>
         <span class="muted">Verdict: ${escapeHtml(r.verdict || "—")}</span>
       </div>
-      <div class="rec-url"></div>
+      <a class="rec-url" href="${escapeHtml(String(r.job_url || "#"))}" target="_blank" rel="noopener noreferrer">${escapeHtml(
+      String(r.job_url || "View posting"),
+    )}</a>
       <ul class="rec-reasons">${reasons}</ul>
     `;
-    const urlWrap = li.querySelector(".rec-url");
-    const a = document.createElement("a");
-    a.href = String(r.job_url || "#");
-    a.textContent = String(r.job_url || "");
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    urlWrap.appendChild(a);
     list.appendChild(li);
   }
 }
@@ -231,6 +250,9 @@ function escapeHtml(s) {
 }
 
 function getApiBase() {
+  if (window.location.protocol === "file:") {
+    return "http://127.0.0.1:8080";
+  }
   const host = window.location.hostname;
   if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0") {
     return "http://127.0.0.1:8080";
@@ -300,6 +322,7 @@ async function runFlow() {
     $("errorPanel").classList.remove("hidden");
   } finally {
     $("btnRun").disabled = false;
+    $("skeletonPanel").classList.add("hidden");
   }
 }
 
@@ -319,6 +342,11 @@ $("btnRun").addEventListener("click", () => {
   runFlow();
 });
 
+$("btnRetry").addEventListener("click", () => {
+  $("errorPanel").classList.add("hidden");
+  runFlow();
+});
+
 $("jobImage").addEventListener("change", () => {
   const f = $("jobImage").files?.[0];
   const wrap = $("imagePreviewWrap");
@@ -331,3 +359,12 @@ $("jobImage").addEventListener("change", () => {
   img.src = URL.createObjectURL(f);
   wrap.classList.remove("hidden");
 });
+
+for (const tab of document.querySelectorAll(".tab-chip")) {
+  tab.addEventListener("click", () => {
+    const pane = $(tab.dataset.tabTarget);
+    if (!pane) return;
+    pane.classList.toggle("hidden");
+    tab.classList.toggle("is-active", !pane.classList.contains("hidden"));
+  });
+}
