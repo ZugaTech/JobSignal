@@ -194,4 +194,4 @@ def test_text_only_mid_red_flags_yield_strong_verify_copy():
 
 
 def test_scorer_version_bumped_to_3_1_0():
-    assert SCORER_VERSION == "3.1.0"
+    assert SCORER_VERSION == "3.2.0"

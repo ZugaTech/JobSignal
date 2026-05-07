@@ -1,18 +1,19 @@
-"""Evidence bundle builder (Sprint 10: Evidence-First Architecture).
-
-Collects concrete proof from external sources before LLM synthesis.
-"""
+"""Evidence bundle builder (Sprint 3: multi-source verification + honest uncertainty)."""
 
 from __future__ import annotations
 
+import asyncio
+import os
 import re
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+import httpx
+
 from backend.core.extraction import ExtractionResult
 from backend.core.normalization import NormalizationResult
-from backend.core.recommendations import build_provider_chain
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,110 +24,365 @@ class EvidenceBundle:
     recruiter_verified: bool
     signals: List[Dict[str, Any]]
     warnings: List[Dict[str, str]]
+    evidence_sources: List[Dict[str, str]]
+
+
+SUPPORTED_BOARDS = ("linkedin.com", "indeed.com", "glassdoor.com", "wellfound.com")
+
+
+def _env(name: str, default: Optional[str] = None) -> Optional[str]:
+    v = os.environ.get(name)
+    if v is None or not str(v).strip():
+        return default
+    return str(v).strip()
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = _env(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _is_official_domain(domain: str, company_hint: Optional[str]) -> bool:
     if not company_hint or not domain:
         return False
-    c_clean = re.sub(r'[^a-z0-9]', '', company_hint.lower())
-    d_clean = domain.lower().split('.')[0]
+    c_clean = re.sub(r"[^a-z0-9]", "", company_hint.lower())
+    d_clean = domain.lower().split(".")[0]
     return c_clean in d_clean or d_clean in c_clean
+
+
+def _extract_days_from_snippet(snippet: str) -> Optional[int]:
+    text = (snippet or "").lower()
+    m = re.search(r"(\\d+)\\s+day", text)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"(\\d+)\\s+week", text)
+    if m:
+        return int(m.group(1)) * 7
+    m = re.search(r"(\\d+)\\s+month", text)
+    if m:
+        return int(m.group(1)) * 30
+    return None
+
+
+def _mk_signal(
+    *,
+    sid: str,
+    label: str,
+    tier: str,
+    strength: str,
+    detail: str,
+    status: str,
+    source: str,
+) -> Dict[str, Any]:
+    # Keep legacy fields (`id/label/tier/strength/details`) and add Sprint-3 signal contract fields.
+    return {
+        "id": sid,
+        "label": label,
+        "tier": tier,
+        "strength": strength,
+        "details": detail,
+        "name": label,
+        "status": status,
+        "detail": detail,
+        "source": source,
+    }
+
+
+async def _serp_search_async(
+    client: httpx.AsyncClient,
+    query: str,
+    *,
+    num: int,
+    key: Optional[str],
+    endpoint: str,
+    timeout_s: int,
+    retries: int,
+) -> tuple[List[Dict[str, Any]], str, Optional[Dict[str, str]]]:
+    if not key:
+        return [], "unverified", {"code": "SERP_UNVERIFIED", "message": "SERP key missing; search signals unverified."}
+    params = {"api_key": key, "engine": "google", "q": query, "num": min(max(num, 1), 10)}
+    last_error: Optional[str] = None
+    for _ in range(retries + 1):
+        try:
+            r = await client.get(
+                endpoint,
+                params=params,
+                headers={"User-Agent": "JobSignal/1.0"},
+                timeout=float(timeout_s),
+            )
+            if r.status_code in (401, 403, 429):
+                return [], "unverified", {
+                    "code": "SERP_UNVERIFIED",
+                    "message": "SERP auth/quota/rate-limited; search signals unverified.",
+                }
+            r.raise_for_status()
+            rows = r.json().get("organic_results") or []
+            if not isinstance(rows, list):
+                rows = []
+            return rows, "verified", None
+        except (httpx.HTTPError, ValueError, TypeError) as e:
+            last_error = type(e).__name__
+    return [], "unverified", {"code": "SERP_UNVERIFIED", "message": f"SERP call failed ({last_error}); search signals unverified."}
+
+
+async def _collect_serp_queries(base_query: str, company: str, title: str) -> Dict[str, Any]:
+    key = _env("SERPAPI_API_KEY") or _env("SEARCH_API_KEY")
+    endpoint = _env("SEARCH_API_ENDPOINT", "https://serpapi.com/search.json") or "https://serpapi.com/search.json"
+    timeout_s = _env_int("SEARCH_TIMEOUT_S", 10)
+    retries = _env_int("SEARCH_RETRY_COUNT", 2)
+    async with httpx.AsyncClient() as client:
+        tasks = {
+            "careers": _serp_search_async(client, f"{base_query} careers".strip(), num=8, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
+            "board": _serp_search_async(client, f"\"{title}\" \"{company}\" job".strip(), num=10, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
+            "rep": _serp_search_async(client, f"\"{company}\" layoffs scam \"fake recruiter\"".strip(), num=8, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
+            "linkedin": _serp_search_async(client, f"site:linkedin.com/company \"{company}\"".strip(), num=5, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
+            "registry": _serp_search_async(client, f"\"{company}\" (crunchbase OR \"companies house\")".strip(), num=8, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
+            "duplicates": _serp_search_async(client, f"\"{title}\" \"{company}\"".strip(), num=10, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
+        }
+        keys = list(tasks.keys())
+        values = await asyncio.gather(*tasks.values())
+    return {k: v for k, v in zip(keys, values)}
 
 
 def build_evidence_bundle(norm: NormalizationResult, ext: ExtractionResult) -> EvidenceBundle:
     signals: List[Dict[str, Any]] = []
     warnings: List[Dict[str, str]] = []
-    
+    evidence_sources: List[Dict[str, str]] = []
+
     official_found = False
     official_url = None
     duplicate_risk = False
     recruiter_verified = False
 
-    chain = build_provider_chain()
-    provider = chain[0] if chain else None
+    company = ext.company_hint or ""
+    title = ext.title_hint or ""
+    base_query = f"{company} {title}".strip() or (norm.canonical_url or "")
 
-    # Source 1 & 2: Official Careers Page & Domain Search
-    if ext.company_hint and ext.title_hint and provider:
-        query = f"{ext.company_hint} {ext.title_hint} careers"
-        results = provider.search(query, limit=5)
-        
-        for url in results:
-            parsed = urlparse(url)
-            domain = parsed.netloc
-            if _is_official_domain(domain, ext.company_hint):
-                official_found = True
-                official_url = url
-                signals.append({
-                    "id": "official_careers_page",
-                    "label": "Official Source Found",
-                    "tier": "T1",
-                    "strength": "high",
-                    "details": f"Found matching role on likely official domain: {domain}"
-                })
-                break
-                
-        if not official_found:
-            warnings.append({
-                "code": "NO_OFFICIAL_SOURCE",
-                "message": f"Could not find {ext.title_hint} on {ext.company_hint} official pages."
-            })
+    serp_results: Dict[str, Any] = {}
+    try:
+        # Avoid nesting event loops (e.g. in ASGI servers).
+        asyncio.get_running_loop()
+        has_running_loop = True
+    except RuntimeError:
+        has_running_loop = False
+    if not has_running_loop:
+        serp_results = asyncio.run(_collect_serp_queries(base_query, company, title))
 
-    # Source 3: Open Web Duplicate Search
-    if ext.title_hint and provider:
-        query = f'"{ext.title_hint}" job'
-        if ext.company_hint:
-            query += f' "{ext.company_hint}"'
-            
-        dup_results = provider.search(query, limit=10)
-        # If we see the exact same job on 4+ different job boards, flag as repost risk
-        unique_domains = {urlparse(u).netloc for u in dup_results}
-        if len(unique_domains) >= 4 and not official_found:
-            duplicate_risk = True
-            signals.append({
-                "id": "duplicate_repost_risk",
-                "label": "High Repost Volume",
-                "tier": "T3",
-                "strength": "low",
-                "details": f"Found role listed across {len(unique_domains)} different domains without an official source."
-            })
+    careers_rows, careers_status, careers_warning = serp_results.get("careers", ([], "unverified", None))
+    if careers_warning:
+        warnings.append(careers_warning)
+    for row in careers_rows:
+        link = str(row.get("link") or "").strip()
+        if not link.startswith(("http://", "https://")):
+            continue
+        evidence_sources.append({"url": link, "type": "careers_search", "found_at": _now_iso()})
+        domain = urlparse(link).netloc
+        if _is_official_domain(domain, ext.company_hint):
+            official_found = True
+            official_url = link
+            break
+    careers_strength = "none" if careers_status == "unverified" else ("high" if official_found else "low")
+    signals.append(
+        _mk_signal(
+            sid="careers_page_match",
+            label="careers_page_match",
+            tier="T1",
+            strength=careers_strength,
+            detail="unverified" if careers_status == "unverified" else (official_url or "No clear official careers match."),
+            status="unknown" if careers_status == "unverified" else ("pass" if official_found else "fail"),
+            source=official_url or "serp",
+        )
+    )
+    if official_found:
+        signals.append(
+            _mk_signal(
+                sid="official_careers_page",
+                label="official_careers_page",
+                tier="T1",
+                strength="high",
+                detail=official_url or "Official careers match found.",
+                status="pass",
+                source=official_url or "serp",
+            )
+        )
 
-    # Source 4: Recruiter Identity
-    if ext.recruiter_name_hint:
-        if provider and ext.company_hint:
-            query = f'"{ext.recruiter_name_hint}" "{ext.company_hint}" recruiter linkedin'
-            rec_results = provider.search(query, limit=2)
-            if any("linkedin.com/in/" in u for u in rec_results):
-                recruiter_verified = True
-                signals.append({
-                    "id": "recruiter_verified",
-                    "label": "Recruiter Identity",
-                    "tier": "T2",
-                    "strength": "medium",
-                    "details": f"Found professional profile for {ext.recruiter_name_hint} at {ext.company_hint}."
-                })
-        
-        if not recruiter_verified:
-            signals.append({
-                "id": "recruiter_unverified",
-                "label": "Unverified Recruiter",
-                "tier": "T3",
-                "strength": "low",
-                "details": f"Recruiter '{ext.recruiter_name_hint}' mentioned, but identity could not be strongly corroborated."
-            })
+    board_rows, board_status, board_warning = serp_results.get("board", ([], "unverified", None))
+    if board_warning:
+        warnings.append(board_warning)
+    board_domains: Dict[str, int] = {}
+    max_days = 0
+    for row in board_rows:
+        link = str(row.get("link") or "").strip()
+        snippet = str(row.get("snippet") or "")
+        if link.startswith(("http://", "https://")):
+            host = (urlparse(link).hostname or "").lower()
+            for board in SUPPORTED_BOARDS:
+                if board in host:
+                    board_domains[board] = board_domains.get(board, 0) + 1
+                    evidence_sources.append({"url": link, "type": f"board:{board}", "found_at": _now_iso()})
+        days = _extract_days_from_snippet(snippet)
+        if days and days > max_days:
+            max_days = days
+    cross_count = len(board_domains)
+    signals.append(
+        _mk_signal(
+            sid="cross_platform_freshness",
+            label="cross_platform_freshness",
+            tier="T2",
+            strength="none" if board_status == "unverified" else ("high" if cross_count >= 2 else "low"),
+            detail="unverified" if board_status == "unverified" else f"Found on {cross_count} platforms ({', '.join(sorted(board_domains.keys())) or 'none'}).",
+            status="unknown" if board_status == "unverified" else ("pass" if cross_count >= 2 else "fail"),
+            source="serp",
+        )
+    )
+    stale = max_days >= 30
+    signals.append(
+        _mk_signal(
+            sid="staleness_flag",
+            label="staleness_flag",
+            tier="T2",
+            strength="none" if board_status == "unverified" else ("low" if stale else "high"),
+            detail="unverified" if board_status == "unverified" else f"Observed listing age up to {max_days} days.",
+            status="unknown" if board_status == "unverified" else ("fail" if stale else "pass"),
+            source="serp",
+        )
+    )
+    first_seen_estimate: Optional[str] = None
+    if max_days > 0:
+        first_seen_estimate = (date.today() - timedelta(days=max_days)).isoformat()
+    signals.append(
+        _mk_signal(
+            sid="first_seen_estimate",
+            label="first_seen_estimate",
+            tier="T2",
+            strength="none" if board_status == "unverified" else ("low" if stale else "medium"),
+            detail="unverified" if board_status == "unverified" else (first_seen_estimate or "No first-seen estimate found."),
+            status="unknown" if board_status == "unverified" else ("fail" if stale else "pass"),
+            source="serp",
+        )
+    )
 
-    # Fallback: if we have a provided URL but it's not verified as official
+    rep_rows, rep_status, rep_warning = serp_results.get("rep", ([], "unverified", None))
+    if rep_warning:
+        warnings.append(rep_warning)
+    rep_hits = 0
+    for row in rep_rows:
+        snippet = str(row.get("snippet") or "").lower()
+        title_text = str(row.get("title") or "").lower()
+        blob = f"{snippet} {title_text}"
+        if any(k in blob for k in ("layoff", "scam", "fake recruiter")):
+            rep_hits += 1
+        link = str(row.get("link") or "").strip()
+        if link.startswith(("http://", "https://")):
+            evidence_sources.append({"url": link, "type": "reputation", "found_at": _now_iso()})
+    signals.append(
+        _mk_signal(
+            sid="company_reputation_signal",
+            label="company_reputation_signal",
+            tier="T3",
+            strength="none" if rep_status == "unverified" else ("low" if rep_hits > 0 else "medium"),
+            detail="unverified" if rep_status == "unverified" else f"Potential negative keyword hits: {rep_hits}.",
+            status="unknown" if rep_status == "unverified" else ("fail" if rep_hits > 0 else "pass"),
+            source="serp",
+        )
+    )
+
+    linkedin_rows, linkedin_status, linkedin_warning = serp_results.get("linkedin", ([], "unverified", None))
+    if linkedin_warning:
+        warnings.append(linkedin_warning)
+    linkedin_verified = any("linkedin.com/company/" in str(r.get("link") or "") for r in linkedin_rows)
+    signals.append(
+        _mk_signal(
+            sid="company_linkedin_presence",
+            label="company_linkedin_presence",
+            tier="T1",
+            strength="none" if linkedin_status == "unverified" else ("high" if linkedin_verified else "low"),
+            detail="unverified" if linkedin_status == "unverified" else ("Verified LinkedIn company profile found." if linkedin_verified else "No clear LinkedIn company profile found."),
+            status="unknown" if linkedin_status == "unverified" else ("pass" if linkedin_verified else "fail"),
+            source="serp",
+        )
+    )
+
+    registry_rows, registry_status, registry_warning = serp_results.get("registry", ([], "unverified", None))
+    if registry_warning:
+        warnings.append(registry_warning)
+    registry_found = any(
+        any(token in str(r.get("link") or "").lower() for token in ("crunchbase.com/organization", "find-and-update.company-information.service.gov.uk"))
+        for r in registry_rows
+    )
+    signals.append(
+        _mk_signal(
+            sid="company_registry_presence",
+            label="company_registry_presence",
+            tier="T2",
+            strength="none" if registry_status == "unverified" else ("high" if registry_found else "low"),
+            detail="unverified" if registry_status == "unverified" else ("Company registry trail found." if registry_found else "No clear company registry trail found."),
+            status="unknown" if registry_status == "unverified" else ("pass" if registry_found else "fail"),
+            source="serp",
+        )
+    )
+
+    posting_domain = (urlparse(norm.canonical_url).hostname or "").lower() if norm.canonical_url else ""
+    careers_domain = (urlparse(official_url).hostname or "").lower() if official_url else ""
+    domain_match = bool(posting_domain and careers_domain and posting_domain.split(":")[0].endswith(".".join(careers_domain.split(".")[-2:])))
+    signals.append(
+        _mk_signal(
+            sid="careers_domain_match",
+            label="careers_domain_match",
+            tier="T1",
+            strength="high" if domain_match else ("none" if not posting_domain or not careers_domain else "low"),
+            detail="Careers and posting domains align." if domain_match else ("Insufficient domain data to compare." if not posting_domain or not careers_domain else "Careers domain differs from posting domain."),
+            status="pass" if domain_match else ("unknown" if not posting_domain or not careers_domain else "fail"),
+            source=official_url or norm.canonical_url or "pattern",
+        )
+    )
+
+    dup_rows, dup_status, dup_warning = serp_results.get("duplicates", ([], "unverified", None))
+    if dup_warning:
+        warnings.append(dup_warning)
+    dup_hosts = {(urlparse(str(r.get("link") or "")).hostname or "").lower() for r in dup_rows if str(r.get("link") or "").startswith(("http://", "https://"))}
+    dup_hosts = {h for h in dup_hosts if h}
+    duplicate_risk = dup_status == "verified" and len(dup_hosts) >= 3
+    signals.append(
+        _mk_signal(
+            sid="posting_duplication_signal",
+            label="posting_duplication_signal",
+            tier="T2",
+            strength="none" if dup_status == "unverified" else ("low" if duplicate_risk else "high"),
+            detail="unverified" if dup_status == "unverified" else f"Posting appears across {len(dup_hosts)} domains.",
+            status="unknown" if dup_status == "unverified" else ("fail" if duplicate_risk else "pass"),
+            source="serp",
+        )
+    )
+
+    # Recruiter corroboration is best-effort; skip it when we can't safely run extra network calls.
+    if ext.recruiter_name_hint and not recruiter_verified:
+        signals.append(
+            _mk_signal(
+                sid="recruiter_unverified",
+                label="recruiter_unverified",
+                tier="T3",
+                strength="low",
+                detail=f"Recruiter '{ext.recruiter_name_hint}' could not be strongly corroborated.",
+                status="unknown",
+                source="serp",
+            )
+        )
+
     if norm.canonical_url and not official_found:
         parsed = urlparse(norm.canonical_url)
         if _is_official_domain(parsed.netloc, ext.company_hint):
             official_found = True
             official_url = norm.canonical_url
-            signals.append({
-                "id": "official_careers_page",
-                "label": "Official Source Provided",
-                "tier": "T1",
-                "strength": "medium",
-                "details": f"Provided URL matches company domain pattern: {parsed.netloc}"
-            })
 
     return EvidenceBundle(
         official_page_found=official_found,
@@ -134,5 +390,6 @@ def build_evidence_bundle(norm: NormalizationResult, ext: ExtractionResult) -> E
         duplicate_risk=duplicate_risk,
         recruiter_verified=recruiter_verified,
         signals=signals,
-        warnings=warnings
+        warnings=warnings[:20],
+        evidence_sources=evidence_sources[:30],
     )

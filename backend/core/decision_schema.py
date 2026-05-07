@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from enum import Enum
 try:
-    from typing import List, Literal, Optional, TypedDict, NotRequired
+    from typing import Any, Dict, List, Literal, Optional, TypedDict, NotRequired
 except ImportError:
-    from typing import List, Literal, Optional, TypedDict
+    from typing import Any, Dict, List, Literal, Optional, TypedDict
     from typing_extensions import NotRequired
 
 
@@ -45,6 +45,21 @@ class DecisionResponse(TypedDict):
     reasons: List[ReasonItem]
     warnings: List[WarningItem]
     signals: List[SignalEvidence]
+
+    # Sprint 3: Verification Depth
+    company_legitimacy_score: int
+    company_signals: List[Dict[str, Any]]
+    posting_authenticity_score: int
+    posting_signals: List[Dict[str, Any]]
+    freshness_score: int
+    staleness_flag: bool
+    first_seen_estimate: Optional[str]
+
+    # Honest Uncertainty
+    verified_signal_count: int
+    total_signal_count: int
+    coverage_ratio: float
+    disclaimer: str
 
 
 class CacheMeta(TypedDict):
