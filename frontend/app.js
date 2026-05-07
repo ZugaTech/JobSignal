@@ -68,6 +68,7 @@ function setPhase(phase) {
   $("skeletonPanel").classList.toggle("hidden", !loading);
   $("btnSpinner").classList.toggle("hidden", !loading);
   $("btnLabel").textContent = loading ? "Checking..." : "Check posting";
+  $("btnRun").setAttribute("aria-busy", loading ? "true" : "false");
 }
 
 function setCacheOverlay(hit) {
@@ -262,12 +263,20 @@ function getApiBase() {
 
 let lastReport = null;
 
+function syncHeroEmptyText(url, text, file) {
+  const hasAny = Boolean((url || "").trim() || (text || "").trim() || file);
+  $("emptyStateText").textContent = hasAny
+    ? "Ready to verify. You can combine URL, description, and screenshot."
+    : "Drop a job link or paste a description to begin.";
+}
+
 async function runFlow() {
   // Auto-reset UI state on new run
   $("errorPanel").classList.add("hidden");
   $("result").classList.add("hidden");
   
   const { url, text, file, recommendations } = readInputs();
+  syncHeroEmptyText(url, text, file);
   const validation = validateClientInputs(url, text, file);
   if (!validation.ok) {
     setPhase(PHASE.ERROR);
@@ -358,6 +367,8 @@ $("jobImage").addEventListener("change", () => {
   }
   img.src = URL.createObjectURL(f);
   wrap.classList.remove("hidden");
+  const { url, text, file } = readInputs();
+  syncHeroEmptyText(url, text, file);
 });
 
 for (const tab of document.querySelectorAll(".tab-chip")) {
@@ -366,5 +377,16 @@ for (const tab of document.querySelectorAll(".tab-chip")) {
     if (!pane) return;
     pane.classList.toggle("hidden");
     tab.classList.toggle("is-active", !pane.classList.contains("hidden"));
+    tab.setAttribute("aria-pressed", tab.classList.contains("is-active") ? "true" : "false");
   });
 }
+
+$("jobUrl").addEventListener("input", () => {
+  const { url, text, file } = readInputs();
+  syncHeroEmptyText(url, text, file);
+});
+
+$("jobText").addEventListener("input", () => {
+  const { url, text, file } = readInputs();
+  syncHeroEmptyText(url, text, file);
+});

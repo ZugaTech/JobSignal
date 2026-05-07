@@ -34,7 +34,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
   color: var(--text-2);
 }
 
@@ -52,7 +52,8 @@ body {
   border: 1px solid var(--border);
   background: var(--surface);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 18px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
 .hero-title {
@@ -82,11 +83,16 @@ body {
   padding: 8px 12px;
   cursor: pointer;
   white-space: nowrap;
+  transition: border-color 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
 .tab-chip.is-active {
   color: var(--text);
   border-color: #434343;
+}
+
+.tab-chip:hover {
+  transform: translateY(-1px);
 }
 
 .input-pane + .input-pane {
@@ -157,6 +163,13 @@ textarea:focus {
   align-items: center;
   justify-content: center;
   gap: 8px;
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+  box-shadow: 0 8px 18px rgba(99, 102, 241, 0.24);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
 }
 
 .btn-primary:disabled {
@@ -230,6 +243,18 @@ textarea:focus {
 
 .result-card {
   margin-top: 14px;
+  animation: reveal 260ms ease;
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .result-top {
@@ -339,6 +364,12 @@ textarea:focus {
   border-radius: 10px;
   padding: 9px;
   background: #121212;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.signal-item:hover {
+  border-color: #353535;
+  background: #151515;
 }
 
 .signal-icon {
@@ -395,6 +426,13 @@ textarea:focus {
   border-radius: 10px;
   padding: 8px 10px;
   cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.ghost-btn:hover {
+  background: #1f1f1f;
+  border-color: #4a4a4a;
+  color: var(--text);
 }
 
 .rec-section {
@@ -415,6 +453,12 @@ textarea:focus {
   border-radius: 12px;
   padding: 10px;
   background: #121212;
+  transition: transform 140ms ease, border-color 140ms ease;
+}
+
+.rec-card:hover {
+  transform: translateY(-2px);
+  border-color: #363636;
 }
 
 .rec-head {
@@ -494,4 +538,29 @@ textarea:focus {
 
 .shell[data-ui-phase="error"] .confidence-fill {
   background: linear-gradient(90deg, #991b1b, var(--skip));
+}
+
+@media (max-width: 540px) {
+  .top-nav {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .panel {
+    padding: 14px;
+  }
+
+  .rec-card {
+    min-width: 220px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
