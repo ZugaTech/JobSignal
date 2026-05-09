@@ -6,7 +6,6 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "clipboardRead",
     "storage"
   ],
   "host_permissions": [
@@ -17,7 +16,9 @@
     "https://*.lever.co/*",
     "https://*.myworkdayjobs.com/*",
     "https://*.wellfound.com/*",
-    "<all_urls>"
+    "https://*.up.railway.app/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
   "action": {
     "default_popup": "popup.html"

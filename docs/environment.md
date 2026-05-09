@@ -7,16 +7,16 @@ Operational and configuration variables expected at runtime. **Names are stable 
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `NODE_ENV` | Yes | `development` \| `staging` \| `production` |
-| `APP_PUBLIC_BASE_URL` | Staging+ | Public URL of web UI (CORS, links) |
-| `API_PUBLIC_BASE_URL` | Staging+ | Public URL of API |
 | `LOG_LEVEL` | No | `debug` \| `info` \| `warn` \| `error` (default `info`) |
+| `PORT` | Deploy-time | Backend port (Procfile defaults to `8080` locally) |
+| `ALLOWED_ORIGINS` | No | Comma-separated CORS origins |
+| `PROBE_PROVIDERS_ON_READY` | No | `1` enables live Fireworks/Serper checks in `/ready`; leave `0` in production to avoid quota burn |
 
 ## 2. Tenant and auth (MVP-friendly)
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `TENANT_ID_HEADER` | No | Header name carrying tenant id for demos (e.g. `x-tenant-id`) |
-| `API_KEYS` or `JWT_ISSUER` | TBD at impl | Exact auth mechanism chosen in Sprint 2—document here when fixed |
+This MVP does not currently ship tenant-header auth variables in code. Older planning docs mentioning `TENANT_ID_HEADER` or auth headers are not part of the live runtime contract.
 
 ## 3. Versioning (cache and reproducibility)
 
@@ -36,11 +36,11 @@ Operational and configuration variables expected at runtime. **Names are stable 
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `SEARCH_API_KEY` | When search enabled | API key for hosted search (also used by SerpAPI adapter) |
+| `SERPER_API_KEY` | When search enabled | Primary Serper.dev API key used by the live evidence coordinator |
+| `SEARCH_API_KEY` | Optional | Generic fallback search key name |
 | `SEARCH_API_ENDPOINT` | When search enabled | Base URL for search provider |
 | `SERPAPI_API_KEY` | Optional | SerpAPI key for similar-job search (`recommendations`) |
 | `JOBSIGNAL_SEARCH_FIXTURE_PATH` | Optional | JSON fixture for offline search results (tests/demos) |
-| `SEARCH_PROVIDER_ORDER` | No | e.g. `serpapi,fixture` — try providers in order |
 | `RECOMMENDATIONS_ENABLED` | No | Default off; client can pass `recommendations_enabled` to override per request |
 | `RECOMMENDATIONS_MAX` | No | Hard-capped at **3** in code |
 | `RECOMMENDATIONS_CANDIDATE_POOL` | No | Max URLs to pull from search before verify (default 8) |
@@ -61,12 +61,16 @@ Operational and configuration variables expected at runtime. **Names are stable 
 | `ENABLE_JOB_FETCH` | No | `1` runs SSRF-bounded GET of the primary job URL (`backend/core/fetch_job_page.py`); default off for CI |
 | `FETCH_MAX_BYTES` | No | Upper bound on downloaded job page |
 | `FETCH_MAX_REDIRECTS` | No | Prevent redirect loops |
+| `MAX_UPLOAD_BYTES` | No | Primary screenshot upload size cap |
+| `IMAGE_MAX_BYTES` | No | Legacy alias still accepted by image ingest code |
+| `RATE_LIMIT_REQUESTS_PER_MINUTE` | No | Current per-IP limit used by the FastAPI middleware |
+| `RATE_LIMIT_BURST` | No | Current burst allowance used by the FastAPI middleware |
 
 ## 7. Observability
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `SENTRY_DSN` | No | Error reporting |
+The current codebase does not yet read `SENTRY_DSN`; keep it as future-facing documentation, not a required runtime value.
 
 ## 8. Validation rules
 

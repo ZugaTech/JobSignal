@@ -1,5 +1,5 @@
-/** Default matches local FastAPI; override in settings for Railway or another host. */
-let backendUrl = "http://localhost:8080";
+/** Default to deployed Railway-style host; users can override in settings for local dev. */
+let backendUrl = "https://jobsignal.up.railway.app";
 let currentJobData = null;
 let currentTabUrl = "";
 
@@ -11,8 +11,10 @@ const stateNotJob = document.getElementById("stateNotJob");
 const settingsPanel = document.getElementById("settingsPanel");
 
 function showState(stateEl) {
-  [stateIdle, stateLoading, stateResult, stateError, stateNotJob].forEach(el => el.classList.add("hidden"));
-  stateEl.classList.remove("hidden");
+  [stateIdle, stateLoading, stateResult, stateError, stateNotJob].forEach((el) => {
+    if (el) el.classList.add("hidden");
+  });
+  if (stateEl) stateEl.classList.remove("hidden");
 }
 
 chrome.storage.local.get(["backendUrl"], (res) => {
@@ -41,7 +43,7 @@ document.getElementById("btnClearCache").addEventListener("click", () => {
 });
 
 function openWebApp(url, text) {
-  let origin = "http://localhost:8080";
+  let origin = "https://jobsignal.up.railway.app";
   try {
     origin = new URL(backendUrl).origin;
   } catch {
@@ -135,7 +137,11 @@ async function verifyJob(data) {
     applyResult(report);
   } catch (err) {
     console.error(err);
-    document.getElementById("errorText").textContent = err.message || "Failed to connect to backend.";
+    const msg =
+      err instanceof TypeError
+        ? "JobSignal is temporarily unavailable. Please try again in a moment."
+        : (err?.message || "Failed to connect to backend.");
+    document.getElementById("errorText").textContent = msg;
     showState(stateError);
   }
 }
