@@ -79,6 +79,9 @@ async def test_url_result_cache_roundtrip_and_bust(monkeypatch):
         assert body1.get("cached") is True
         assert "cache_expires_in" in body1
         assert body1.get("original_analysis_date") == "2020-01-01T00:00:00+00:00"
+        rs = body1.get("review_summary")
+        assert isinstance(rs, dict) and str(rs.get("plain_summary") or "").strip()
+        assert body1.get("cache_complete") is True
 
         d = await ac.delete("/v1/cache", params={"url": "https://example.com/jobs/123"})
         assert d.status_code == 200
