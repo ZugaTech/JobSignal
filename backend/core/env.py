@@ -43,6 +43,8 @@ class EnvConfig:
     fireworks_timeout_s: int
     fireworks_retry_count: int
     log_level: str
+    pipeline_deadline_s: int
+    llm_summary_confidence_threshold: int
 
     @staticmethod
     def load(*, strict: bool = False) -> "EnvConfig":
@@ -68,6 +70,13 @@ class EnvConfig:
         fw_vision_model = str(app_cfg.get("FIREWORKS_VISION_MODEL") or fw_model)
         fw_timeout_s = _int("FIREWORKS_TIMEOUT_S", int(app_cfg.get("FIREWORKS_TIMEOUT_S") or 10), min_v=1, max_v=120)
         fw_retry_count = _int("FIREWORKS_RETRY_COUNT", int(app_cfg.get("FIREWORKS_RETRY_COUNT") or 2), min_v=0, max_v=5)
+        pipeline_deadline_s = _int("PIPELINE_DEADLINE_S", int(app_cfg.get("PIPELINE_DEADLINE_S") or 18), min_v=8, max_v=90)
+        llm_summary_threshold = _int(
+            "LLM_SUMMARY_CONFIDENCE_THRESHOLD",
+            int(app_cfg.get("LLM_SUMMARY_CONFIDENCE_THRESHOLD") or 85),
+            min_v=50,
+            max_v=100,
+        )
 
         if strict or node_env in ("production", "staging"):
             if not cache_url:
@@ -91,4 +100,6 @@ class EnvConfig:
             fireworks_timeout_s=fw_timeout_s,
             fireworks_retry_count=fw_retry_count,
             log_level=str(app_cfg.get("LOG_LEVEL") or "info").lower(),
+            pipeline_deadline_s=pipeline_deadline_s,
+            llm_summary_confidence_threshold=llm_summary_threshold,
         )

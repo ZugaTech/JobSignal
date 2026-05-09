@@ -175,7 +175,7 @@ def run_job_page_fetch(
             warnings=warnings,
         )
 
-    timeout = httpx.Timeout(15.0, connect=5.0)
+    timeout = httpx.Timeout(6.0, connect=2.0)
     headers = {"User-Agent": "JobSignal/1.0 (+https://github.com/jobverification)", "Accept": "text/html,*/*;q=0.8"}
 
     own_client = client is None

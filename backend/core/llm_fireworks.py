@@ -83,28 +83,37 @@ def extract_job_fields_from_image_vision(
     timeout_s = int(_get("FIREWORKS_TIMEOUT_S", "45") or "45")
 
     prompt = (
-        "You extract job posting details from a screenshot. Return JSON ONLY with this schema:\n"
+        "You are extracting structured information from a screenshot of a job posting. "
+        "Extract exactly what is visible in the image. "
+        "Do not infer, assume, or add anything that is not explicitly shown. "
+        "Return a JSON object with:\n"
         "{\n"
         '  "extraction_confidence": "high"|"medium"|"low",\n'
         '  "job_title": string|null,\n'
         '  "company_name": string|null,\n'
         '  "job_url_hint": string|null,\n'
         '  "extracted_job_text": string,\n'
-        '  "notes": string\n'
+        '  "notes": string,\n'
+        '  "has_company_info": boolean,\n'
+        '  "low_quality_image": boolean\n'
         "}\n"
         "Rules:\n"
         "- extraction_confidence reflects how readable and complete the posting is.\n"
-        "- If text is blurry or missing, use extraction_confidence \"low\" and short extracted_job_text.\n"
-        "- Do not invent employers, titles, or URLs not visible.\n"
-        "- job_url_hint only if a URL is clearly visible (http/https).\n"
-        "- extracted_job_text should be plain text of visible posting content, or empty if unreadable.\n"
-        "- notes: one short sentence about limitations.\n"
+        "- low_quality_image is true if text is too blurry, too small, or too incomplete to extract reliably.\n"
+        "- has_company_info is true ONLY if a specific company name is clearly visible in the image.\n"
+        "- If text is blurry or missing, set extraction_confidence 'low' and low_quality_image true.\n"
+        "- Do NOT invent employers, titles, or URLs not explicitly visible in the image.\n"
+        "- Do NOT infer company names from logos, colours, or partial text.\n"
+        "- job_url_hint only if a URL is clearly visible (must start http/https).\n"
+        "- extracted_job_text: plain text of visible posting content, or empty string if unreadable.\n"
+        "- notes: one short sentence about what was or was not visible.\n"
         f"(Image MIME hint for debugging: {mime_type}.)\n"
     )
 
     json_fallback = (
         '{"extraction_confidence":"low","job_title":null,"company_name":null,'
-        '"job_url_hint":null,"extracted_job_text":"","notes":"Vision unavailable."}'
+        '"job_url_hint":null,"extracted_job_text":"","notes":"Vision unavailable.",'
+        '"has_company_info":false,"low_quality_image":false}'
     )
     try:
         from backend.core.llm_safe import call_llm_safe_chat_sync

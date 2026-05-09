@@ -74,6 +74,29 @@ def registrable_domain_naive(host: str) -> Optional[str]:
     return ".".join(parts[-2:])
 
 
+def strip_trailing_slash_url(url: str) -> str:
+    """Remove trailing slashes from path (keep root ``/``)."""
+
+    parsed = urlparse(url)
+    path = parsed.path or "/"
+    if len(path) > 1 and path.endswith("/"):
+        path = path.rstrip("/")
+    query = parsed.query
+    return urlunparse((parsed.scheme, parsed.netloc, path, "", query, ""))
+
+
+def materialize_url_result_cache_key(raw_url: Optional[str]) -> Optional[str]:
+    """Return sha256 hex of cleaned URL for URL-only result cache (tracking stripped, slash trimmed)."""
+
+    canonical, sha = normalize_job_url(raw_url)
+    if not canonical or not sha:
+        return None
+    cleaned = strip_trailing_slash_url(canonical)
+    if cleaned != canonical:
+        return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()
+    return sha
+
+
 def normalize_job_url(raw: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     """Return ``(canonical_url, url_sha256)`` or ``(None, None)`` if absent/invalid."""
     if raw is None:

@@ -7,10 +7,21 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, ValidationError
 
+from backend.core.env import EnvConfig
 from backend.core.metrics import METRICS
-from backend.core.orchestrator import verify_job
+from backend.core.normalization import materialize_url_result_cache_key
+from backend.core.orchestrator import _get_cache, verify_job
+from backend.core.report_detail_store import get_report_detail as load_stored_report_detail, remember_report
 from backend.core.response_contract import validate_and_repair_response
+from backend.core.response_trim import trim_verify_response
 from backend.core.url_preflight import validate_url_format
+from backend.core.url_result_cache import (
+    RESULT_CACHE_KEY_PREFIX,
+    schedule_cache_set,
+    should_store_url_result_cache,
+    url_result_ttl_seconds,
+    wrap_stored_payload,
+)
 
 router = APIRouter()
 
@@ -59,6 +70,30 @@ async def _verify_or_http_exc(**kwargs: Any) -> dict:
         return validate_and_repair_response(raw, request_id=rid)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+async def _finalize_verify_response(report: dict) -> dict:
+    """Store full report for detail endpoint; async-write URL result cache; return trimmed client JSON."""
+
+    remember_report(str(report.get("request_id") or ""), dict(report))
+    cfg = EnvConfig.load(strict=False)
+    meta = report.get("meta") or {}
+    if bool(meta.get("url_only_cache_eligible")) and should_store_url_result_cache(report):
+        rk = materialize_url_result_cache_key(meta.get("canonical_job_url"))
+        if rk:
+            ttl = url_result_ttl_seconds(report)
+            payload = wrap_stored_payload(
+                report=dict(report),
+                cached_at_iso=str(report.get("data_freshness") or ""),
+                ttl_seconds=ttl,
+            )
+            cache = _get_cache(cfg)
+            await schedule_cache_set(cache, RESULT_CACHE_KEY_PREFIX + rk, payload, ttl)
+    return trim_verify_response(report)
+
+
+def _cache_hit_metric(report: dict) -> bool:
+    return bool(report.get("cached")) or bool((report.get("cache") or {}).get("hit"))
 
 
 @router.get("/v1/classify-url")
@@ -154,8 +189,9 @@ async def verify(request: Request) -> dict:
             include_similar_jobs=rec_opt,
             request_id=getattr(request.state, "request_id", "unknown"),
         )
-        METRICS.record_verification(str(report.get("verdict", "VERIFY")), cache_hit=bool(report.get("cache", {}).get("hit")))
-        return report
+        public_rep = await _finalize_verify_response(report)
+        METRICS.record_verification(str(public_rep.get("verdict", "VERIFY")), cache_hit=_cache_hit_metric(public_rep))
+        return public_rep
 
     try:
         body = await request.json()
@@ -178,5 +214,32 @@ async def verify(request: Request) -> dict:
         include_similar_jobs=req.include_similar_jobs,
         request_id=getattr(request.state, "request_id", "unknown"),
     )
-    METRICS.record_verification(str(report.get("verdict", "VERIFY")), cache_hit=bool(report.get("cache", {}).get("hit")))
-    return report
+    public_rep = await _finalize_verify_response(report)
+    METRICS.record_verification(str(public_rep.get("verdict", "VERIFY")), cache_hit=_cache_hit_metric(public_rep))
+    return public_rep
+
+
+@router.get("/v1/report/{request_id}")
+async def get_report_detail(request_id: str) -> dict:
+    """Full verify payload (including longer signal details) when still retained server-side."""
+
+    detail = load_stored_report_detail(request_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Report not found or expired.")
+    return detail
+
+
+@router.delete("/v1/cache")
+async def bust_url_cache(url: str = Query(..., min_length=8, max_length=4096)) -> dict:
+    """Hackathon/admin helper: clear URL-only cached verdict for a given URL string."""
+
+    cfg = EnvConfig.load(strict=False)
+    cache = _get_cache(cfg)
+    u = url.strip()
+    if not u.lower().startswith(("http://", "https://")):
+        u = "https://" + u
+    rk = materialize_url_result_cache_key(u)
+    if not rk:
+        raise HTTPException(status_code=400, detail="Could not normalize URL for cache key.")
+    cache.delete(RESULT_CACHE_KEY_PREFIX + rk)
+    return {"ok": True, "cleared_key_suffix": rk[:16]}

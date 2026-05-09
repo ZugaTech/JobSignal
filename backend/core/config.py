@@ -64,7 +64,7 @@ ENV_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("RATE_LIMIT_REQUESTS_PER_MINUTE", _as_int, 20, "Per-IP request quota per minute"),
     EnvVarSpec("RATE_LIMIT_BURST", _as_int, 5, "Per-IP additional burst allowance within a window"),
     EnvVarSpec("SEARCH_API_ENDPOINT", str, "https://serpapi.com/search.json", "SERP provider endpoint URL"),
-    EnvVarSpec("SEARCH_TIMEOUT_S", _as_int, 10, "SERP request timeout in seconds"),
+    EnvVarSpec("SEARCH_TIMEOUT_S", _as_int, 5, "SERP request timeout in seconds"),
     EnvVarSpec("SEARCH_RETRY_COUNT", _as_int, 2, "SERP retry attempts"),
     EnvVarSpec("SEARCH_RATE_LIMIT_PER_MINUTE", _as_int, 60, "SERP provider request cap per minute"),
     EnvVarSpec("SERPER_API_KEY", str, None, "Primary Serper.dev provider API key"),
@@ -75,8 +75,15 @@ ENV_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("FIREWORKS_BASE_URL", str, "https://api.fireworks.ai/inference/v1", "Fireworks OpenAI-compatible base URL"),
     EnvVarSpec("FIREWORKS_MODEL", str, "accounts/fireworks/models/kimi-k2-instruct", "Text model id"),
     EnvVarSpec("FIREWORKS_VISION_MODEL", str, "accounts/fireworks/models/kimi-k2-instruct", "Vision model id"),
-    EnvVarSpec("FIREWORKS_TIMEOUT_S", _as_int, 10, "LLM call timeout in seconds"),
+    EnvVarSpec("FIREWORKS_TIMEOUT_S", _as_int, 8, "LLM call timeout in seconds"),
     EnvVarSpec("FIREWORKS_RETRY_COUNT", _as_int, 2, "LLM retry attempts"),
+    EnvVarSpec("PIPELINE_DEADLINE_S", _as_int, 18, "Hard cap for parallel evidence phase (seconds)"),
+    EnvVarSpec(
+        "LLM_SUMMARY_CONFIDENCE_THRESHOLD",
+        _as_int,
+        85,
+        "Skip verdict LLM and use template when confidence_score meets threshold and verdict is APPLY or SKIP",
+    ),
 )
 
 

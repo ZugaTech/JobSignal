@@ -3,8 +3,9 @@ import httpx
 from typing import Dict, Any, List, Optional
 
 class EvidenceCoordinator:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, *, search_timeout_s: float = 5.0):
         self.api_key = api_key
+        self.search_timeout_s = float(search_timeout_s)
         self.client = httpx.AsyncClient()
         self.calls_made = 0
         self.max_calls = 8
@@ -29,7 +30,7 @@ class EvidenceCoordinator:
                     "https://google.serper.dev/search",
                     headers={"X-API-KEY": self.api_key, "Content-Type": "application/json"},
                     json={"q": query, "num": num},
-                    timeout=6.0
+                    timeout=float(self.search_timeout_s),
                 )
                 if r.status_code == 200:
                     return r.json().get("organic", [])

@@ -106,7 +106,7 @@ def extract_company_name_hardened(url: Optional[str], text: Optional[str], *, re
                     model=_get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2-instruct"),
                     temperature=0.1,
                     max_tokens=24,
-                    timeout=5.0,
+                    timeout=4.0,
                     prose_mode=True,
                     max_chars=120,
                     min_prose_len=1,
@@ -166,7 +166,7 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
     try:
         tasks = {k: coordinator.search(q, num=5) for k, q in queries.items()}
         # Wait up to 10s for the searches
-        results_list = await asyncio.wait_for(asyncio.gather(*tasks.values()), timeout=10.0)
+        results_list = await asyncio.wait_for(asyncio.gather(*tasks.values()), timeout=8.0)
         results = dict(zip(tasks.keys(), results_list))
         timeout_hit = False
     except asyncio.TimeoutError:
@@ -550,7 +550,7 @@ async def _generate_llm_summary(
         model=_get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2-instruct"),
         temperature=0.3,
         max_tokens=150,
-        timeout=5.0,
+        timeout=8.0,
     )
     if "Summary:" in summary_text:
         summary_text = summary_text.split("Summary:")[-1].strip()

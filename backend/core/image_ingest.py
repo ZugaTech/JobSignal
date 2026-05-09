@@ -29,7 +29,7 @@ def _max_image_bytes() -> int:
 
 
 def detect_image_mime(data: bytes) -> Optional[str]:
-    """Return ``image/png``, ``image/jpeg``, or ``image/webp`` if magic bytes match."""
+    """Return ``image/png``, ``image/jpeg``, ``image/webp``, or ``image/gif`` if magic bytes match."""
 
     if len(data) >= 8 and data[:8] == b"\x89PNG\r\n\x1a\n":
         return "image/png"
@@ -37,6 +37,8 @@ def detect_image_mime(data: bytes) -> Optional[str]:
         return "image/jpeg"
     if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "image/webp"
+    if len(data) >= 6 and data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
     return None
 
 
@@ -46,7 +48,7 @@ def normalize_client_image_type(content_type: Optional[str]) -> Optional[str]:
     ct = content_type.split(";")[0].strip().lower()
     if ct in ("image/jpg",):
         return "image/jpeg"
-    if ct in ("image/png", "image/jpeg", "image/webp"):
+    if ct in ("image/png", "image/jpeg", "image/webp", "image/gif"):
         return ct
     return None
 
@@ -62,6 +64,8 @@ class ExtractedVisionFields(BaseModel):
     job_url_hint: Optional[str] = None
     extracted_job_text: str = ""
     notes: str = ""
+    has_company_info: bool = False
+    low_quality_image: bool = False
 
     @field_validator("job_title", "company_name", "job_url_hint", mode="before")
     @classmethod
@@ -78,6 +82,15 @@ class ExtractedVisionFields(BaseModel):
         if v is None:
             return ""
         return str(v)
+
+    @field_validator("has_company_info", "low_quality_image", mode="before")
+    @classmethod
+    def _coerce_bool(cls, v: Any) -> bool:
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v.lower() in ("true", "1", "yes")
+        return bool(v)
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +221,22 @@ def ingest_job_image(
         return ImageIngestResult(
             status="insufficient",
             fields=None,
+            warnings=warnings,
+            declared_mime=declared_mime or "",
+            detected_mime=effective_mime,
+        )
+
+    # Sprint guard: model itself flagged the image as too low quality to extract from
+    if fields.low_quality_image and not user_supplied_url_or_text:
+        warnings.append(
+            {
+                "code": "IMAGE_LOW_QUALITY",
+                "message": "The image was too unclear to extract reliable information. Please upload a clearer screenshot or paste the job description as text.",
+            }
+        )
+        return ImageIngestResult(
+            status="insufficient",
+            fields=fields,
             warnings=warnings,
             declared_mime=declared_mime or "",
             detected_mime=effective_mime,

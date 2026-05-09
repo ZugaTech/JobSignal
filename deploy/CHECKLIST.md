@@ -10,6 +10,7 @@
 8. Check `/ready` returns `ready` or `degraded` (not `unavailable`).
 9. Run one `POST /v1/verify` smoke request with URL/text input.
 10. Confirm `/metrics` returns counters and watch logs for `report_returned` entries.
+11. Before a live demo on stage, run `python scripts/warm_cache.py` once (with `JOBSIGNAL_API_BASE` pointing at the deployed API) so demo URLs resolve from the URL-only cache for instant repeats.
 
 Notes:
 - Frontend can be served separately as static files, or proxied by your web tier to this API.

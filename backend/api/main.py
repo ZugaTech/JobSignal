@@ -85,7 +85,13 @@ def create_app() -> FastAPI:
         if content_len:
             try:
                 if int(content_len) > max_upload_bytes:
-                    return JSONResponse(status_code=413, content={"error": "payload_too_large", "message": "Upload exceeds MAX_UPLOAD_BYTES"})
+                    return JSONResponse(
+                        status_code=413,
+                        content={
+                            "error": "payload_too_large",
+                            "message": "Image too large. Please use an image under 5MB.",
+                        },
+                    )
             except ValueError:
                 pass
         return await call_next(request)

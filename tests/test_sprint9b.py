@@ -67,9 +67,17 @@ async def test_full_verify_returns_200_on_review_timeout(monkeypatch):
         async def search(self, *args, **kwargs):
             await asyncio.sleep(12)
             return []
-        async def close(self): pass
+
+        async def close(self) -> None:
+            pass
+
+        def set_max_calls(self, count: int) -> None:
+            pass
         
-    monkeypatch.setattr("backend.core.orchestrator.EvidenceCoordinator", lambda api_key: TimeoutCoordinator())
+    monkeypatch.setattr(
+        "backend.core.orchestrator.EvidenceCoordinator",
+        lambda api_key, search_timeout_s=5.0: TimeoutCoordinator(),
+    )
     
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.post("/v1/verify", json={"job_url": "https://google.com/jobs/1"})

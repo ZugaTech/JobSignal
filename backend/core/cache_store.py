@@ -17,6 +17,8 @@ class CacheStore(Protocol):
 
     def set(self, key: str, value: str, ttl_seconds: int) -> None: ...
 
+    def delete(self, key: str) -> None: ...
+
 
 @dataclass
 class InMemoryCache:
@@ -42,6 +44,10 @@ class InMemoryCache:
     def set(self, key: str, value: str, ttl_seconds: int) -> None:
         with self._lock:
             self._data[key] = (self.now_fn() + ttl_seconds, value)
+
+    def delete(self, key: str) -> None:
+        with self._lock:
+            self._data.pop(key, None)
 
 
 class RedisCache:
@@ -74,6 +80,12 @@ class RedisCache:
     def set(self, key: str, value: str, ttl_seconds: int) -> None:
         try:
             self._client().set(name=key, value=value, ex=int(ttl_seconds))
+        except Exception:  # noqa: BLE001
+            return None
+
+    def delete(self, key: str) -> None:
+        try:
+            self._client().delete(key)
         except Exception:  # noqa: BLE001
             return None
 

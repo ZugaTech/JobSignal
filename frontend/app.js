@@ -6,8 +6,12 @@ const PHASE = {
   ERROR: "error",
 };
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES =
+  typeof window.JOBSIGNAL_MAX_UPLOAD_BYTES === "number" && window.JOBSIGNAL_MAX_UPLOAD_BYTES > 0
+    ? window.JOBSIGNAL_MAX_UPLOAD_BYTES
+    : 5 * 1024 * 1024;
 const BATCH_VERIFY_CONCURRENCY = 3;
+const ACCEPT_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 /** API origin for /v1/*. Same-origin when UI is served from FastAPI on :8080; fixed host when UI is file:// or another port. */
 /** Fetch wrapper: network-level failures get a clean user message (no silent console-only errors). */
@@ -56,11 +60,38 @@ function readInputs() {
   };
 }
 
+function normalizeJobUrlInput(raw) {
+  let u = String(raw ?? "").trim().replace(/[\r\n]+/g, "").trim();
+  if (!u) return "";
+  if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
+  return u;
+}
+
+function looksLikeJobUrl(text) {
+  const s = String(text ?? "").trim();
+  if (!s || s.includes("\n")) return false;
+  if (/^https?:\/\//i.test(s)) return true;
+  return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}\/.+/i.test(s);
+}
+
+function formatCachedAgo(iso) {
+  try {
+    const t = new Date(iso).getTime();
+    if (Number.isNaN(t)) return "Verified earlier";
+    const days = Math.floor((Date.now() - t) / 86400000);
+    if (days <= 0) return "Verified today";
+    if (days === 1) return "Verified 1 day ago";
+    return `Verified ${days} days ago`;
+  } catch {
+    return "Verified earlier";
+  }
+}
+
 function validateClientInputs(urlRaw, textRaw, file) {
-  const url = String(urlRaw ?? "").trim();
   const text = String(textRaw ?? "").trim();
   if (!url && !text && !file) return { ok: false, message: "Add a link, description, or screenshot." };
-  if (file && file.size > MAX_IMAGE_BYTES) return { ok: false, message: "File exceeds 5MB." };
+  if (file && file.size > MAX_IMAGE_BYTES)
+    return { ok: false, message: "Image too large. Please use an image under 5MB." };
   return { ok: true };
 }
 
@@ -136,6 +167,8 @@ function renderExpandedSignals(signals) {
 
 let loadingInterval = null;
 let loadingReassuranceTimeout = null;
+let loadingElapsedInterval = null;
+let loadingStartedAt = null;
 let loadingSeqGen = 0;
 
 function startLoadingSequence() {
@@ -153,12 +186,22 @@ function startLoadingSequence() {
   const textEl = $("loadingStepText");
   const reassEl = $("loadingReassurance");
   const barEl = $("modalLoadingBar");
+  const elapsedEl = $("loadingElapsed");
   if (!textEl || !reassEl || !barEl) return;
 
   barEl.classList.remove("hidden");
   reassEl.classList.add("hidden");
   textEl.style.opacity = "1";
   textEl.textContent = steps[0];
+  loadingStartedAt = performance.now();
+  if (elapsedEl) elapsedEl.textContent = "";
+
+  if (loadingElapsedInterval) clearInterval(loadingElapsedInterval);
+  loadingElapsedInterval = setInterval(() => {
+    if (gen !== loadingSeqGen || loadingStartedAt == null) return;
+    const s = Math.floor((performance.now() - loadingStartedAt) / 1000);
+    if (elapsedEl) elapsedEl.textContent = `${s}s`;
+  }, 400);
 
   loadingInterval = setInterval(() => {
     if (gen !== loadingSeqGen) return;
@@ -175,13 +218,17 @@ function startLoadingSequence() {
     if (gen !== loadingSeqGen) return;
     reassEl.classList.remove("hidden");
     reassEl.style.opacity = "1";
-  }, 20000);
+  }, 15000);
 }
 
 function stopLoadingSequence() {
   loadingSeqGen += 1;
+  loadingStartedAt = null;
   if (loadingInterval) clearInterval(loadingInterval);
   loadingInterval = null;
+  if (loadingElapsedInterval) clearInterval(loadingElapsedInterval);
+  loadingElapsedInterval = null;
+  if ($("loadingElapsed")) $("loadingElapsed").textContent = "";
   if (loadingReassuranceTimeout) clearTimeout(loadingReassuranceTimeout);
   loadingReassuranceTimeout = null;
   if ($("modalLoadingBar")) $("modalLoadingBar").classList.add("hidden");
@@ -196,6 +243,10 @@ function openModal() {
   $("modalContent").classList.add("hidden");
   $("similarJobsSection").classList.add("hidden");
   $("modalVerdictBadge").classList.add("hidden");
+  if ($("modalCacheChip")) {
+    $("modalCacheChip").classList.add("hidden");
+    $("modalCacheChip").textContent = "";
+  }
   if ($("modalContent")) $("modalContent").classList.remove("modal-grid--single");
   if ($("signalDataUnavailable")) $("signalDataUnavailable").classList.add("hidden");
   if ($("signalVerificationSection")) $("signalVerificationSection").classList.remove("hidden");
@@ -232,6 +283,101 @@ if (document.querySelector(".modal-drag-handle")) {
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeModal();
 });
+
+/** Render adaptive input_meta banners in the modal */
+function renderInputMetaBanner(report) {
+  const banner = $("inputMetaBanner");
+  if (!banner) return;
+  banner.innerHTML = "";
+  banner.classList.add("hidden");
+
+  const meta = report.input_meta;
+  if (!meta) return;
+
+  const { input_method, company_identified, auto_url_extracted, low_quality_image } = meta || {};
+
+  let html = "";
+
+  // Auto URL extracted from description — green/positive
+  if (auto_url_extracted) {
+    html = `
+      <div class="input-meta-chip input-meta-chip--positive">
+        <span>✓ We found a link in your input and verified it directly.</span>
+      </div>`;
+  }
+
+  // No company identified — amber partial banner
+  if (!company_identified && !auto_url_extracted && input_method && input_method !== "url") {
+    const ctaId = "metaBannerAddUrl";
+    html += `
+      <div class="input-meta-chip input-meta-chip--warn">
+        <div class="input-meta-chip-title">Partial verification — no company identified</div>
+        <p class="input-meta-chip-body">We could not find a company name in this ${input_method === "screenshot" ? "screenshot" : "description"}. Without knowing who posted this role, we cannot verify the employer or check this listing against public records. Here is what we found from the ${input_method === "screenshot" ? "image" : "description"} alone.</p>
+        <button id="${ctaId}" class="input-meta-cta-btn" type="button">Add the job URL for full verification →</button>
+      </div>`;
+  }
+
+  // Low quality image
+  if (meta.low_quality_image) {
+    html += `
+      <div class="input-meta-chip input-meta-chip--warn">
+        <div class="input-meta-chip-title">Image quality was too low</div>
+        <p class="input-meta-chip-body">The screenshot was too unclear for reliable extraction. Try a clearer screenshot or paste the job text instead.</p>
+      </div>`;
+  }
+
+  if (!html) return;
+
+  banner.innerHTML = html;
+  banner.classList.remove("hidden");
+
+  // Wire CTA: close modal, switch to URL tab, keep description in memory
+  const ctaBtn = $("metaBannerAddUrl");
+  if (ctaBtn) {
+    ctaBtn.addEventListener("click", () => {
+      const savedText = $("jobText")?.value || "";
+      closeModal();
+      // Switch to URL tab
+      document.querySelectorAll(".tab-chip").forEach((t) => {
+        if (t.dataset.tabTarget === "urlPane") {
+          t.click();
+        }
+      });
+      // Preserve description in text pane
+      if (savedText && $("jobText")) $("jobText").value = savedText;
+    });
+  }
+}
+
+/** Render image extraction transparency panel */
+function renderImageExtractionPanel(report) {
+  const section = $("imageExtractionSection");
+  const content = $("imageExtractionContent");
+  if (!section || !content) return;
+  section.classList.add("hidden");
+  content.innerHTML = "";
+
+  const meta = report.input_meta;
+  if (!meta || meta.input_method !== "screenshot") return;
+  const fields = meta.extracted_fields;
+  if (!fields) return;
+
+  const fieldRow = (label, value) => {
+    const hasValue = value && String(value).trim();
+    return `<div class="extraction-row ${hasValue ? "" : "extraction-row--missing"}">
+      <span class="extraction-label">${label}</span>
+      <span class="extraction-value">${hasValue ? sanitizeField(String(value), "") : '<span class="extraction-not-found">Not found</span>'}</span>
+    </div>`;
+  };
+
+  content.innerHTML = [
+    fieldRow("Job Title", fields.job_title),
+    fieldRow("Company", fields.company_name),
+    fieldRow("URL", fields.url_hint),
+  ].join("");
+
+  section.classList.remove("hidden");
+}
 
 /* Rendering */
 function renderReputation(summary) {
@@ -289,6 +435,10 @@ function populateModal(report) {
   $("modalSkeleton").classList.add("hidden");
   $("modalContent").classList.remove("hidden");
 
+  // Adaptive banners and image extraction panel
+  renderInputMetaBanner(report);
+  renderImageExtractionPanel(report);
+
   const modalContent = $("modalContent");
 
   // Verdict
@@ -298,6 +448,17 @@ function populateModal(report) {
     vBadge.textContent = v;
     vBadge.className = `verdict-chip-mini ${v.toLowerCase()}`;
     vBadge.classList.remove("hidden");
+  }
+
+  const cacheChip = $("modalCacheChip");
+  if (cacheChip) {
+    if (report.cached === true && report.cached_at) {
+      cacheChip.classList.remove("hidden");
+      cacheChip.textContent = `${formatCachedAgo(report.cached_at)} · Cached result`;
+    } else {
+      cacheChip.classList.add("hidden");
+      cacheChip.textContent = "";
+    }
   }
 
   if ($("modalVerdictLarge")) {
@@ -474,6 +635,12 @@ function buildHumanReadableReport(s) {
     lines.push("Employer reputation:");
     lines.push(rewriteMicrocopy(sanitizeField(s.review_summary.plain_summary, "")));
   }
+  if (s.cached === true) {
+    lines.push("");
+    lines.push("Cached result:");
+    if (s.cached_at) lines.push(`Originally analyzed: ${sanitizeField(s.cached_at, "")}`);
+    if (s.cache_expires_in) lines.push(`Cache expires in: ${sanitizeField(s.cache_expires_in, "")}`);
+  }
   return lines.join("\n");
 }
 
@@ -567,18 +734,48 @@ async function runBatchFlow() {
     setPhase(PHASE.IDLE);
 }
 
+async function parseVerifyHttpError(res) {
+  let msg = "Verification service is temporarily busy.";
+  try {
+    const j = await res.json();
+    if (j && j.message) msg = String(j.message);
+  } catch {
+    if (res.status === 413) msg = "Image too large. Please use an image under 5MB.";
+  }
+  return msg;
+}
+
 /* Event Handlers */
 async function runFlow() {
-  const { url, text, file, activePane, includeSimilarJobs } = readInputs();
-  
+  let { url, text, file, activePane, includeSimilarJobs } = readInputs();
+
   // If in batch tab, run batch instead
   if (activePane === "batchPane") {
-      await runBatchFlow();
-      return;
+    await runBatchFlow();
+    return;
   }
 
-  const validation = validateClientInputs(url, text, file);
-  
+  if (activePane === "textPane" && text && !url && looksLikeJobUrl(text)) {
+    const normalized = normalizeJobUrlInput(text);
+    document.querySelectorAll(".tab-chip").forEach((t) => {
+      if (t.dataset.tabTarget === "#urlPane") t.click();
+    });
+    if ($("jobUrl")) $("jobUrl").value = normalized;
+    if ($("jobText")) $("jobText").value = "";
+    alert("Looks like a URL — switching to link mode.");
+    url = normalized;
+    text = "";
+    activePane = "urlPane";
+  }
+
+  let urlSend = url;
+  let textSend = text;
+  if ((activePane === "urlPane" || activePane === "imagePane") && urlSend) {
+    urlSend = normalizeJobUrlInput(urlSend);
+  }
+
+  const validation = validateClientInputs(urlSend, textSend, file);
+
   if (!validation.ok) {
     $("errorPanel").classList.remove("hidden");
     $("errorText").textContent = validation.message;
@@ -592,11 +789,11 @@ async function runFlow() {
   try {
     let res;
     const base = resolveApiBase();
-    
+
     if (file) {
       const fd = new FormData();
-      if (url) fd.append("job_url", url);
-      if (text) fd.append("job_description", text);
+      if (urlSend) fd.append("job_url", urlSend);
+      if (textSend) fd.append("job_description", textSend);
       fd.append("job_image", file);
       fd.append("include_similar_jobs", includeSimilarJobs ? "true" : "false");
       const fr = await apiFetch(`${base}/v1/verify`, { method: "POST", body: fd });
@@ -604,19 +801,19 @@ async function runFlow() {
       res = fr.res;
     } else {
       const fr = await apiFetch(`${base}/v1/verify`, {
-        method: "POST", 
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          job_url: url || null, 
-          job_description: text || null, 
-          include_similar_jobs: includeSimilarJobs 
-        })
+        body: JSON.stringify({
+          job_url: urlSend || null,
+          job_description: textSend || null,
+          include_similar_jobs: includeSimilarJobs,
+        }),
       });
       if (!fr.ok) throw new Error("UNAVAILABLE");
       res = fr.res;
     }
 
-    if (!res.ok) throw new Error("Verification service is temporarily busy.");
+    if (!res.ok) throw new Error(await parseVerifyHttpError(res));
     const report = await res.json();
     populateModal(report);
     setPhase(PHASE.IDLE);
@@ -679,7 +876,7 @@ if (dropZone && fileInput) {
     e.preventDefault();
     dropZone.classList.remove("drag-over");
     const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith("image/")) {
+    if (file && ACCEPT_IMAGE_TYPES.includes(file.type)) {
       fileInput.files = e.dataTransfer.files;
       handleFile(file);
     }
@@ -687,6 +884,11 @@ if (dropZone && fileInput) {
 }
 
 function handleFile(file) {
+  if (!ACCEPT_IMAGE_TYPES.includes(file.type)) {
+    $("errorPanel").classList.remove("hidden");
+    $("errorText").textContent = "Please use a JPEG, PNG, WebP, or GIF image.";
+    return;
+  }
   if ($("dropZoneContent")) $("dropZoneContent").classList.add("hidden");
   if ($("fileInfo")) $("fileInfo").classList.remove("hidden");
   if ($("fileName")) $("fileName").textContent = file.name;

@@ -75,6 +75,7 @@
           <div class="input-wrapper">
             <textarea id="jobText" placeholder="Paste job requirements, responsibilities, etc. here..." rows="5"></textarea>
           </div>
+          <p class="input-helper-text">Include the company name for full verification. Without it, we can only analyse the posting content.</p>
         </div>
 
         <div id="imagePane" class="input-pane hidden">
@@ -94,6 +95,7 @@
           <div id="imagePreviewWrap" class="image-preview-wrap hidden">
             <img id="imagePreview" alt="Screenshot preview" />
           </div>
+          <p class="input-helper-text">Best results with clear, full-page screenshots. Company name must be visible for employer verification.</p>
         </div>
 
         <div class="input-options">
@@ -151,7 +153,10 @@
           <header class="modal-header">
             <div class="modal-header-left">
               <div class="brand small"><span>Job</span><span class="brand-accent">Signal</span></div>
-              <div id="modalVerdictBadge" class="verdict-chip-mini hidden"></div>
+              <div class="modal-verdict-row">
+                <div id="modalVerdictBadge" class="verdict-chip-mini hidden"></div>
+                <span id="modalCacheChip" class="modal-cache-chip hidden" aria-live="polite"></span>
+              </div>
             </div>
             <button id="btnCloseModal" class="modal-close-btn" aria-label="Close modal">✕</button>
           </header>
@@ -166,7 +171,8 @@
             <div id="modalSkeleton" class="modal-skeleton">
               <div class="loading-step-container">
                 <p id="loadingStepText" class="loading-step-text">Checking the job listing...</p>
-                <p id="loadingReassurance" class="loading-reassurance hidden">This posting has many signals to check. Hang tight.</p>
+                <p id="loadingReassurance" class="loading-reassurance hidden">This one has a lot to check. Almost there.</p>
+                <p id="loadingElapsed" class="loading-elapsed muted small" aria-live="polite"></p>
               </div>
               <div class="skeleton-grid-overlay">
                 <div class="skeleton-panel-left">
@@ -188,6 +194,9 @@
             <!-- ACTUAL CONTENT -->
             <div id="modalContent" class="modal-grid hidden">
               <div class="panel-left">
+                <!-- INPUT META BANNER (adaptive, shown when input_meta is set) -->
+                <div id="inputMetaBanner" class="input-meta-banner hidden"></div>
+
                 <div id="modalVerdictLarge" class="verdict-display"></div>
                 <div class="confidence-block">
                   <div class="confidence-line">
@@ -227,6 +236,13 @@
               </div>
 
               <div class="panel-right">
+                <!-- IMAGE EXTRACTION TRANSPARENCY -->
+                <div id="imageExtractionSection" class="image-extraction-section hidden">
+                  <details id="imageExtractionDetails">
+                    <summary class="image-extraction-summary">What we read from your image</summary>
+                    <div id="imageExtractionContent" class="image-extraction-content"></div>
+                  </details>
+                </div>
                 <h3 class="section-title">Company Reputation</h3>
                 <div id="modalRepContent"></div>
               </div>

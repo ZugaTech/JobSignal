@@ -1,7 +1,6 @@
 """End-to-end verify orchestration (post–Sprint 4 vertical slice).
 
-This is the smallest glue layer that connects:
-validate -> normalize -> cache R/W -> live evidence -> scoring -> report.
+validate → normalize → URL result cache / legacy cache → evidence (parallel) → scoring → report.
 """
 
 from __future__ import annotations
@@ -13,14 +12,26 @@ import os
 import time
 from dataclasses import asdict
 from datetime import datetime, timezone
+from functools import partial
 from typing import Any, Dict, List, Optional
 
 from backend.core.cache_key import build_public_cache_key
 from backend.core.cache_payload import serialize_payload, strip_tenant_fields
 from backend.core.cache_store import CacheStore, InMemoryCache, RedisCache
+from backend.core.coordinator import EvidenceCoordinator
 from backend.core.decision_schema import DecisionResponse, ReasonItem, Verdict, WarningItem
 from backend.core.env import EnvConfig
-from backend.core.fetch_job_page import job_fetch_enabled, run_job_page_fetch
+from backend.core.evidence import build_evidence_bundle, _collect_serper_queries
+from backend.core.extraction import extract_entities
+from backend.core.fetch_job_page import JobPageFetchOutcome, job_fetch_enabled, run_job_page_fetch
+from backend.core.description_pipeline import (
+    build_content_analysis_signals,
+    build_input_meta_no_company,
+    build_input_meta_with_company,
+    cap_confidence_for_content_only,
+    extract_fields_from_description,
+    sanitize_company_name,
+)
 from backend.core.image_ingest import (
     IMAGE_INGEST_VERSION,
     ExtractedVisionFields,
@@ -29,18 +40,25 @@ from backend.core.image_ingest import (
     merge_description_with_extraction,
 )
 from backend.core.inputs import InputValidationError, validate_verify_inputs
+from backend.core.job_url_shortcuts import is_known_job_platform_url, is_scam_domain_url
 from backend.core.llm_fireworks import build_llm_signals, llm_enabled
-from backend.core.normalization import NormalizationResult, normalize_job_input
-from backend.core.report import build_public_report
-from backend.core.scoring import SCORER_VERSION, decide_from_signals
-from backend.core.structured_log import log_stage
-from backend.evidence.company_reviews import get_company_reviews, extract_company_name_hardened
-from backend.core.coordinator import EvidenceCoordinator
 from backend.core.llm_safe import call_llm_safe
+from backend.core.normalization import NormalizationResult, normalize_job_input, materialize_url_result_cache_key
+from backend.core.quick_url_probe import probe_http_status_head
+from backend.core.report import build_public_report
 from backend.core.response_contract import (
     build_preflight_skip_report,
     build_preflight_verify_job_uncertain_report,
 )
+from backend.core.scoring import SCORER_VERSION, decide_from_signals
+from backend.core.structured_log import log_stage
+from backend.core.url_preflight import evaluate_job_url_preflight
+from backend.core.url_result_cache import (
+    RESULT_CACHE_KEY_PREFIX,
+    decorate_hit_response,
+    parse_stored_payload,
+)
+from backend.evidence.company_reviews import ReviewSummary, extract_company_name_hardened, get_company_reviews
 
 _MEM_CACHE = InMemoryCache()
 _REDIS_CACHE: CacheStore | None = None
@@ -116,6 +134,7 @@ def _insufficient_image_report(
         ingestion=ingestion,
     )
 
+
 async def _maybe_attach_recommendations(
     report: Dict[str, Any],
     norm: NormalizationResult,
@@ -148,6 +167,10 @@ async def _maybe_attach_recommendations(
     )
 
 
+def _confidence_numeric(band: str) -> int:
+    return {"high": 85, "medium": 60, "low": 35}.get(str(band or "").lower(), 35)
+
+
 async def verify_job(
     job_url: Optional[str],
     job_description: Optional[str],
@@ -170,8 +193,6 @@ async def verify_job(
         raise ValueError(f"{e.code}: {e}") from e
 
     if url:
-        from backend.core.url_preflight import evaluate_job_url_preflight
-
         pf = await evaluate_job_url_preflight(url, text, cfg=cfg)
         if pf.outcome == "skip":
             return build_preflight_skip_report(reason=pf.plain_reason, request_id=request_id)
@@ -202,7 +223,74 @@ async def verify_job(
     if effective_url is None and (effective_text is None or not effective_text.strip()):
         return _insufficient_image_report(cfg=cfg, warnings=ingest_warnings)
 
+    # --- SMART INPUT INTELLIGENCE ---
+    # Determine whether we have a pure description/screenshot input (no URL yet)
+    desc_only_input = not effective_url and effective_text and effective_text.strip()
+
+    # Short description guard: under 80 words → reject early
+    _desc_word_count = len((effective_text or "").split()) if effective_text else 0
+    if desc_only_input and _desc_word_count < 80:
+        short_report = build_preflight_verify_job_uncertain_report(
+            reason=(
+                "This description is too short to assess meaningfully. "
+                "Please paste the full job posting text."
+            ),
+            request_id=request_id,
+        )
+        short_report["input_meta"] = {
+            "input_method": "screenshot" if has_image else "description",
+            "company_identified": False,
+            "short_description": True,
+            "word_count": _desc_word_count,
+        }
+        short_report["confidence_score"] = 10
+        return short_report
+
+    # Extract structured fields from description (for routing)
+    _desc_extraction = None
+    _auto_url_extracted = False
+    if desc_only_input and effective_text:
+        _desc_extraction = extract_fields_from_description(
+            effective_text, request_id=request_id
+        )
+        # If the description contains a URL, auto-switch to URL pipeline
+        if _desc_extraction.application_url:
+            effective_url = _desc_extraction.application_url
+            _auto_url_extracted = True
+            log_stage(
+                request_id=request_id,
+                stage="auto_url_extracted_from_description",
+                duration_ms=0.0,
+            )
+
+    # Legacy short-description guard (kept for backward-compat < 50 chars)
+    if (
+        not effective_url
+        and effective_text
+        and not has_image
+        and len(effective_text.strip()) < 50
+    ):
+        return build_preflight_verify_job_uncertain_report(
+            reason="Description too short to assess. Please paste the full job posting.",
+            request_id=request_id,
+        )
+
     norm = normalize_job_input(effective_url, effective_text)
+
+    if norm.canonical_url:
+        if is_scam_domain_url(norm.canonical_url):
+            return build_preflight_skip_report(
+                reason="This domain has been associated with fraudulent job postings.",
+                request_id=request_id,
+            )
+        if is_known_job_platform_url(norm.canonical_url):
+            st = await probe_http_status_head(norm.canonical_url)
+            if st in (404, 410):
+                return build_preflight_skip_report(
+                    reason="This job posting appears to have been removed.",
+                    request_id=request_id,
+                )
+
     image_sha = hashlib.sha256(image_bytes).hexdigest() if has_image and image_bytes else None
     fetch_profile = "live" if job_fetch_enabled() else "off"
     cache_key = build_public_cache_key(
@@ -214,58 +302,94 @@ async def verify_job(
         fetch_profile=fetch_profile,
     )
 
-    steps = []
-    steps.append({"id": "normalize", "label": "Normalized input"})
-    
+    steps: List[Dict[str, Any]] = [{"id": "normalize", "label": "Normalized input"}]
+
     api_key = os.environ.get("SERPER_API_KEY") or os.environ.get("SEARCH_API_KEY") or ""
-    coordinator = EvidenceCoordinator(api_key=api_key)
+    coordinator = EvidenceCoordinator(api_key=api_key, search_timeout_s=float(cfg.search_timeout_s))
     if include_similar_jobs:
-        coordinator.set_max_calls(6) # Reserve 2 for recommendations
-    
+        coordinator.set_max_calls(6)
+
     cache = _get_cache(cfg)
-    cached = cache.get(cache_key.materialized)
-    if cached:
-        steps.append({"id": "cache", "label": "Cache hit", "status": "ok"})
-        payload = json.loads(cached)
-        signals = payload.get("signals", [])
-        decision = decide_from_signals(signals, url_provided=bool(norm.canonical_url))
-        report = build_public_report(
-            decision,
-            cache={"hit": True, "ttl_expires_at": None, "key_fingerprint": cache_key.fingerprint_preview},
-            meta={
-                "pipeline_version": cfg.source_pipeline_version, 
-                "scorer_version": SCORER_VERSION,
-                "pipeline_steps": steps
-            },
-            ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="cache"),
-            data_freshness=data_freshness,
-        )
-        log_stage(request_id=request_id, stage="cache_hit", duration_ms=(time.perf_counter() - t0) * 1000)
-        await _maybe_attach_recommendations(
-            report,
-            norm=norm,
-            merged_fields=merged_fields,
-            skip_recommendations=skip_recommendations,
-            include_similar_jobs=include_similar_jobs,
-            coordinator=coordinator,
-        )
-        if include_similar_jobs:
-            report["similar_jobs"] = list(report.get("recommendations") or [])
-            meta_m = dict(report.get("meta") or {})
-            meta_m["similar_jobs_requested"] = True
-            report["meta"] = meta_m
-        else:
-            report["similar_jobs"] = None
-        log_stage(
-            request_id=request_id,
-            stage="report_returned",
-            duration_ms=(time.perf_counter() - t0) * 1000,
-            verdict=str(report.get("verdict", "")),
-        )
-        return report
+
+    url_only_cache = bool(norm.canonical_url) and not has_image and not (effective_text or "").strip()
+
+    if url_only_cache:
+        rk = materialize_url_result_cache_key(norm.canonical_url)
+        if rk:
+            url_cache_key = RESULT_CACHE_KEY_PREFIX + rk
+            hit_raw = cache.get(url_cache_key)
+            parsed = parse_stored_payload(hit_raw) if hit_raw else None
+            if parsed:
+                rep, cat, exp_iso = parsed
+                try:
+                    exp_dt = datetime.fromisoformat(exp_iso.replace("Z", "+00:00"))
+                    if exp_dt.tzinfo is None:
+                        exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                    if datetime.now(timezone.utc) > exp_dt:
+                        parsed = None
+                except ValueError:
+                    pass
+            if parsed:
+                rep, cat, exp_iso = parsed
+                out = decorate_hit_response(rep, cached_at=cat, expires_at_iso=exp_iso, now_iso=data_freshness)
+                log_stage(request_id=request_id, stage="url_result_cache_hit", duration_ms=(time.perf_counter() - t0) * 1000)
+                await coordinator.close()
+                log_stage(
+                    request_id=request_id,
+                    stage="report_returned",
+                    duration_ms=(time.perf_counter() - t0) * 1000,
+                    verdict=str(out.get("verdict", "")),
+                )
+                return out
+
+    if not url_only_cache:
+        cached = cache.get(cache_key.materialized)
+        if cached:
+            steps.append({"id": "cache", "label": "Cache hit", "status": "ok"})
+            payload = json.loads(cached)
+            signals = payload.get("signals", [])
+            decision = decide_from_signals(signals, url_provided=bool(norm.canonical_url))
+            report = build_public_report(
+                decision,
+                cache={"hit": True, "ttl_expires_at": None, "key_fingerprint": cache_key.fingerprint_preview},
+                meta={
+                    "pipeline_version": cfg.source_pipeline_version,
+                    "scorer_version": SCORER_VERSION,
+                    "pipeline_steps": steps,
+                    "canonical_job_url": norm.canonical_url,
+                    "url_only_cache_eligible": False,
+                },
+                ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="cache"),
+                data_freshness=data_freshness,
+            )
+            log_stage(request_id=request_id, stage="cache_hit", duration_ms=(time.perf_counter() - t0) * 1000)
+            await _maybe_attach_recommendations(
+                report,
+                norm=norm,
+                merged_fields=merged_fields,
+                skip_recommendations=skip_recommendations,
+                include_similar_jobs=include_similar_jobs,
+                coordinator=coordinator,
+            )
+            if include_similar_jobs:
+                report["similar_jobs"] = list(report.get("recommendations") or [])
+                meta_m = dict(report.get("meta") or {})
+                meta_m["similar_jobs_requested"] = True
+                report["meta"] = meta_m
+            else:
+                report["similar_jobs"] = None
+            log_stage(
+                request_id=request_id,
+                stage="report_returned",
+                duration_ms=(time.perf_counter() - t0) * 1000,
+                verdict=str(report.get("verdict", "")),
+            )
+            await coordinator.close()
+            return report
 
     steps.append({"id": "cache", "label": "Cache miss", "status": "miss"})
     log_stage(request_id=request_id, stage="cache_miss", duration_ms=(time.perf_counter() - t0) * 1000)
+
     signals: List[Dict[str, Any]] = []
     warnings: List[Dict[str, str]] = list(ingest_warnings)
 
@@ -293,49 +417,69 @@ async def verify_job(
             }
         )
 
-    live_fetch_attempted = False
-    if norm.canonical_url and job_fetch_enabled():
-        steps.append({"id": "fetch", "label": "Live page fetch"})
-        fx = run_job_page_fetch(norm.canonical_url, cfg)
-        live_fetch_attempted = fx.attempted
+    async def _evidence_phase() -> tuple[Any, ReviewSummary]:
+        ext_local = extract_entities(norm)
+        fetch_task: Optional[asyncio.Task] = None
+        if norm.canonical_url and job_fetch_enabled():
+            fetch_task = asyncio.create_task(asyncio.to_thread(run_job_page_fetch, norm.canonical_url, cfg))
+
+        name_callable = partial(
+            extract_company_name_hardened,
+            norm.canonical_url,
+            norm.description_text,
+            request_id=request_id,
+        )
+        name_task = asyncio.create_task(asyncio.to_thread(name_callable))
+
+        if fetch_task:
+            fx, hardened_company = await asyncio.gather(fetch_task, name_task)
+        else:
+            fx = JobPageFetchOutcome(attempted=False)
+            hardened_company = await name_task
+
         signals.extend(fx.signals)
         warnings.extend(fx.warnings)
 
-    steps.append({"id": "evidence", "label": "Evidence collection"})
-    
-    from backend.core.extraction import extract_entities
-    from backend.core.evidence import build_evidence_bundle, _collect_serper_queries
-    
-    # Extract structural hints from the raw inputs
-    ext = extract_entities(norm)
-    
-    # SPRINT 9-B: Harden company name extraction
-    hardened_company = extract_company_name_hardened(
-        norm.canonical_url, norm.description_text, request_id=request_id
-    )
-    
-    # Run evidence and reviews in parallel
-    company = ext.company_hint or ""
-    title = ext.title_hint or ""
-    base_query = f"{company} {title}".strip() or (norm.canonical_url or "")
-    
-    evidence_task = asyncio.create_task(_collect_serper_queries(coordinator, base_query, company, title))
-    review_task = asyncio.create_task(get_company_reviews(coordinator, hardened_company, request_id=request_id))
-    
-    serp_results = await evidence_task
-    
-    # Build the concrete evidence bundle
-    bundle = build_evidence_bundle(norm, ext, serp_results)
-    signals.extend(bundle.signals)
-    warnings.extend(bundle.warnings)
-    log_stage(request_id=request_id, stage="evidence_gathered", duration_ms=(time.perf_counter() - t0) * 1000)
-    
-    # Finalize coordinator limit for recommendations if needed
-    if include_similar_jobs:
-        coordinator.set_max_calls(8) # Allow remaining calls for recommendations
-    
-    # await coordinator.close() # Move to the end of verify_job
+        company = ext_local.company_hint or hardened_company or ""
+        title = ext_local.title_hint or ""
+        base_query = f"{company} {title}".strip() or (norm.canonical_url or "")
 
+        if merged_fields and merged_fields.company_name and ext_local.company_hint:
+            vc = merged_fields.company_name.strip().lower()
+            uc = ext_local.company_hint.strip().lower()
+            if vc and uc and vc not in uc and uc not in vc:
+                signals.append(
+                    {
+                        "id": "input_source_mismatch",
+                        "label": "Input consistency",
+                        "tier": "T2",
+                        "strength": "medium",
+                        "details": "Input sources appear inconsistent — please verify manually.",
+                        "name": "Input consistency",
+                        "status": "warn",
+                        "detail": "URL-derived employer hints differ from screenshot extraction.",
+                        "source": "client",
+                    }
+                )
+
+        evidence_task = asyncio.create_task(_collect_serper_queries(coordinator, base_query, company, title))
+        review_task = asyncio.create_task(get_company_reviews(coordinator, hardened_company, request_id=request_id))
+        serp_results, review_summary = await asyncio.gather(evidence_task, review_task)
+        bundle = build_evidence_bundle(norm, ext_local, serp_results)
+        signals.extend(bundle.signals)
+        warnings.extend(bundle.warnings)
+        return bundle, review_summary
+
+    bundle = None
+    review_summary: Optional[ReviewSummary] = None
+    bundle, review_summary = await _evidence_phase()
+
+    log_stage(request_id=request_id, stage="evidence_gathered", duration_ms=(time.perf_counter() - t0) * 1000)
+
+    if include_similar_jobs:
+        coordinator.set_max_calls(8)
+
+    steps.append({"id": "evidence", "label": "Evidence collection"})
     steps.append({"id": "llm", "label": "AI intelligence (T3)"})
     llm = build_llm_signals(job_text=norm.description_text or "")
     if llm.signals:
@@ -345,14 +489,7 @@ async def verify_job(
 
     steps.append({"id": "score", "label": "Scoring engine"})
     decision = decide_from_signals(signals, url_provided=bool(norm.canonical_url))
-    
-    # Await reviews
-    try:
-        review_summary = await review_task
-    except Exception:
-        review_summary = None
 
-    # Verdict briefing via Fireworks (safe wrapper)
     from backend.core.llm_fireworks import _get
 
     verdict_raw = decision["verdict"]
@@ -370,9 +507,14 @@ async def verify_job(
         f"with {conf_band} confidence. {primary_reason}."
     )
 
+    cs_num = _confidence_numeric(conf_band)
+    use_llm_summary = not (
+        verdict_val in ("APPLY", "SKIP") and cs_num >= int(cfg.llm_summary_confidence_threshold)
+    )
+
     api_key_llm = _get("FIREWORKS_API_KEY") or _get("LLM_API_KEY")
     llm_enabled_flag = llm_enabled()
-    if api_key_llm and llm_enabled_flag:
+    if api_key_llm and llm_enabled_flag and use_llm_summary:
         llm_summary = await call_llm_safe(
             messages=[
                 {
@@ -393,26 +535,37 @@ async def verify_job(
             model=_get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2-instruct"),
             temperature=0.3,
             max_tokens=150,
-            timeout=10.0,
+            timeout=8.0,
         )
     else:
         llm_summary = fallback_txt
 
-    log_stage(request_id=request_id, stage="score_computed", duration_ms=(time.perf_counter() - t0) * 1000, verdict=decision["verdict"].value)
+    log_stage(
+        request_id=request_id,
+        stage="score_computed",
+        duration_ms=(time.perf_counter() - t0) * 1000,
+        verdict=decision["verdict"].value,
+    )
+
+    evidence_sources = getattr(bundle, "evidence_sources", None) if bundle else None
+
     report = build_public_report(
         decision,
         cache={"hit": False, "ttl_expires_at": None, "key_fingerprint": cache_key.fingerprint_preview},
         meta={
-            "pipeline_version": cfg.source_pipeline_version, 
+            "pipeline_version": cfg.source_pipeline_version,
             "scorer_version": SCORER_VERSION,
-            "pipeline_steps": steps
+            "pipeline_steps": steps,
+            "canonical_job_url": norm.canonical_url,
+            "url_only_cache_eligible": url_only_cache,
         },
         ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="live"),
-        evidence_sources=getattr(bundle, "evidence_sources", None),
+        evidence_sources=evidence_sources,
         data_freshness=data_freshness,
         review_summary=asdict(review_summary) if review_summary else None,
     )
     report["llm_summary"] = llm_summary
+
     await _maybe_attach_recommendations(
         report,
         norm=norm,
@@ -429,18 +582,77 @@ async def verify_job(
     else:
         report["similar_jobs"] = None
 
-    shared_payload = strip_tenant_fields(
-        {
-            "schema_version": "1",
-            "pipeline_version": cfg.source_pipeline_version,
-            "source_set_version": "live-v1",
-            "normalization_version": norm.normalization_version,
-            "signals": signals,
-            "warnings": [w["code"] for w in warnings],
-            "coverage": "partial" if signals else "none",
+    # ---- SMART INPUT INTELLIGENCE: attach input_meta & apply no-company pipeline caps ----
+    _pure_desc_no_url = not norm.canonical_url and not has_image
+    _pure_desc_or_image_no_url = not norm.canonical_url
+
+    if _desc_extraction is not None and not _auto_url_extracted:
+        if _desc_extraction.has_company_info:
+            # STEP 2A — full verification (already ran), annotate with suggestion
+            report["input_meta"] = build_input_meta_with_company(
+                _desc_extraction,
+                input_method="screenshot" if has_image else "description",
+            )
+        else:
+            # STEP 2B — content analysis only: cap confidence, force VERIFY
+            # Inject content-analysis signals
+            ca_signals = build_content_analysis_signals(
+                effective_text or "", _desc_extraction
+            )
+            # Attach them to the signals list but don't re-run the scorer;
+            # instead inject directly into report as extra context
+            report["content_analysis_signals"] = ca_signals
+            cap_confidence_for_content_only(report)
+            report["input_meta"] = build_input_meta_no_company(_desc_extraction)
+    elif has_image and merged_fields:
+        # Screenshot path: annotate based on vision extraction
+        img_company = sanitize_company_name(merged_fields.company_name)
+        if img_company:
+            report["input_meta"] = {
+                "input_method": "screenshot",
+                "company_identified": True,
+                "extracted_company_name": img_company,
+                "extracted_job_title": merged_fields.job_title,
+                "extracted_fields": {
+                    "job_title": merged_fields.job_title,
+                    "company_name": img_company,
+                    "url_hint": merged_fields.job_url_hint,
+                },
+            }
+        else:
+            report["input_meta"] = {
+                "input_method": "screenshot",
+                "company_identified": False,
+                "extracted_job_title": merged_fields.job_title,
+                "extracted_fields": {
+                    "job_title": merged_fields.job_title,
+                    "company_name": None,
+                    "url_hint": merged_fields.job_url_hint,
+                },
+            }
+            cap_confidence_for_content_only(report)
+    elif _auto_url_extracted:
+        report["input_meta"] = {
+            "input_method": "description",
+            "company_identified": bool(_desc_extraction and _desc_extraction.has_company_info),
+            "auto_url_extracted": True,
+            "extracted_url": effective_url,
         }
-    )
-    cache.set(cache_key.materialized, serialize_payload(shared_payload), ttl_seconds=_ttl_seconds(cfg.cache_ttl_days))
+
+    if not url_only_cache:
+        shared_payload = strip_tenant_fields(
+            {
+                "schema_version": "1",
+                "pipeline_version": cfg.source_pipeline_version,
+                "source_set_version": "live-v1",
+                "normalization_version": norm.normalization_version,
+                "signals": signals,
+                "warnings": [w["code"] for w in warnings],
+                "coverage": "partial" if signals else "none",
+            }
+        )
+        cache.set(cache_key.materialized, serialize_payload(shared_payload), ttl_seconds=_ttl_seconds(cfg.cache_ttl_days))
+
     log_stage(
         request_id=request_id,
         stage="report_returned",

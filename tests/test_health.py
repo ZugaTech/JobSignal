@@ -36,6 +36,8 @@ def test_ready_staging_without_cache_not_ready():
         fireworks_timeout_s=10,
         fireworks_retry_count=2,
         log_level="info",
+        pipeline_deadline_s=18,
+        llm_summary_confidence_threshold=85,
     )
     r = build_ready_payload(cfg)
     assert r["status"] in ("ready", "degraded")
@@ -61,6 +63,8 @@ def test_ready_fails_when_cache_ping_false():
         fireworks_timeout_s=10,
         fireworks_retry_count=2,
         log_level="info",
+        pipeline_deadline_s=18,
+        llm_summary_confidence_threshold=85,
     )
     r = build_ready_payload(cfg, cache_ping_ok=False)
     assert r["status"] == "unavailable"
@@ -85,6 +89,8 @@ def test_ready_includes_cache_ping_when_provided():
         fireworks_timeout_s=10,
         fireworks_retry_count=2,
         log_level="info",
+        pipeline_deadline_s=18,
+        llm_summary_confidence_threshold=85,
     )
     r = build_ready_payload(cfg, cache_ping_ok=True)
     assert r["checks"]["redis"] == "pass"
@@ -109,6 +115,8 @@ def test_ready_payload_reports_live_probe_flag():
         fireworks_timeout_s=10,
         fireworks_retry_count=2,
         log_level="info",
+        pipeline_deadline_s=18,
+        llm_summary_confidence_threshold=85,
     )
     r = build_ready_payload(cfg, live_probe=True, fireworks_reachable=True, serper_reachable=True)
     assert r["live_probe"] is True
