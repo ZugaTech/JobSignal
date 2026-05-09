@@ -10,6 +10,27 @@ const PHASE = {
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
+/** API origin for /v1/*. Same-origin when UI is served from FastAPI on :8080; fixed host when UI is file:// or another port. */
+function resolveApiBase() {
+  if (typeof window.JOBSIGNAL_API_BASE === "string" && window.JOBSIGNAL_API_BASE.trim()) {
+    return window.JOBSIGNAL_API_BASE.replace(/\/$/, "");
+  }
+  const h = window.location.hostname;
+  const protocol = window.location.protocol;
+  const port = window.location.port;
+
+  if (protocol === "file:" || h === "") {
+    return "http://127.0.0.1:8080";
+  }
+  if ((h === "localhost" || h === "127.0.0.1") && port === "8080") {
+    return "";
+  }
+  if (h === "localhost" || h === "127.0.0.1") {
+    return "http://127.0.0.1:8080";
+  }
+  return "";
+}
+
 function readInputs() {
   return {
     url: $("jobUrl").value,
@@ -396,7 +417,7 @@ async function runBatchFlow() {
         list.appendChild(item);
 
         try {
-            const base = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") ? "http://localhost:8080" : "";
+            const base = resolveApiBase();
             const res = await fetch(`${base}/v1/verify`, {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ job_url: url })
@@ -443,7 +464,7 @@ async function runFlow() {
 
   try {
     let res;
-    const base = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") ? "http://localhost:8080" : "";
+    const base = resolveApiBase();
     
     if (file) {
       const fd = new FormData();

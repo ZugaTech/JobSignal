@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 import uuid
 from collections import defaultdict
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,6 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.api.routes.health import router as health_router
 from backend.api.routes.verify import router as verify_router
@@ -111,6 +114,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    _frontend = Path(__file__).resolve().parent.parent.parent / "frontend"
+    if _frontend.is_dir():
+        app.mount("/", StaticFiles(directory=str(_frontend), html=True), name="frontend")
+
     return app
 
 
