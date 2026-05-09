@@ -3,6 +3,9 @@ from __future__ import annotations
 import time
 import uuid
 from collections import defaultdict
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError

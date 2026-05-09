@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "JobSignal — Verify Before You Apply",
+  "name": "JobSignal - Verify Before You Apply",
   "version": "1.0",
   "description": "Check if a job post looks legitimate before you apply.",
   "permissions": [

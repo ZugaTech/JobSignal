@@ -1,8 +1,12 @@
-"""Evidence bundle builder (Sprint 3: multi-source verification + honest uncertainty)."""
+"""Evidence bundle builder (Sprint 3: multi-source verification + honest uncertainty).
+
+Search provider: Serper.dev (google.serper.dev/search) — POST, X-API-KEY header.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import os
 import re
 from dataclasses import dataclass
@@ -97,7 +101,7 @@ def _mk_signal(
     }
 
 
-async def _serp_search_async(
+async def _serper_search_async(
     client: httpx.AsyncClient,
     query: str,
     *,
@@ -108,7 +112,7 @@ async def _serp_search_async(
     retries: int,
 ) -> tuple[List[Dict[str, Any]], str, Optional[Dict[str, str]]]:
     if not key:
-        return [], "unverified", {"code": "SERP_UNVERIFIED", "message": "Search API key missing; search signals unverified."}
+        return [], "unverified", {"code": "SERPER_UNVERIFIED", "message": "Search API key missing; search signals unverified."}
     
     is_serper = "serper.dev" in endpoint.lower()
     last_error: Optional[str] = None
@@ -134,8 +138,8 @@ async def _serp_search_async(
             
             if r.status_code in (401, 403, 429):
                 return [], "unverified", {
-                    "code": "SERP_UNVERIFIED",
-                    "message": f"{'Serper' if is_serper else 'SERP'} auth/quota/rate-limited; search signals unverified.",
+                    "code": "SERPER_UNVERIFIED",
+                    "message": "Serper auth/quota/rate-limited; search signals unverified.",
                 }
             r.raise_for_status()
             data = r.json()
@@ -147,30 +151,23 @@ async def _serp_search_async(
         except (httpx.HTTPError, ValueError, TypeError) as e:
             last_error = type(e).__name__
     
-    return [], "unverified", {"code": "SERP_UNVERIFIED", "message": f"Search call failed ({last_error}); search signals unverified."}
+    return [], "unverified", {"code": "SERPER_UNVERIFIED", "message": f"Serper call failed ({last_error}); search signals unverified."}
 
 
-async def _collect_serp_queries(base_query: str, company: str, title: str) -> Dict[str, Any]:
-    # Support both SERPAPI_API_KEY and SERPER_API_KEY
-    key = _env("SERPER_API_KEY") or _env("SERPAPI_API_KEY") or _env("SEARCH_API_KEY")
-    
-    # Auto-detect endpoint if key is specifically for Serper
-    default_endpoint = "https://serpapi.com/search.json"
-    if _env("SERPER_API_KEY"):
-        default_endpoint = "https://google.serper.dev/search"
-    
-    endpoint = _env("SEARCH_API_ENDPOINT", default_endpoint) or default_endpoint
+async def _collect_serper_queries(base_query: str, company: str, title: str) -> Dict[str, Any]:
+    key = _env("SERPER_API_KEY") or _env("SEARCH_API_KEY")
+    endpoint = _env("SEARCH_API_ENDPOINT", "https://google.serper.dev/search") or "https://google.serper.dev/search"
     timeout_s = _env_int("SEARCH_TIMEOUT_S", 10)
     retries = _env_int("SEARCH_RETRY_COUNT", 2)
-    
+
     async with httpx.AsyncClient() as client:
         tasks = {
-            "careers": _serp_search_async(client, f"{base_query} careers".strip(), num=8, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
-            "board": _serp_search_async(client, f"\"{title}\" \"{company}\" job".strip(), num=10, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
-            "rep": _serp_search_async(client, f"\"{company}\" layoffs scam \"fake recruiter\"".strip(), num=8, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
-            "linkedin": _serp_search_async(client, f"site:linkedin.com/company \"{company}\"".strip(), num=5, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
-            "registry": _serp_search_async(client, f"\"{company}\" (crunchbase OR \"companies house\")".strip(), num=8, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
-            "duplicates": _serp_search_async(client, f"\"{title}\" \"{company}\"".strip(), num=10, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
+            "careers": _serper_search_async(client, f"{base_query} careers".strip(), num=8, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
+            "board": _serper_search_async(client, f"\"{title}\" \"{company}\" job".strip(), num=10, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
+            "rep": _serper_search_async(client, f"\"{company}\" layoffs scam \"fake recruiter\"".strip(), num=8, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
+            "linkedin": _serper_search_async(client, f"site:linkedin.com/company \"{company}\"".strip(), num=5, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
+            "registry": _serper_search_async(client, f"\"{company}\" (crunchbase OR \"companies house\")".strip(), num=8, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
+            "duplicates": _serper_search_async(client, f"\"{title}\" \"{company}\"".strip(), num=10, key=key, endpoint=endpoint, timeout_s=timeout_s, retries=retries),
         }
         keys = list(tasks.keys())
         values = await asyncio.gather(*tasks.values())
@@ -193,13 +190,15 @@ def build_evidence_bundle(norm: NormalizationResult, ext: ExtractionResult) -> E
 
     serp_results: Dict[str, Any] = {}
     try:
-        # Avoid nesting event loops (e.g. in ASGI servers).
         asyncio.get_running_loop()
-        has_running_loop = True
+        # Inside FastAPI's ASGI loop — run Serper queries in a thread so
+        # asyncio.run() gets its own clean event loop without nesting.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(asyncio.run, _collect_serper_queries(base_query, company, title))
+            serp_results = future.result(timeout=45)
     except RuntimeError:
-        has_running_loop = False
-    if not has_running_loop:
-        serp_results = asyncio.run(_collect_serp_queries(base_query, company, title))
+        # No running loop — safe to call asyncio.run directly.
+        serp_results = asyncio.run(_collect_serper_queries(base_query, company, title))
 
     careers_rows, careers_status, careers_warning = serp_results.get("careers", ([], "unverified", None))
     if careers_warning:

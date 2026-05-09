@@ -6,10 +6,12 @@ validate -> normalize -> cache R/W -> fixtures evidence -> scoring -> report.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
 import time
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -32,6 +34,7 @@ from backend.core.normalization import NormalizationResult, normalize_job_input
 from backend.core.report import build_public_report
 from backend.core.scoring import SCORER_VERSION, decide_from_signals
 from backend.core.structured_log import log_stage
+from backend.evidence.company_reviews import get_company_reviews
 
 _MEM_CACHE = InMemoryCache()
 _REDIS_CACHE: CacheStore | None = None
@@ -80,8 +83,8 @@ def _insufficient_image_report(
             ReasonItem(
                 code="IMAGE_INSUFFICIENT",
                 message=(
-                    "Screenshot doesn't contain enough readable job details—please paste the job URL "
-                    "(preferred) or paste the full job text."
+                    "The screenshot does not contain enough readable job details. Please paste the job URL "
+                    "(preferred) or the full job text instead."
                 ),
             ),
             ReasonItem(
@@ -96,8 +99,8 @@ def _insufficient_image_report(
         "status": "insufficient",
         "image_ingest_version": IMAGE_INGEST_VERSION,
         "message": (
-            "Screenshot doesn't contain enough readable job details—please paste the job URL "
-            "(preferred) or paste the full job text."
+            "The screenshot does not contain enough readable job details. Please paste the job URL "
+            "(preferred) or the full job text instead."
         ),
     }
     return build_public_report(
@@ -108,7 +111,7 @@ def _insufficient_image_report(
     )
 
 
-def _maybe_attach_recommendations(
+async def _maybe_attach_recommendations(
     report: Dict[str, Any],
     *,
     norm: NormalizationResult,
@@ -120,8 +123,8 @@ def _maybe_attach_recommendations(
         return
     from backend.core.recommendations import extend_report_with_recommendations
 
-    def verify_candidate(candidate_url: str) -> Dict[str, Any]:
-        return verify_job(
+    async def verify_candidate(candidate_url: str) -> Dict[str, Any]:
+        return await verify_job(
             candidate_url,
             None,
             skip_recommendations=True,
@@ -130,7 +133,7 @@ def _maybe_attach_recommendations(
             image_media_type=None,
         )
 
-    extend_report_with_recommendations(
+    await extend_report_with_recommendations(
         report,
         norm,
         merged_fields,
@@ -139,7 +142,7 @@ def _maybe_attach_recommendations(
     )
 
 
-def verify_job(
+async def verify_job(
     job_url: Optional[str],
     job_description: Optional[str],
     *,
@@ -218,7 +221,7 @@ def verify_job(
             data_freshness=data_freshness,
         )
         log_stage(request_id=request_id, stage="cache_hit", duration_ms=(time.perf_counter() - t0) * 1000)
-        _maybe_attach_recommendations(
+        await _maybe_attach_recommendations(
             report,
             norm=norm,
             merged_fields=merged_fields,
@@ -257,8 +260,8 @@ def verify_job(
                 "tier": "none",
                 "strength": "low",
                 "details": (
-                    "You shared pasted text only (no job link). We can read the description, but we can’t yet "
-                    "cross-check the employer careers page or listing history—add the URL for a stronger result."
+                    "You shared pasted text only (no job link). We can read the description, but we cannot yet "
+                    "cross-check the employer careers page or listing history; add the URL for a stronger result."
                 ),
             }
         )
@@ -279,6 +282,9 @@ def verify_job(
     # Extract structural hints from the raw inputs
     ext = extract_entities(norm)
     
+    # SPRINT 9: Run company reviews in parallel with main evidence
+    review_task = asyncio.create_task(get_company_reviews(ext.company_hint or ""))
+    
     # Build the concrete evidence bundle
     bundle = build_evidence_bundle(norm, ext)
     signals.extend(bundle.signals)
@@ -294,6 +300,49 @@ def verify_job(
 
     steps.append({"id": "score", "label": "Scoring engine"})
     decision = decide_from_signals(signals, url_provided=bool(norm.canonical_url))
+    
+    # Await reviews
+    try:
+        review_summary = await review_task
+    except Exception:
+        review_summary = None
+
+    # SPRINT 9: Generate Human Verdict Summary via Kimi K2
+    llm_summary = ""
+    from backend.core.llm_fireworks import _client, _get
+    api_key = _get("FIREWORKS_API_KEY") or _get("LLM_API_KEY")
+    llm_enabled = os.environ.get("ENABLE_LLM_SIGNALS", "1") != "0"
+    if api_key and llm_enabled:
+        try:
+            c = _client()
+            prompt = (
+                "You are JobSignal, a job verification assistant. Based on the following evidence, write a 2-sentence plain English summary for a job seeker.\n"
+                "Be honest. Do not use jargon. Do not hedge excessively. If the job looks risky, say so clearly. If it looks fine, say so.\n"
+                "Tone: professional but direct, like a recruiter giving a quick briefing.\n\n"
+                f"VERDICT: {decision['verdict'].value}\n"
+                f"CONFIDENCE: {decision['confidence']}\n"
+                f"SIGNALS: {', '.join([s.get('id', '') for s in signals if s.get('strength') in ('high', 'medium')])}\n"
+                f"REPUTATION: {review_summary.plain_summary if review_summary else 'N/A'}\n\n"
+                "Summary:"
+            )
+            resp = c.chat.completions.create(
+                model=_get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2p5"),
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=150,
+                timeout=10
+            )
+            llm_summary = resp.choices[0].message.content.strip()
+        except Exception:
+            pass
+    
+    if not llm_summary:
+        # Fallback template
+        if decision["verdict"].value == "APPLY":
+            llm_summary = "Automated checks found supportive evidence across available sources. This listing looks legitimate."
+        else:
+            llm_summary = "Automated analysis found limited corroboration. Verify against the official careers page before applying."
+
     log_stage(request_id=request_id, stage="score_computed", duration_ms=(time.perf_counter() - t0) * 1000, verdict=decision["verdict"].value)
     report = build_public_report(
         decision,
@@ -306,8 +355,10 @@ def verify_job(
         ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="live"),
         evidence_sources=getattr(bundle, "evidence_sources", None),
         data_freshness=data_freshness,
+        review_summary=asdict(review_summary) if review_summary else None,
     )
-    _maybe_attach_recommendations(
+    report["llm_summary"] = llm_summary
+    await _maybe_attach_recommendations(
         report,
         norm=norm,
         merged_fields=merged_fields,

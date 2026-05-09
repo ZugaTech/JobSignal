@@ -951,3 +951,247 @@ textarea.prefilled {
   height: 14px;
   border-width: 2px;
 }
+
+/* ── FIX 1: Signal aggregate summary bar ─────────────────────────────────── */
+.signal-summary-line {
+  margin: 0 0 12px;
+  font-size: 0.88rem;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+
+.signal-dot-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.signal-dot-mini {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  cursor: default;
+  transition: transform 0.15s;
+}
+
+.signal-dot-mini:hover {
+  transform: scale(1.5);
+}
+
+.signal-toggle-btn {
+  background: none;
+  border: none;
+  color: #a3a3a3;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  transition: color 0.2s;
+}
+
+.signal-toggle-btn:hover {
+  color: var(--text);
+}
+
+.sig-chevron {
+  font-size: 0.65rem;
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+
+.signal-list-hidden {
+  display: none;
+}
+
+/* ── FIX 3: Signal name block with hint sub-label ───────────────────────── */
+.signal-name-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.signal-hint {
+  font-size: 0.72rem;
+  color: #525252;
+  font-style: italic;
+  line-height: 1.3;
+}
+
+/* ── FIX 2: Evidence section label improvements ─────────────────────────── */
+.warn-label {
+  color: #f59e0b;
+}
+
+.warn-list li {
+  color: #f59e0b;
+  font-size: 0.8rem;
+}
+
+/* ── FIX 2: Meaning box: most important line on the card ───────────────── */
+.result-panel {
+  max-width: 1000px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+
+.panel-left, .panel-right {
+  padding: 24px;
+}
+
+.panel-right {
+  background: rgba(255, 255, 255, 0.015);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.panel-divider {
+  display: none; /* Handled by border on panel-right */
+}
+
+/* Reputation Score UI */
+.rep-score-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 16px 0 24px;
+}
+
+.rep-score-badge {
+  width: 70px;
+  height: 70px;
+  border: 4px solid;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.rep-score-num {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.rep-score-label {
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+}
+
+.sentiment-badge {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sentiment-badge[data-sentiment="mostly-positive"] { color: #22c55e; background: rgba(34, 197, 94, 0.1); }
+.sentiment-badge[data-sentiment="mostly-negative"] { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+.sentiment-badge[data-sentiment="mixed"] { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+
+/* Reputation Flags & Text */
+.rep-flags-box {
+  display: grid;
+  gap: 8px;
+  margin: 20px 0;
+}
+
+.rep-flag {
+  font-size: 0.85rem;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.rep-flag.green { background: rgba(34, 197, 94, 0.05); color: #4ade80; }
+.rep-flag.amber { background: rgba(245, 158, 11, 0.05); color: #fbbf24; }
+
+.rep-summary-text {
+  font-size: 0.875rem;
+  color: #d4d4d4;
+  line-height: 1.7;
+  margin: 20px 0;
+}
+
+.rep-source-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  font-size: 0.8rem;
+}
+
+.rep-reliability {
+  font-size: 0.6rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #a3a3a3;
+}
+
+.result-bottom-bar {
+  padding: 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bottom-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.bottom-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.rep-title {
+  font-size: 1.1rem;
+  margin: 0 0 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.plain-sentence-list {
+  padding: 0;
+  list-style: none;
+  margin: 12px 0 0;
+}
+
+.plain-sentence-list li {
+  font-size: 0.9rem;
+  color: #a3a3a3;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.plain-sentence-list li::before {
+  content: "→ ";
+  color: var(--accent);
+}
+
+@media (max-width: 768px) {
+  .result-grid {
+    grid-template-columns: 1fr;
+  }
+  .panel-right {
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+}

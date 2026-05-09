@@ -135,53 +135,63 @@
       </section>
 
       <section id="result" class="panel result-panel hidden" aria-live="polite">
-        <div class="result-top">
-          <div id="cacheBadge" class="cache-badge hidden" data-cache-role="hit">Recent shared check (cache hit)</div>
-          <div id="ingestionNote" class="muted hidden"></div>
-        </div>
-
-        <div id="uncertaintyStrip" class="strip hidden">Limited certainty — verify on the employer's official careers page.</div>
-
-        <div class="verdict-band" id="verdictBand">
-          <div class="verdict-chip" id="verdictChip">
-            <span class="chip-icon" id="verdictIcon">?</span>
-            <span class="chip-label" id="verdict">VERIFY</span>
-          </div>
-          <div class="confidence-block">
-            <div class="confidence-line">
-              <span>Confidence</span>
-              <strong id="confidencePct">60%</strong>
+        <div id="cacheBadge" class="cache-badge hidden" data-cache-role="hit">Recent shared check (cache hit)</div>
+        
+        <div class="result-grid">
+          <!-- LEFT PANEL: Verification Summary -->
+          <div class="panel-left">
+            <div id="uncertaintyStrip" class="strip hidden">Limited certainty; verify on official channels.</div>
+            
+            <div class="verdict-band" id="verdictBand">
+              <div class="verdict-chip" id="verdictChip">
+                <span class="chip-icon" id="verdictIcon">?</span>
+                <span class="chip-label" id="verdict">VERIFY</span>
+              </div>
+              <div class="confidence-block">
+                <div class="confidence-line">
+                  <span>Confidence</span>
+                  <strong id="confidencePct">35%</strong>
+                </div>
+                <div class="confidence-track">
+                  <div class="confidence-fill" id="confidenceFill"></div>
+                </div>
+                <div class="confidence-text" id="confidence">low</div>
+              </div>
             </div>
-            <div class="confidence-track">
-              <div class="confidence-fill" id="confidenceFill"></div>
+
+            <div id="signalSection" class="signal-section-wrapper"></div>
+            
+            <div class="evidence-box">
+              <h3 class="evidence-label">Why this verdict?</h3>
+              <ul id="reasonList" class="plain-sentence-list"></ul>
             </div>
-            <div class="confidence-text" id="confidence">medium</div>
+          </div>
+
+          <!-- DIVIDER -->
+          <div class="panel-divider"></div>
+
+          <!-- RIGHT PANEL: Company Reputation -->
+          <div class="panel-right">
+            <h2 class="rep-title">Company Reputation</h2>
+            <div id="repContent">
+              <!-- Dynamically populated by JS -->
+            </div>
           </div>
         </div>
 
-        <h2 class="section-title">Trust signals</h2>
-        <ul id="signalChecklist" class="signal-checklist"></ul>
-
-        <details class="evidence-accordion">
-          <summary>See evidence <span class="chevron">▼</span></summary>
-          <div class="evidence-content">
-            <h3 class="evidence-label">Reasons</h3>
-            <ul id="reasonList"></ul>
-            <h3 class="evidence-label">Warnings</h3>
-            <ul id="warnList"></ul>
-            <button id="btnCopyJson" type="button" class="ghost-btn">Copy raw response JSON</button>
+        <div class="result-bottom-bar">
+          <div class="meaning-box" id="meaningBox">
+            <!-- llm_summary goes here -->
           </div>
-        </details>
-
-        <div id="recSection" class="rec-section hidden">
-          <h2 class="section-title">Similar jobs</h2>
-          <p id="recMeta" class="muted"></p>
-          <div id="recList" class="rec-row"></div>
+          
+          <div class="bottom-meta">
+            <div id="requestIdLine" class="muted small"></div>
+            <div class="bottom-actions">
+              <button id="btnCopyJson" type="button" class="ghost-btn mini">Copy technical report</button>
+              <a id="reportIssueLink" href="https://github.com/issues/new" class="muted small" target="_blank">Report an issue</a>
+            </div>
+          </div>
         </div>
-
-        <div class="meaning-box" id="meaningBox">What this means for you: Proceed carefully and verify key details.</div>
-        <div class="muted" id="requestIdLine"></div>
-        <div class="muted"><a id="reportIssueLink" href="https://github.com/issues/new" target="_blank" rel="noopener noreferrer">Report an issue</a></div>
       </section>
 
       <footer class="app-footer">

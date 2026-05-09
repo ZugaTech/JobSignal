@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence
+from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Awaitable
 from urllib.parse import urlparse
 
 import httpx
@@ -272,11 +272,11 @@ def _redact(url: str, max_len: int = 120) -> str:
     return u[: max_len - 1] + "…"
 
 
-def build_recommendations(
+async def build_recommendations(
     seed_norm: NormalizationResult,
     merged_fields: Optional[ExtractedVisionFields],
     *,
-    verify_candidate: Callable[..., Dict[str, Any]],
+    verify_candidate: Callable[..., Awaitable[Dict[str, Any]]],
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
     """Verify up to ``candidate_pool_limit()`` URLs; return at most ``effective_recommendations_max()`` items."""
 
@@ -304,7 +304,7 @@ def build_recommendations(
         if seed_url and u.rstrip("/") == seed_url.rstrip("/"):
             continue
         try:
-            rep = verify_candidate(u)
+            rep = await verify_candidate(u)
         except Exception as e:  # noqa: BLE001
             warnings.append({"code": "REC_VERIFY_ERROR", "message": f"Candidate verify failed: {type(e).__name__}"})
             continue
@@ -336,13 +336,13 @@ def build_recommendations(
     return recs, warnings
 
 
-def extend_report_with_recommendations(
+async def extend_report_with_recommendations(
     report: Dict[str, Any],
     seed_norm: NormalizationResult,
     merged_fields: Optional[ExtractedVisionFields],
     *,
     user_requested: Optional[bool],
-    verify_candidate: Callable[..., Dict[str, Any]],
+    verify_candidate: Callable[..., Awaitable[Dict[str, Any]]],
 ) -> None:
     """Mutate ``report`` with ``recommendations`` + meta when policy allows."""
 
@@ -364,7 +364,7 @@ def extend_report_with_recommendations(
         report["recommendations"] = []
         return
 
-    recs, rw = build_recommendations(
+    recs, rw = await build_recommendations(
         seed_norm,
         merged_fields,
         verify_candidate=verify_candidate,

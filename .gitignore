@@ -13,3 +13,6 @@ __pycache__/
 
 # Private LLM session archive (local reference only; do not commit)
 local-session-archive.md
+
+# Development logs (Internal only)
+docs/DEVELOPMENT_LOG_DAY_4.md

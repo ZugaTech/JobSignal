@@ -1,5 +1,5 @@
 /**
- * JobSignal UI — calls POST /v1/verify.
+ * JobSignal UI - calls POST /v1/verify.
  * Supports: Single URL, Description, Screenshot, and Batch URLs.
  */
 
@@ -65,11 +65,59 @@ function verdictStyle(verdict) {
   return { color: "#f59e0b", icon: "?" };
 }
 
+// ── FIX 3: Strength label mapping ───────────────────────────────────────────
+const STRENGTH_LABEL = { high: "Verified", medium: "Partial", low: "Weak", none: "Inconclusive" };
+
+function signalStrengthLabel(raw) {
+  return STRENGTH_LABEL[String(raw || "").toLowerCase()] ?? String(raw || "unverified");
+}
+
 function classifySignal(signal) {
   const st = String(signal?.strength || "").toLowerCase();
-  if (st === "high") return { color: "#22c55e" };
-  if (st === "warning") return { color: "#f59e0b" };
-  return { color: "#ef4444" };
+  if (st === "high") return { color: "#22c55e", dot: "#22c55e" };
+  if (st === "medium") return { color: "#f59e0b", dot: "#f59e0b" };
+  if (st === "low") return { color: "#ef4444", dot: "#ef4444" };
+  return { color: "#525252", dot: "#525252" }; // none / unverified
+}
+
+// ── FIX 3: Signal tooltips ───────────────────────────────────────────────────
+const SIGNAL_HINTS = {
+  careers_domain_match: "Does the job URL match the company's official domain?",
+  careers_page_match: "Is this role listed on the company's own careers page?",
+  company_linkedin_presence: "Does the company have a verified LinkedIn page?",
+  company_registry_presence: "Is the company registered in a public business directory?",
+  cross_platform_freshness: "Is this posting also appearing on other trusted platforms?",
+  first_seen_estimate: "How recently was this listing first detected online?",
+  posting_duplication_signal: "Is this listing copied verbatim across unrelated sites?",
+  staleness_flag: "Has this posting been live for over 30 days without updates?",
+  company_reputation_signal: "Are there negative reports or scam associations for this company?",
+  fetch_ok: "Could we successfully load and read the job listing page?",
+  domain_align: "Does the final URL redirect to the expected company domain?",
+  url_canonical: "Is the job link a direct, canonical URL with no suspicious parameters?",
+  recruiter_unverified: "Could we independently confirm the recruiter's identity?",
+  jd_missing_fields: "Does the job description include all expected fields (salary, location, company)?",
+  jd_red_flags: "Does the text contain language commonly used in fraudulent postings?",
+  jd_specificity: "Is the job description specific and detailed, or suspiciously vague?",
+};
+
+// ── FIX 2: Reason/Warning code → plain English ───────────────────────────────
+const CODE_MAP = {
+  HARD_RED_FLAG: "High-risk patterns detected in this posting",
+  INCOMPLETE_EVIDENCE: "We could not gather a full profile for this role",
+  REC_SEARCH_EMPTY: "Search returned no cross-platform results to compare",
+  CONFIDENCE_LOW: "Too little data to make a confident call",
+  CONFIDENCE_MEDIUM: "Some signals were unclear; treat this as advisory",
+  INSUFFICIENT_DATA: "Not enough information to assess this posting",
+  CACHE_HIT: "Result served from a recent shared check",
+  LLM_ERROR: "AI signal extraction was unavailable for this check",
+  SERPER_UNVERIFIED: "Search-based signals could not be retrieved",
+  FETCH_FAILED: "The job listing page could not be loaded",
+};
+
+function humanCode(code) {
+  if (CODE_MAP[code]) return CODE_MAP[code];
+  // fallback: strip underscores, title-case
+  return code.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
 function summarizeForUser(report) {
@@ -79,53 +127,176 @@ function summarizeForUser(report) {
   return "Treat this as uncertain and verify on official channels.";
 }
 
+// ── FIX 1 helper: render the collapsed signal summary bar ───────────────────
+function renderSignalSummary(signals, container) {
+  const total = signals.length;
+  let passed = 0, flagged = 0, inconclusive = 0;
+  signals.forEach(s => {
+    const st = String(s.strength || "").toLowerCase();
+    if (st === "high" || st === "medium") passed++;
+    else if (st === "low") flagged++;
+    else inconclusive++;
+  });
+
+  // Summary line
+  const summary = document.createElement("p");
+  summary.className = "signal-summary-line";
+  summary.innerHTML = `We checked <strong>${total}</strong> trust signals:` +
+    `<span style="color:#22c55e;font-weight:600">${passed} passed</span>, ` +
+    `<span style="color:#ef4444;font-weight:600">${flagged} flagged</span>, ` +
+    `<span style="color:#525252;font-weight:600">${inconclusive} inconclusive</span>`;
+  container.appendChild(summary);
+
+  // Dot bar
+  const bar = document.createElement("div");
+  bar.className = "signal-dot-bar";
+  signals.forEach(s => {
+    const { dot } = classifySignal(s);
+    const d = document.createElement("span");
+    d.className = "signal-dot-mini";
+    d.style.background = dot;
+    d.title = `${s.label || s.id}: ${signalStrengthLabel(s.strength)}`;
+    bar.appendChild(d);
+  });
+  container.appendChild(bar);
+
+  // Toggle link
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "signal-toggle-btn";
+  toggle.innerHTML = `<span id="signalToggleChevron" class="sig-chevron">▶</span> View detailed breakdown`;
+  container.appendChild(toggle);
+
+  // Full list (hidden by default)
+  const fullList = document.createElement("ul");
+  fullList.id = "signalChecklist";
+  fullList.className = "signal-checklist signal-list-hidden";
+  container.appendChild(fullList);
+
+  toggle.addEventListener("click", () => {
+    const hidden = fullList.classList.toggle("signal-list-hidden");
+    $("signalToggleChevron").style.transform = hidden ? "" : "rotate(90deg)";
+  });
+
+  return fullList;
+}
+
+function renderReputation(summary) {
+  const container = $("repContent");
+  container.innerHTML = "";
+  if (!summary || !summary.highlights || summary.highlights.length === 0) {
+    container.innerHTML = `<p class="muted italic small">Company reputation data unavailable for this posting.</p>`;
+    return;
+  }
+
+  const scoreColor = summary.review_confidence_score >= 70 ? "#22c55e" : (summary.review_confidence_score >= 40 ? "#f59e0b" : "#ef4444");
+  
+  const scoreHtml = `
+    <div class="rep-score-wrapper">
+      <div class="rep-score-badge" style="border-color: ${scoreColor}; color: ${scoreColor}">
+        <span class="rep-score-num">${summary.review_confidence_score}</span>
+        <span class="rep-score-label">employer score</span>
+      </div>
+      <div class="sentiment-badge" data-sentiment="${summary.overall_sentiment.replace(' ', '-')}">
+        ${summary.overall_sentiment.toUpperCase()}
+      </div>
+    </div>
+  `;
+  container.innerHTML += scoreHtml;
+
+  const sourcesHtml = summary.highlights.map(h => `
+    <div class="rep-source-row">
+      <span class="rep-platform">${h.platform}</span>
+      <span class="rep-rating">${h.rating ? `★ ${h.rating}` : 'N/A'}</span>
+      <span class="rep-reliability badge-${h.reliability}">${h.reliability.toUpperCase()}</span>
+    </div>
+  `).join("");
+  container.innerHTML += `<div class="rep-sources-list">${sourcesHtml}</div>`;
+
+  if (summary.green_flags.length > 0) {
+    const greenHtml = summary.green_flags.map(f => `<div class="rep-flag green">✓ ${f}</div>`).join("");
+    container.innerHTML += `<div class="rep-flags-box">${greenHtml}</div>`;
+  }
+  if (summary.red_flags.length > 0) {
+    const redHtml = summary.red_flags.map(f => `<div class="rep-flag amber">⚠ ${f}</div>`).join("");
+    container.innerHTML += `<div class="rep-flags-box">${redHtml}</div>`;
+  }
+
+  container.innerHTML += `<p class="rep-summary-text">${summary.plain_summary}</p>`;
+  container.innerHTML += `<div class="muted smallest mt-2">Sources: ${summary.highlights.map(h => h.platform).join(", ")}</div>`;
+}
+
 function renderReport(report) {
   $("verdict").textContent = report.verdict;
   const style = verdictStyle(report.verdict);
   $("verdictChip").dataset.verdict = report.verdict;
   $("verdictIcon").textContent = style.icon;
 
-  const pct = report.confidence === "high" ? 88 : (report.confidence === "medium" ? 62 : 34);
+  const pct = report.confidence_score || (report.confidence === "high" ? 88 : (report.confidence === "medium" ? 62 : 34));
   $("confidencePct").textContent = `${pct}%`;
   $("confidenceFill").style.width = `${pct}%`;
   $("confidence").textContent = report.confidence;
 
-  const checklist = $("signalChecklist");
-  checklist.innerHTML = "";
-  (report.signals || []).forEach(s => {
+  // ── FIX 1: Replace static checklist with aggregate summary ──────────────
+  const signalSection = $("signalSection");
+  signalSection.innerHTML = ""; // clear previous render
+  const signals = report.signals || [];
+  const checklist = renderSignalSummary(signals, signalSection);
+
+  // Populate the full hidden list
+  signals.forEach((s) => {
     const state = classifySignal(s);
+    const label = s.status || signalStrengthLabel(s.strength);
+    const hint = SIGNAL_HINTS[s.id] || "";
+    const isNone = String(s.strength || "").toLowerCase() === "none" || !s.strength;
+    const badgeStyle = isNone
+      ? `color:#525252; border-color:#52525266; font-style:italic`
+      : `color:${state.color}; border-color:${state.color}66`;
+
     const li = document.createElement("li");
     li.className = "signal-item";
     li.innerHTML = `
       <div class="signal-left">
-        <span class="signal-dot" style="background-color:${state.color}"></span>
-        <span class="signal-name">${s.label || s.id}</span>
+        <span class="signal-dot" style="background-color:${state.dot}"></span>
+        <div class="signal-name-block">
+          <span class="signal-name">${s.label || s.id}</span>
+          ${hint ? `<span class="signal-hint">${hint}</span>` : ""}
+        </div>
       </div>
-      <span class="signal-badge" style="color:${state.color}; border-color:${state.color}66">${s.strength}</span>
+      <span class="signal-badge" style="${badgeStyle}">${label}</span>
     `;
     checklist.appendChild(li);
   });
 
-  $("reasonList").innerHTML = (report.reasons || []).map(r => `<li>${r.code}: ${r.message}</li>`).join("");
-  $("warnList").innerHTML = (report.warnings || []).map(w => `<li>${w.code}: ${w.message}</li>`).join("");
-  $("meaningBox").textContent = `What this means for you: ${summarizeForUser(report)}`;
-  $("requestIdLine").textContent = report.request_id ? `Request ID: ${report.request_id}` : "";
-  
+  // ── FIX 2: Plain-English reasons ──────────────────────────────
+  $("reasonList").innerHTML = (report.reasons || []).map(r =>
+    `<li>${r.message}</li>`
+  ).join("");
+
+  // ── REPUTATION PANEL ──────────────────────────────────────────
+  renderReputation(report.review_summary);
+
+  // ── FIX 2: Meaning box prominence ───────────────────────────────────────
+  $("meaningBox").textContent = report.llm_summary || summarizeForUser(report);
+  $("requestIdLine").textContent = report.request_id ? `Reference ID: ${report.request_id}` : "";
+
   const uncertain = report.verdict === "VERIFY" || report.confidence !== "high";
   $("uncertaintyStrip").classList.toggle("hidden", !uncertain);
 }
 
 function renderRecommendations(report) {
-  const section = $("recSection");
-  const list = $("recList");
+  const section = document.getElementById("recSection");
+  const list = document.getElementById("recList");
   const recs = report.recommendations || [];
+  if (!section || !list) return; // elements not present in this layout
   if (!recs.length) { section.classList.add("hidden"); return; }
   section.classList.remove("hidden");
-  $("recMeta").textContent = "Similar postings from our verified dataset.";
+  const meta = document.getElementById("recMeta");
+  if (meta) meta.textContent = "Similar listings found during verification.";
   list.innerHTML = recs.map(r => `
     <article class="rec-card">
       <div class="rec-head">
-        <span class="badge badge-${r.confidence_band === "HIGH" ? "high" : "medium"}">${r.confidence_band}</span>
+        <span class="badge badge-${r.confidence_band === "HIGH" ? "high" : "medium"}">${r.confidence_band === "HIGH" ? "Strong match" : "Partial match"}</span>
         <span class="muted">${r.verdict}</span>
       </div>
       <a class="rec-url" href="${r.job_url}" target="_blank">${r.job_url.substring(0, 40)}...</a>
@@ -134,11 +305,14 @@ function renderRecommendations(report) {
 }
 
 function renderIngestion(report) {
-  const el = $("ingestionNote");
+  const el = document.getElementById("ingestionNote");
+  if (!el) return; // element not present in this layout
   const ing = report.ingestion;
   if (!ing) { el.classList.add("hidden"); return; }
   el.classList.remove("hidden");
-  el.textContent = ing.status === "insufficient" ? "Screenshot was unreadable." : `Extraction confidence: ${ing.extraction_confidence}`;
+  el.textContent = ing.status === "insufficient"
+    ? "The screenshot was unreadable. Try pasting the URL or job description instead."
+    : `Reading confidence: ${ing.extraction_confidence}`;
 }
 
 function getApiBase() {

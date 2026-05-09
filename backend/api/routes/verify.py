@@ -46,9 +46,9 @@ def _coerce_optional_bool(raw: Any) -> Optional[bool]:
     return None
 
 
-def _verify_or_http_exc(**kwargs: Any) -> dict:
+async def _verify_or_http_exc(**kwargs: Any) -> dict:
     try:
-        return verify_job(**kwargs)
+        return await verify_job(**kwargs)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -95,7 +95,7 @@ async def verify(request: Request) -> dict:
         rec_raw = form.get("recommendations_enabled")
         rec_opt = _coerce_optional_bool(rec_raw)
 
-        report = _verify_or_http_exc(
+        report = await _verify_or_http_exc(
             job_url=url_s,
             job_description=text_s,
             image_bytes=raw if raw else None,
@@ -122,7 +122,7 @@ async def verify(request: Request) -> dict:
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors()) from e
 
-    report = _verify_or_http_exc(
+    report = await _verify_or_http_exc(
         job_url=req.job_url,
         job_description=req.job_description,
         recommendations_enabled=req.recommendations_enabled,

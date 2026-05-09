@@ -14,3 +14,4 @@
 Notes:
 - Frontend can be served separately as static files, or proxied by your web tier to this API.
 - In degraded mode, core verify still works; optional sources are limited.
+- Clipboard auto-detect needs HTTPS in production (Clipboard API); localhost works for dev.
