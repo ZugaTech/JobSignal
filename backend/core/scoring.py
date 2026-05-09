@@ -389,16 +389,16 @@ def decide_from_signals(
         warnings.append(WarningItem(code="FETCH", message="Primary page evidence insufficient for a confident recommendation."))
     elif t3_only:
         verdict = Verdict.VERIFY
-        reasons.append(ReasonItem(code="T3_ONLY", message="Strong open-web signals without employer-controlled (T1) or board (T2) corroboration cannot justify APPLY."))
-        warnings.append(WarningItem(code="SOURCES", message="Evidence dominated by low-trust-tier snippets."))
+        reasons.append(ReasonItem(code="T3_ONLY", message="We found general web mentions, but couldn't confirm this role directly with the employer's official channels or trusted job boards."))
+        warnings.append(WarningItem(code="SOURCES", message="Evidence relies mostly on unverified secondary sources."))
     elif apply_ok and (
         (confidence_score >= 75 and company_pass and posting_pass and freshness_pass)
         or (company_score == 0 and posting_score == 0 and freshness_score == 0)
     ):
         verdict = Verdict.APPLY
-        reasons.append(ReasonItem(code="GATES_PASSED", message="Employer-controlled or board corroboration met minimum gates with a second supporting signal."))
+        reasons.append(ReasonItem(code="GATES_PASSED", message="We found strong corroborating evidence from official employer channels or verified job boards."))
     else:
-        reasons.append(ReasonItem(code="INSUFFICIENT_CORROBORATION", message="Did not meet APPLY gates: need T1 medium+ with support, or T2 high with support."))
+        reasons.append(ReasonItem(code="INSUFFICIENT_CORROBORATION", message="Not enough signals passed to confidently recommend applying. Some checks came back unclear."))
 
     if (not url_provided) and (_sig_strength(sorted_rows, "jd_red_flags") in ("medium", "high") or _sig_strength(sorted_rows, "jd_content_farm_score") in ("medium", "high")):
         reasons.append(ReasonItem(code="TEXT_RED_FLAGS", message="Description-only signals include risk patterns; add the posting URL for stronger cross-checks."))

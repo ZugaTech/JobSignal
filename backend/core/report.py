@@ -7,6 +7,7 @@ from typing import Any, Optional, TypedDict, cast
 
 from backend.core.decision_schema import CacheMeta, DecisionResponse, ResponseMeta
 from backend.core.scoring import decision_to_jsonable
+from backend.core.user_copy import plain_reason_for_code
 
 _INTERNAL_SIGNAL_IDS = frozenset({
     "url_canonical", "input_text_only",
@@ -37,23 +38,6 @@ _STATUS_MAP: dict[str, str] = {
     "fail": "Flagged",
     "unknown": "Inconclusive",
 }
-
-_REASON_MAP: dict[str, str] = {
-    "HARD_RED_FLAG": "High-risk patterns were detected in this posting.",
-    "INCOMPLETE_EVIDENCE": "Evidence collection was partial; unable to build a complete profile.",
-    "INSUFFICIENT_DATA": "Limited information was available for a full assessment.",
-    "REC_SEARCH_EMPTY": "No cross-platform results were found for comparison.",
-    "CONFIDENCE_LOW": "Evidence was too limited for a confident verdict.",
-    "CONFIDENCE_MEDIUM": "Some signals were unclear; treat this result as a guide.",
-}
-
-def _human_code(code: str) -> str:
-    if code in _REASON_MAP:
-        return _REASON_MAP[code]
-    return code.replace("_", " ").title().strip() + "."
-
-_WARNING_LABELS: dict[str, str] = _REASON_MAP
-
 
 class PublicVerifyReport(TypedDict, total=False):
     report_schema_version: str
@@ -126,8 +110,15 @@ def build_public_report(
 
     what_matched = [_signal_label(s) for s in user_signals if s.get("strength") in ("high", "medium") and _signal_label(s)]
     what_did_not_match = [_signal_label(s) for s in user_signals if s.get("strength") in ("none", "low") and _signal_label(s)]
-    sources = [s.get("details", "") for s in user_signals if s.get("tier") == "T1" and s.get("details", "").strip()]
-    red_flags = [_WARNING_LABELS[w.get("code", "")] for w in warnings if w.get("code") in _WARNING_LABELS]
+    sources: list[str] = []
+    for s in user_signals:
+        if str(s.get("strength", "")).lower() not in ("high", "medium"):
+            continue
+        det = str(s.get("details", "") or "").strip()
+        if det:
+            sources.append(det[:400])
+    sources = sources[:12]
+    red_flags = [plain_reason_for_code(str(w.get("code", ""))) for w in warnings if str(w.get("code", "")).strip()]
 
     rec_map = {
         "APPLY": "This listing looks legitimate. You can go ahead and apply.",
@@ -145,10 +136,16 @@ def build_public_report(
         for s in user_signals
     ]
 
-    human_reasons = [{"code": r.get("code", ""), "message": _human_code(str(r.get("code", "")))} for r in payload.get("reasons", [])]
-    human_warnings = [{"code": w.get("code", ""), "message": _human_code(str(w.get("code", "")))} for w in payload.get("warnings", [])]
+    human_reasons = [
+        {"code": r.get("code", ""), "message": plain_reason_for_code(str(r.get("code", "")))}
+        for r in payload.get("reasons", [])
+    ]
+    human_warnings = [
+        {"code": w.get("code", ""), "message": plain_reason_for_code(str(w.get("code", "")))}
+        for w in payload.get("warnings", [])
+    ]
 
-    merged: dict[str, Any] = {
+    overlay: dict[str, Any] = {
         "report_schema_version": "2.0.0",
         "verdict": payload["verdict"],
         "confidence": payload["confidence"],
@@ -178,8 +175,8 @@ def build_public_report(
         "disclaimer": str(payload.get("disclaimer") or "This assessment is advisory and may be incomplete. Always verify directly with the employer."),
         "data_freshness": data_freshness or datetime.now(timezone.utc).isoformat(),
         "recommendation": rec_map.get(payload["verdict"], "Verify manually."),
-        **payload,
     }
+    merged: dict[str, Any] = {**payload, **overlay}
 
     if cache is not None:
         merged["cache"] = cache

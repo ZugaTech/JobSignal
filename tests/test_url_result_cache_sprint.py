@@ -34,7 +34,7 @@ def test_should_cache_apply_with_review_or_signals():
     r = {
         "verdict": "APPLY",
         "confidence_score": 72,
-        "review_summary": None,
+        "review_summary": {"plain_summary": "Solid employer signals.", "status": "ok"},
         "trust_signals": [{"status": "Strong Match"}, {"status": "Partial Match"}, {"status": "Verified"}],
     }
     assert should_store_url_result_cache(r) is True

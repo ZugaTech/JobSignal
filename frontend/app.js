@@ -88,6 +88,7 @@ function formatCachedAgo(iso) {
 }
 
 function validateClientInputs(urlRaw, textRaw, file) {
+  const url = String(urlRaw ?? "").trim();
   const text = String(textRaw ?? "").trim();
   if (!url && !text && !file) return { ok: false, message: "Add a link, description, or screenshot." };
   if (file && file.size > MAX_IMAGE_BYTES)
@@ -452,7 +453,10 @@ function populateModal(report) {
 
   const cacheChip = $("modalCacheChip");
   if (cacheChip) {
-    if (report.cached === true && report.cached_at) {
+    if (report.cached === true && report.cache_complete === false) {
+      cacheChip.classList.remove("hidden");
+      cacheChip.textContent = "Partial cached result — reanalysing for full report...";
+    } else if (report.cached === true && report.cached_at) {
       cacheChip.classList.remove("hidden");
       cacheChip.textContent = `${formatCachedAgo(report.cached_at)} · Cached result`;
     } else {
@@ -814,7 +818,42 @@ async function runFlow() {
     }
 
     if (!res.ok) throw new Error(await parseVerifyHttpError(res));
-    const report = await res.json();
+    let report = await res.json();
+
+    if (report.cached === true && report.cache_complete === false) {
+      populateModal(report);
+      try {
+        let res2;
+        if (file) {
+          const fd = new FormData();
+          if (urlSend) fd.append("job_url", urlSend);
+          if (textSend) fd.append("job_description", textSend);
+          fd.append("job_image", file);
+          fd.append("include_similar_jobs", includeSimilarJobs ? "true" : "false");
+          fd.append("force_refresh", "true");
+          const fr2 = await apiFetch(`${base}/v1/verify`, { method: "POST", body: fd });
+          if (fr2.ok) res2 = fr2.res;
+        } else {
+          const fr2 = await apiFetch(`${base}/v1/verify`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              job_url: urlSend || null,
+              job_description: textSend || null,
+              include_similar_jobs: includeSimilarJobs,
+              force_refresh: true,
+            }),
+          });
+          if (fr2.ok) res2 = fr2.res;
+        }
+        if (res2 && res2.ok) {
+          report = await res2.json();
+        }
+      } catch {
+        /* keep partial cached report */
+      }
+    }
+
     populateModal(report);
     setPhase(PHASE.IDLE);
   } catch (e) {

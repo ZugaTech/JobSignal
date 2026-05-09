@@ -7,6 +7,12 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from backend.core.prompt_guard import is_prompt_leak
+from backend.core.user_copy import (
+    build_fallback_llm_summary,
+    contains_internal_verdict_jargon,
+    plain_reason_for_code,
+    scrub_internal_jargon,
+)
 
 logger = __import__("logging").getLogger("jobsignal")
 
@@ -43,22 +49,6 @@ def _score_to_label(score: int) -> str:
     if score < 67:
         return "Moderate"
     return "High"
-
-
-def _fallback_llm_from_verdict(report: Dict[str, Any]) -> str:
-    v = str(report.get("verdict") or "VERIFY")
-    cs = int(report.get("confidence_score") if report.get("confidence_score") is not None else 0)
-    lbl = _score_to_label(cs)
-    sig_n = len(report.get("trust_signals") or report.get("signals") or [])
-    reasons = report.get("reasons") or []
-    primary = "Verification could not complete with full detail."
-    if reasons:
-        r0 = reasons[0]
-        primary = r0 if isinstance(r0, str) else str((r0 or {}).get("message") or (r0 or {}).get("code") or primary)
-    return (
-        f"Based on {sig_n} signals checked, this posting received a {v} verdict with {lbl.lower()} confidence. "
-        f"{primary.strip().rstrip('.')}."
-    )
 
 
 def build_preflight_skip_report(*, reason: str, request_id: str) -> Dict[str, Any]:
@@ -141,11 +131,16 @@ def validate_and_repair_response(report: Dict[str, Any], *, request_id: str) -> 
     if isinstance(reasons_in, list):
         for item in reasons_in:
             if isinstance(item, str) and item.strip():
-                reasons_out.append(item.strip())
+                reasons_out.append(
+                    scrub_internal_jargon(item.strip(), replacement="Some checks were inconclusive.")
+                )
             elif isinstance(item, dict):
-                msg = str(item.get("message") or "").strip()
                 code = str(item.get("code") or "").strip()
-                reasons_out.append(msg if msg else code.replace("_", " ").title() + ".")
+                msg = str(item.get("message") or "").strip()
+                if code:
+                    reasons_out.append(plain_reason_for_code(code))
+                elif msg:
+                    reasons_out.append(scrub_internal_jargon(msg, replacement="Some checks were inconclusive."))
     if not reasons_out:
         reasons_out.append("Not enough verified information was available to complete this check.")
     out["reasons"] = reasons_out
@@ -153,10 +148,10 @@ def validate_and_repair_response(report: Dict[str, Any], *, request_id: str) -> 
     llm = out.get("llm_summary")
     if not isinstance(llm, str) or not llm.strip() or "." not in llm.strip():
         logger.warning("response_contract_llm_summary_repaired request_id=%s", rid)
-        out["llm_summary"] = _fallback_llm_from_verdict(out)
-    elif is_prompt_leak(llm):
+        out["llm_summary"] = build_fallback_llm_summary(out)
+    elif is_prompt_leak(llm) or contains_internal_verdict_jargon(llm):
         logger.warning("response_contract_llm_summary_leak request_id=%s", rid)
-        out["llm_summary"] = _fallback_llm_from_verdict(out)
+        out["llm_summary"] = build_fallback_llm_summary(out)
     else:
         out["llm_summary"] = llm.strip()
 
@@ -167,7 +162,7 @@ def validate_and_repair_response(report: Dict[str, Any], *, request_id: str) -> 
         else:
             ps = rs.get("plain_summary")
             if isinstance(ps, str) and ps.strip():
-                if is_prompt_leak(ps):
+                if is_prompt_leak(ps) or contains_internal_verdict_jargon(ps):
                     logger.warning("response_contract_review_summary_leak request_id=%s", rid)
                     rs = dict(rs)
                     rs["plain_summary"] = "Employer reputation summary was unavailable for this result."

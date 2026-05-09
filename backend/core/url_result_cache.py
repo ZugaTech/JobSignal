@@ -11,8 +11,6 @@ logger = logging.getLogger("jobsignal")
 
 RESULT_CACHE_KEY_PREFIX = "js:urlres:v1:"
 
-_CONFIRMED_TRUST_STATUSES = frozenset({"Strong Match", "Partial Match", "Verified", "Pass"})
-
 
 def humanize_remaining(seconds: int) -> str:
     if seconds <= 0:
@@ -32,18 +30,23 @@ def humanize_remaining(seconds: int) -> str:
     return ", ".join(parts)
 
 
-def confirmed_trust_signal_count(report: Dict[str, Any]) -> int:
-    ts = report.get("trust_signals") or []
-    if not isinstance(ts, list):
-        return 0
-    n = 0
-    for row in ts:
-        if not isinstance(row, dict):
-            continue
-        st = str(row.get("status") or "").strip()
-        if st in _CONFIRMED_TRUST_STATUSES:
-            n += 1
-    return n
+def is_cacheable_response(response: Dict[str, Any]) -> bool:
+    """Full URL-result entries require verdict, confidence floor, and a settled employer snapshot."""
+
+    if not str(response.get("verdict") or "").strip():
+        return False
+    try:
+        cs = int(response.get("confidence_score") if response.get("confidence_score") is not None else 0)
+    except (TypeError, ValueError):
+        return False
+    if cs < 40:
+        return False
+    review = response.get("review_summary")
+    if not isinstance(review, dict):
+        return False
+    if review.get("status") == "unavailable":
+        return True
+    return bool(str(review.get("plain_summary") or "").strip())
 
 
 def should_store_url_result_cache(report: Dict[str, Any]) -> bool:
@@ -62,11 +65,7 @@ def should_store_url_result_cache(report: Dict[str, Any]) -> bool:
     if cs < 40:
         return False
 
-    rs = report.get("review_summary")
-    has_review = isinstance(rs, dict) and str(rs.get("plain_summary") or "").strip()
-    if not has_review and confirmed_trust_signal_count(report) < 3:
-        return False
-    return True
+    return is_cacheable_response(report)
 
 
 def url_result_ttl_seconds(report: Dict[str, Any]) -> int:
@@ -130,6 +129,14 @@ def decorate_hit_response(
     cm["hit"] = True
     cm["url_result_cache"] = True
     out["cache"] = cm
+    rs = out.get("review_summary")
+    complete = False
+    if isinstance(rs, dict):
+        if rs.get("status") == "unavailable":
+            complete = True
+        elif str(rs.get("plain_summary") or "").strip():
+            complete = True
+    out["cache_complete"] = complete
     return out
 
 

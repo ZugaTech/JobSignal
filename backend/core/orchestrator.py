@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import time
 from dataclasses import asdict
@@ -58,6 +59,9 @@ from backend.core.url_result_cache import (
     decorate_hit_response,
     parse_stored_payload,
 )
+from backend.core.user_copy import build_fallback_llm_summary
+
+logger = logging.getLogger("jobsignal")
 from backend.evidence.company_reviews import ReviewSummary, extract_company_name_hardened, get_company_reviews
 
 _MEM_CACHE = InMemoryCache()
@@ -180,6 +184,7 @@ async def verify_job(
     skip_recommendations: bool = False,
     include_similar_jobs: Optional[bool] = None,
     request_id: str = "unknown",
+    force_refresh: bool = False,
 ) -> Dict[str, Any]:
     t0 = time.perf_counter()
     cfg = EnvConfig.load(strict=False)
@@ -313,7 +318,7 @@ async def verify_job(
 
     url_only_cache = bool(norm.canonical_url) and not has_image and not (effective_text or "").strip()
 
-    if url_only_cache:
+    if url_only_cache and not force_refresh:
         rk = materialize_url_result_cache_key(norm.canonical_url)
         if rk:
             url_cache_key = RESULT_CACHE_KEY_PREFIX + rk
@@ -332,6 +337,13 @@ async def verify_job(
             if parsed:
                 rep, cat, exp_iso = parsed
                 out = decorate_hit_response(rep, cached_at=cat, expires_at_iso=exp_iso, now_iso=data_freshness)
+                logger.info(
+                    "cache_hit url_result request_id=%s cached_at=%s has_review=%s cache_complete=%s",
+                    request_id,
+                    cat,
+                    out.get("review_summary") is not None,
+                    out.get("cache_complete"),
+                )
                 log_stage(request_id=request_id, stage="url_result_cache_hit", duration_ms=(time.perf_counter() - t0) * 1000)
                 await coordinator.close()
                 log_stage(
@@ -342,7 +354,7 @@ async def verify_job(
                 )
                 return out
 
-    if not url_only_cache:
+    if not url_only_cache and not force_refresh:
         cached = cache.get(cache_key.materialized)
         if cached:
             steps.append({"id": "cache", "label": "Cache hit", "status": "ok"})
@@ -361,6 +373,16 @@ async def verify_job(
                 },
                 ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="cache"),
                 data_freshness=data_freshness,
+            )
+            rs_snap = payload.get("review_summary")
+            if rs_snap is not None:
+                report["review_summary"] = rs_snap
+            if payload.get("llm_summary"):
+                report["llm_summary"] = str(payload.get("llm_summary"))
+            logger.info(
+                "cache_hit legacy request_id=%s has_review=%s",
+                request_id,
+                report.get("review_summary") is not None,
             )
             log_stage(request_id=request_id, stage="cache_hit", duration_ms=(time.perf_counter() - t0) * 1000)
             await _maybe_attach_recommendations(
@@ -480,7 +502,7 @@ async def verify_job(
         coordinator.set_max_calls(8)
 
     steps.append({"id": "evidence", "label": "Evidence collection"})
-    steps.append({"id": "llm", "label": "AI intelligence (T3)"})
+    steps.append({"id": "llm", "label": "AI-assisted signals"})
     llm = build_llm_signals(job_text=norm.description_text or "")
     if llm.signals:
         signals.extend(llm.signals)
@@ -495,19 +517,16 @@ async def verify_job(
     verdict_raw = decision["verdict"]
     verdict_val = verdict_raw.value if hasattr(verdict_raw, "value") else str(verdict_raw)
     reasons_list = decision.get("reasons") or []
-    primary_reason = (
-        str(reasons_list[0].get("message", "")).strip().rstrip(".")
-        if reasons_list
-        else "Manual verification is recommended."
-    )
-    signal_count = len(signals)
     conf_band = str(decision.get("confidence") or "low").lower()
-    fallback_txt = (
-        f"Based on {signal_count} signals checked, this posting received a {verdict_val} verdict "
-        f"with {conf_band} confidence. {primary_reason}."
-    )
-
     cs_num = _confidence_numeric(conf_band)
+    provisional_for_fallback: Dict[str, Any] = {
+        "verdict": verdict_val,
+        "confidence_score": cs_num,
+        "signals": signals,
+        "reasons": reasons_list,
+    }
+    fallback_txt = build_fallback_llm_summary(provisional_for_fallback)
+
     use_llm_summary = not (
         verdict_val in ("APPLY", "SKIP") and cs_num >= int(cfg.llm_summary_confidence_threshold)
     )
@@ -519,7 +538,11 @@ async def verify_job(
             messages=[
                 {
                     "role": "system",
-                    "content": "You are JobSignal, a verification assistant. Write a 2-sentence briefing for a job seeker. No jargon. No headers. Output ONLY the briefing text.",
+                    "content": (
+                        "You are JobSignal, a verification assistant. Write a 2-sentence briefing for a job seeker. "
+                        "No jargon. Never mention internal tiers (such as T1/T2/T3), gates, or scoring rule names. "
+                        "No headers. Output ONLY the briefing text."
+                    ),
                 },
                 {
                     "role": "user",
@@ -649,6 +672,8 @@ async def verify_job(
                 "signals": signals,
                 "warnings": [w["code"] for w in warnings],
                 "coverage": "partial" if signals else "none",
+                "review_summary": report.get("review_summary"),
+                "llm_summary": report.get("llm_summary"),
             }
         )
         cache.set(cache_key.materialized, serialize_payload(shared_payload), ttl_seconds=_ttl_seconds(cfg.cache_ttl_days))

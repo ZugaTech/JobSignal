@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 from backend.core.llm_fireworks import _client, _get
 from backend.core.prompt_guard import extract_chat_completion_message_text
+from backend.core.user_copy import contains_internal_verdict_jargon
 
 logger = logging.getLogger("jobsignal")
 
@@ -27,12 +29,24 @@ _LEAK_MARKERS = [
     "based on the following evidence",
     "write a",
     "generate a",
+    # Phrase-level threshold leaks
+    "apply gate",
+    "medium+ with",
+    "high with support",
 ]
 
 
 def _looks_like_prompt_leak(text: str) -> bool:
     tl = text.lower()
-    return any(m in tl for m in _LEAK_MARKERS)
+    if any(m in tl for m in _LEAK_MARKERS):
+        return True
+    if re.search(r"\b(t1|t2|t3)\b", tl):
+        return True
+    if re.search(r"\b(gate|gates)\b", tl):
+        return True
+    if re.search(r"\btier\b", tl):
+        return True
+    return contains_internal_verdict_jargon(text)
 
 
 def call_llm_safe_chat_sync(

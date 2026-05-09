@@ -99,7 +99,12 @@ function sanitizeField(value, fallback) {
 
 function containsLeakMarker(text) {
   const t = String(text || "").toLowerCase();
-  return LEAK_MARKERS.some((m) => t.includes(m));
+  if (LEAK_MARKERS.some((m) => t.includes(m))) return true;
+  if (/\b(t1|t2|t3)\b/.test(t)) return true;
+  if (/\b(gate|gates)\b/.test(t)) return true;
+  if (/\btier\b/.test(t)) return true;
+  if (t.includes("apply gate") || t.includes("medium+ with") || t.includes("high with support")) return true;
+  return false;
 }
 
 function isUncheckedSignalStrength(strength) {

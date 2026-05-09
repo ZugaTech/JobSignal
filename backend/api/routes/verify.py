@@ -44,6 +44,10 @@ class VerifyRequest(BaseModel):
         default=None,
         description="If set, request similar-job recommendations (still requires search config).",
     )
+    force_refresh: bool = Field(
+        default=False,
+        description="Skip cache reads and run a fresh verification (same inputs).",
+    )
 
 
 class ValidateUrlsRequest(BaseModel):
@@ -180,6 +184,8 @@ async def verify(request: Request) -> dict:
 
         rec_raw = form.get("include_similar_jobs") or form.get("recommendations_enabled")
         rec_opt = _coerce_optional_bool(rec_raw)
+        fr_raw = form.get("force_refresh")
+        force_refresh = bool(_coerce_optional_bool(fr_raw))
 
         report = await _verify_or_http_exc(
             job_url=url_s,
@@ -187,6 +193,7 @@ async def verify(request: Request) -> dict:
             image_bytes=raw if raw else None,
             image_media_type=mime,
             include_similar_jobs=rec_opt,
+            force_refresh=force_refresh,
             request_id=getattr(request.state, "request_id", "unknown"),
         )
         public_rep = await _finalize_verify_response(report)
@@ -212,6 +219,7 @@ async def verify(request: Request) -> dict:
         job_url=req.job_url,
         job_description=req.job_description,
         include_similar_jobs=req.include_similar_jobs,
+        force_refresh=req.force_refresh,
         request_id=getattr(request.state, "request_id", "unknown"),
     )
     public_rep = await _finalize_verify_response(report)
