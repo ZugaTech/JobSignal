@@ -87,12 +87,12 @@ def extract_company_name_hardened(url: Optional[str], text: Optional[str], *, re
             pass
 
     if text:
-        from backend.core.llm_fireworks import _get
+        from backend.core.llm_fireworks import _get, llm_enabled
         from backend.core.llm_safe import call_llm_safe_chat_sync
 
         api_key = _get("FIREWORKS_API_KEY") or _get("LLM_API_KEY")
-        llm_enabled = os.environ.get("ENABLE_LLM_SIGNALS", "1") != "0"
-        if api_key and llm_enabled:
+        llm_enabled_flag = llm_enabled()
+        if api_key and llm_enabled_flag:
             try:
                 prompt = (
                     "Extract only the hiring company name from this job posting. "
@@ -499,12 +499,12 @@ def _parse_serper_item(item: Dict[str, Any], query_key: str) -> Optional[ReviewS
 async def _generate_llm_summary(
     company: str, highlights: List[ReviewSource], *, request_id: str = "unknown"
 ) -> Optional[str]:
-    from backend.core.llm_fireworks import _get
+    from backend.core.llm_fireworks import _get, llm_enabled
     from backend.core.llm_safe import call_llm_safe
 
     api_key = _get("FIREWORKS_API_KEY") or _get("LLM_API_KEY")
-    llm_enabled = os.environ.get("ENABLE_LLM_SIGNALS", "1") != "0"
-    if not api_key or not llm_enabled:
+    llm_enabled_flag = llm_enabled()
+    if not api_key or not llm_enabled_flag:
         return None
 
     context = "\n".join([f"- {h.platform} ({h.sentiment}): {h.snippet}" for h in highlights[:10]])

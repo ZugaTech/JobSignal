@@ -23,6 +23,7 @@ def build_ready_payload(
     cache_ping_ok: Optional[bool] = None,
     fireworks_reachable: Optional[bool] = None,
     serper_reachable: Optional[bool] = None,
+    live_probe: bool = False,
 ) -> Dict[str, Any]:
     """Readiness with explicit pass/fail/skip checks and degraded mode."""
 
@@ -52,6 +53,7 @@ def build_ready_payload(
     status = "unavailable" if hard_fail else ("degraded" if degraded else "ready")
     return {
         "status": status,
+        "live_probe": live_probe,
         "checks": checks,
         "features": {
             "search_configured": any_search_configured(),

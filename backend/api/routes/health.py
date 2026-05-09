@@ -30,7 +30,8 @@ def ready() -> Response:
     ping_ok = cache_ping(cfg.cache_url) if cfg.cache_url else None
     fw_ok = None
     serp_ok = None
-    if not os.environ.get("PYTEST_CURRENT_TEST"):
+    live_probe = str(os.environ.get("PROBE_PROVIDERS_ON_READY") or "0").strip().lower() in ("1", "true", "yes", "on")
+    if live_probe and not os.environ.get("PYTEST_CURRENT_TEST"):
         fw_ok = fireworks_api_reachable()
         serp_ok = serper_api_reachable()
     payload = build_ready_payload(
@@ -38,6 +39,7 @@ def ready() -> Response:
         cache_ping_ok=ping_ok,
         fireworks_reachable=fw_ok,
         serper_reachable=serp_ok,
+        live_probe=live_probe,
     )
     code = int(payload.get("http", 200))
     return Response(status_code=code, content=json.dumps(payload), media_type="application/json")

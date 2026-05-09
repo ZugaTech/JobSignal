@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +30,12 @@ ENV_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("PORT", _as_int, 8080, "HTTP server port for deployment targets"),
     EnvVarSpec("ALLOWED_ORIGINS", str, "*", "Comma-separated CORS origins"),
     EnvVarSpec("LOG_LEVEL", str, "info", "Log level: debug|info|warning|error"),
+    EnvVarSpec(
+        "PROBE_PROVIDERS_ON_READY",
+        _as_bool,
+        False,
+        "When true, /ready performs live Fireworks and Serper probes; when false, only config/cache checks run",
+    ),
     EnvVarSpec("CACHE_DEFAULT_TTL_DAYS", _as_int, 14, "Shared cache TTL in days"),
     EnvVarSpec("SOURCE_PIPELINE_VERSION", str, "1", "Pipeline contract version"),
     EnvVarSpec("SCORER_VERSION", str, "1", "Scoring ruleset version"),
@@ -40,6 +46,13 @@ ENV_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("ENABLE_LLM_SIGNALS", _as_bool, False, "Enable LLM-based text signal extraction"),
     EnvVarSpec("ENABLE_IMAGE_VERIFY", _as_bool, False, "Enable screenshot OCR/vision flow"),
     EnvVarSpec("RECOMMENDATIONS_ENABLED", _as_bool, False, "Enable similar-job recommendation flow by default"),
+    EnvVarSpec("RECOMMENDATIONS_MAX", _as_int, 3, "Hard cap for similar-job cards returned to the UI"),
+    EnvVarSpec(
+        "RECOMMENDATIONS_CANDIDATE_POOL",
+        _as_int,
+        8,
+        "Max candidate URLs to verify before trimming recommendations",
+    ),
     EnvVarSpec(
         "RECOMMENDATIONS_MIN_VERIFY_SCORE",
         _as_int,
@@ -47,6 +60,7 @@ ENV_SPECS: tuple[EnvVarSpec, ...] = (
         "Minimum nested verify confidence_score (0-100) for similar-job recommendations",
     ),
     EnvVarSpec("MAX_UPLOAD_BYTES", _as_int, 5 * 1024 * 1024, "Max upload size for screenshot input bytes"),
+    EnvVarSpec("IMAGE_MAX_BYTES", _as_int, 5 * 1024 * 1024, "Legacy alias for screenshot upload size limit"),
     EnvVarSpec("RATE_LIMIT_REQUESTS_PER_MINUTE", _as_int, 20, "Per-IP request quota per minute"),
     EnvVarSpec("RATE_LIMIT_BURST", _as_int, 5, "Per-IP additional burst allowance within a window"),
     EnvVarSpec("SEARCH_API_ENDPOINT", str, "https://serpapi.com/search.json", "SERP provider endpoint URL"),

@@ -29,7 +29,7 @@ from backend.core.image_ingest import (
     merge_description_with_extraction,
 )
 from backend.core.inputs import InputValidationError, validate_verify_inputs
-from backend.core.llm_fireworks import build_llm_signals
+from backend.core.llm_fireworks import build_llm_signals, llm_enabled
 from backend.core.normalization import NormalizationResult, normalize_job_input
 from backend.core.report import build_public_report
 from backend.core.scoring import SCORER_VERSION, decide_from_signals
@@ -371,8 +371,8 @@ async def verify_job(
     )
 
     api_key_llm = _get("FIREWORKS_API_KEY") or _get("LLM_API_KEY")
-    llm_enabled = os.environ.get("ENABLE_LLM_SIGNALS", "1") != "0"
-    if api_key_llm and llm_enabled:
+    llm_enabled_flag = llm_enabled()
+    if api_key_llm and llm_enabled_flag:
         llm_summary = await call_llm_safe(
             messages=[
                 {
