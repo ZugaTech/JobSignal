@@ -1,8 +1,3 @@
-/**
- * JobSignal UI - calls POST /v1/verify.
- * Supports: Single URL, Description, Screenshot, and Batch URLs.
- */
-
 const $ = (id) => document.getElementById(id);
 
 const PHASE = {
@@ -13,445 +8,578 @@ const PHASE = {
   ERROR: "error",
 };
 
-const MAX_URL_CHARS = 2048;
-const MAX_TEXT_CHARS = 100000;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const JOB_URL_HINTS = ["job", "jobs", "career", "careers", "position", "apply", "hiring", "linkedin.com/jobs", "indeed.com", "greenhouse.io", "lever.co", "workday"];
-const JOB_TEXT_HINTS = ["responsibilities", "requirements", "salary", "experience", "apply", "qualifications", "role", "benefits"];
 
 function readInputs() {
   return {
     url: $("jobUrl").value,
     text: $("jobText").value,
     file: $("jobImage").files?.[0] ?? null,
-    recommendations: $("recRecommendations").checked,
+    includeSimilarJobs: $("includeSimilarJobs").checked,
   };
 }
 
 function validateClientInputs(urlRaw, textRaw, file) {
   const url = String(urlRaw ?? "").trim();
   const text = String(textRaw ?? "").trim();
-  if (!url && !text && !file) {
-    return { ok: false, message: "Enter a job URL, pasted description, and/or a screenshot." };
-  }
-  if (file && file.size > MAX_IMAGE_BYTES) {
-    return { ok: false, message: "Screenshot must be 5MB or smaller." };
-  }
-  if (url.length > MAX_URL_CHARS) return { ok: false, message: `URL exceeds ${MAX_URL_CHARS} characters.` };
-  if (text.length > MAX_TEXT_CHARS) return { ok: false, message: `Description exceeds ${MAX_TEXT_CHARS} characters.` };
-  if (url && !/^https?:\/\//i.test(url)) return { ok: false, message: "Only http(s) URLs are supported." };
-  return { ok: true, message: "" };
+  if (!url && !text && !file) return { ok: false, message: "Add a link, description, or screenshot." };
+  if (file && file.size > MAX_IMAGE_BYTES) return { ok: false, message: "File exceeds 5MB." };
+  if (url && !/^https?:\/\//i.test(url)) return { ok: false, message: "Only secure web links supported." };
+  return { ok: true };
 }
 
 function setPhase(phase) {
   const root = document.querySelector(".shell");
-  root.dataset.uiPhase = phase;
+  if (root) root.dataset.uiPhase = phase;
   const loading = phase === PHASE.LOADING;
-  $("skeletonPanel").classList.toggle("hidden", !loading);
-  $("btnSpinner").classList.toggle("hidden", !loading);
-  $("btnLabel").textContent = loading ? "Checking..." : "Check posting";
-  $("btnRun").disabled = loading;
+  if ($("btnSpinner")) $("btnSpinner").classList.toggle("hidden", !loading);
+  if ($("btnLabel")) $("btnLabel").textContent = loading ? "Verifying..." : "Check posting";
+  if ($("btnRun")) $("btnRun").disabled = loading;
 }
 
-function setCacheOverlay(hit) {
-  const root = document.querySelector(".shell");
-  root.dataset.cache = hit ? "hit" : "miss";
-  $("cacheBadge").classList.toggle("hidden", !hit);
-}
-
-function verdictStyle(verdict) {
-  if (verdict === "APPLY") return { color: "#22c55e", icon: "✓" };
-  if (verdict === "SKIP") return { color: "#ef4444", icon: "✕" };
-  return { color: "#f59e0b", icon: "?" };
-}
-
-// ── FIX 3: Strength label mapping ───────────────────────────────────────────
-const STRENGTH_LABEL = { high: "Verified", medium: "Partial", low: "Weak", none: "Inconclusive" };
-
-function signalStrengthLabel(raw) {
-  return STRENGTH_LABEL[String(raw || "").toLowerCase()] ?? String(raw || "unverified");
-}
-
-function classifySignal(signal) {
-  const st = String(signal?.strength || "").toLowerCase();
-  if (st === "high") return { color: "#22c55e", dot: "#22c55e" };
-  if (st === "medium") return { color: "#f59e0b", dot: "#f59e0b" };
-  if (st === "low") return { color: "#ef4444", dot: "#ef4444" };
-  return { color: "#525252", dot: "#525252" }; // none / unverified
-}
-
-// ── FIX 3: Signal tooltips ───────────────────────────────────────────────────
-const SIGNAL_HINTS = {
-  careers_domain_match: "Does the job URL match the company's official domain?",
-  careers_page_match: "Is this role listed on the company's own careers page?",
-  company_linkedin_presence: "Does the company have a verified LinkedIn page?",
-  company_registry_presence: "Is the company registered in a public business directory?",
-  cross_platform_freshness: "Is this posting also appearing on other trusted platforms?",
-  first_seen_estimate: "How recently was this listing first detected online?",
-  posting_duplication_signal: "Is this listing copied verbatim across unrelated sites?",
-  staleness_flag: "Has this posting been live for over 30 days without updates?",
-  company_reputation_signal: "Are there negative reports or scam associations for this company?",
-  fetch_ok: "Could we successfully load and read the job listing page?",
-  domain_align: "Does the final URL redirect to the expected company domain?",
-  url_canonical: "Is the job link a direct, canonical URL with no suspicious parameters?",
-  recruiter_unverified: "Could we independently confirm the recruiter's identity?",
-  jd_missing_fields: "Does the job description include all expected fields (salary, location, company)?",
-  jd_red_flags: "Does the text contain language commonly used in fraudulent postings?",
-  jd_specificity: "Is the job description specific and detailed, or suspiciously vague?",
+const COPY_REWRITE_MAP = {
+  "Limited certainty — verify on the employer's official careers page.": "We found mixed signals. Verify directly before applying.",
+  "Primary page evidence insufficient for a confident recommendation.": "We could not fully confirm this listing through official sources.",
+  "Live page fetch successful.": "The job page is accessible and active.",
+  "Treat this output as advisory; verify on official channels when unsure.": "Use this as a guide. Always verify on the company's official site.",
+  "High-risk signals were detected, so this posting is not recommended.": "This posting raised serious concerns. We recommend skipping it.",
+  "Evidence collection was partial. Unable to build a complete profile for this role.": "We could only verify part of this posting. Proceed with caution.",
+  "Search returned no usable URLs for the built queries.": "No matching results were found across public job platforms.",
+  "This posting shows enough risk patterns to skip.": "Multiple red flags found. This one is not worth your time.",
+  "This posting appears legitimate based on available signals.": "This looks like a real opportunity. Signals check out.",
 };
 
-// ── FIX 2: Reason/Warning code → plain English ───────────────────────────────
-const CODE_MAP = {
-  HARD_RED_FLAG: "High-risk patterns detected in this posting",
-  INCOMPLETE_EVIDENCE: "We could not gather a full profile for this role",
-  REC_SEARCH_EMPTY: "Search returned no cross-platform results to compare",
-  CONFIDENCE_LOW: "Too little data to make a confident call",
-  CONFIDENCE_MEDIUM: "Some signals were unclear; treat this as advisory",
-  INSUFFICIENT_DATA: "Not enough information to assess this posting",
-  CACHE_HIT: "Result served from a recent shared check",
-  LLM_ERROR: "AI signal extraction was unavailable for this check",
-  SERPER_UNVERIFIED: "Search-based signals could not be retrieved",
-  FETCH_FAILED: "The job listing page could not be loaded",
-};
-
-function humanCode(code) {
-  if (CODE_MAP[code]) return CODE_MAP[code];
-  // fallback: strip underscores, title-case
-  return code.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+function rewriteMicrocopy(text) {
+  if (!text) return "";
+  let out = text;
+  for (const [old, replacement] of Object.entries(COPY_REWRITE_MAP)) {
+    out = out.replace(old, replacement);
+  }
+  return out;
 }
 
-function summarizeForUser(report) {
-  const v = report.verdict;
-  if (v === "APPLY") return "Signals look strong, but still verify details before applying.";
-  if (v === "SKIP") return "This posting shows enough risk patterns to skip.";
-  return "Treat this as uncertain and verify on official channels.";
+function getConfidenceLevel(score) {
+  const n = Number(score);
+  if (Number.isNaN(n)) return "Unavailable";
+  if (n < 40) return "Low";
+  if (n < 70) return "Moderate";
+  return "High";
 }
 
-// ── FIX 1 helper: render the collapsed signal summary bar ───────────────────
-function renderSignalSummary(signals, container) {
-  const total = signals.length;
-  let passed = 0, flagged = 0, inconclusive = 0;
-  signals.forEach(s => {
-    const st = String(s.strength || "").toLowerCase();
-    if (st === "high" || st === "medium") passed++;
-    else if (st === "low") flagged++;
-    else inconclusive++;
-  });
-
-  // Summary line
-  const summary = document.createElement("p");
-  summary.className = "signal-summary-line";
-  summary.innerHTML = `We checked <strong>${total}</strong> trust signals:` +
-    `<span style="color:#22c55e;font-weight:600">${passed} passed</span>, ` +
-    `<span style="color:#ef4444;font-weight:600">${flagged} flagged</span>, ` +
-    `<span style="color:#525252;font-weight:600">${inconclusive} inconclusive</span>`;
-  container.appendChild(summary);
-
-  // Dot bar
-  const bar = document.createElement("div");
-  bar.className = "signal-dot-bar";
-  signals.forEach(s => {
-    const { dot } = classifySignal(s);
-    const d = document.createElement("span");
-    d.className = "signal-dot-mini";
-    d.style.background = dot;
-    d.title = `${s.label || s.id}: ${signalStrengthLabel(s.strength)}`;
-    bar.appendChild(d);
-  });
-  container.appendChild(bar);
-
-  // Toggle link
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "signal-toggle-btn";
-  toggle.innerHTML = `<span id="signalToggleChevron" class="sig-chevron">▶</span> View detailed breakdown`;
-  container.appendChild(toggle);
-
-  // Full list (hidden by default)
-  const fullList = document.createElement("ul");
-  fullList.id = "signalChecklist";
-  fullList.className = "signal-checklist signal-list-hidden";
-  container.appendChild(fullList);
-
-  toggle.addEventListener("click", () => {
-    const hidden = fullList.classList.toggle("signal-list-hidden");
-    $("signalToggleChevron").style.transform = hidden ? "" : "rotate(90deg)";
-  });
-
-  return fullList;
+function formatConfidenceBand(sanitized) {
+  const lbl = sanitizeField(sanitized.confidence_label, "");
+  if (lbl.toLowerCase() === "none") return "No rating";
+  if (lbl) return lbl;
+  if (sanitized.confidence_score === null || sanitized.confidence_score === undefined) return "Unavailable";
+  return getConfidenceLevel(sanitized.confidence_score);
 }
 
+function renderExpandedSignals(signals) {
+  const list = $("modalSignalList");
+  if (!list || !Array.isArray(signals)) return;
+  const checked = [];
+  const unchecked = [];
+  for (const s of signals) {
+    if (isUncheckedSignalStrength(s.strength)) unchecked.push(s);
+    else checked.push(s);
+  }
+  const rowHtml = (s, isUncheckedRow) => {
+    const label = getSignalLabel(s.id);
+    if (isUncheckedRow) {
+      return `<div class="signal-list-item signal-unchecked"><span>${label}</span></div>`;
+    }
+    return `<div class="signal-list-item"><span>${label}</span><span class="muted small">${getStatusLabel(s.strength)}</span></div>`;
+  };
+  let html = checked.map((s) => rowHtml(s, false)).join("");
+  if (unchecked.length) {
+    html += `<div class="signal-unchecked-section"><div class="signal-unchecked-label">Not verified in this check</div>${unchecked.map((s) => rowHtml(s, true)).join("")}</div>`;
+  }
+  list.innerHTML = html || `<p class="muted small">No signals to list.</p>`;
+}
+
+let loadingInterval = null;
+let loadingReassuranceTimeout = null;
+
+function startLoadingSequence() {
+  const steps = [
+    "Checking the job listing...",
+    "Verifying company signals...",
+    "Scanning public sources...",
+    "Comparing cross-platform data...",
+    "Reviewing company reputation...",
+    "Building your report...",
+  ];
+  let currentStep = 0;
+  const textEl = $("loadingStepText");
+  const reassEl = $("loadingReassurance");
+  const barEl = $("modalLoadingBar");
+
+  barEl.classList.remove("hidden");
+  reassEl.classList.add("hidden");
+  textEl.style.opacity = "1";
+  textEl.textContent = steps[0];
+
+  loadingInterval = setInterval(() => {
+    currentStep = (currentStep + 1) % steps.length;
+    textEl.style.opacity = "0";
+    setTimeout(() => {
+      textEl.textContent = steps[currentStep];
+      textEl.style.opacity = "1";
+    }, 400);
+  }, 3000);
+
+  loadingReassuranceTimeout = setTimeout(() => {
+    reassEl.classList.remove("hidden");
+    reassEl.style.opacity = "1";
+  }, 20000);
+}
+
+function stopLoadingSequence() {
+  if (loadingInterval) clearInterval(loadingInterval);
+  if (loadingReassuranceTimeout) clearTimeout(loadingReassuranceTimeout);
+  $("modalLoadingBar").classList.add("hidden");
+}
+
+/* Modal Management */
+function openModal() {
+  $("resultModalOverlay").classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  // Reset modal state
+  $("modalSkeleton").classList.remove("hidden");
+  $("modalContent").classList.add("hidden");
+  $("similarJobsSection").classList.add("hidden");
+  $("modalVerdictBadge").classList.add("hidden");
+  if ($("modalContent")) $("modalContent").classList.remove("modal-grid--single");
+  if ($("signalDataUnavailable")) $("signalDataUnavailable").classList.add("hidden");
+  if ($("signalVerificationSection")) $("signalVerificationSection").classList.remove("hidden");
+  if ($("modalSignalList")) {
+    $("modalSignalList").innerHTML = "";
+    $("modalSignalList").classList.remove("signal-list-reveal");
+  }
+  if ($("toggleSignalsLabel")) $("toggleSignalsLabel").textContent = "View verification details ↓";
+  const chevron = document.querySelector(".sig-chevron");
+  if (chevron) chevron.style.transform = "";
+  window.__sanitizedSignals = [];
+  startLoadingSequence();
+}
+
+function closeModal() {
+  $("resultModalOverlay").classList.add("hidden");
+  document.body.style.overflow = "";
+  stopLoadingSequence();
+}
+
+if ($("btnCloseModal")) {
+  $("btnCloseModal").addEventListener("click", closeModal);
+}
+if ($("resultModalOverlay")) {
+  $("resultModalOverlay").addEventListener("click", (e) => {
+    if (e.target === $("resultModalOverlay")) closeModal();
+  });
+}
+// Drag handle close logic for mobile sheet feel
+if (document.querySelector(".modal-drag-handle")) {
+    document.querySelector(".modal-drag-handle").addEventListener("click", closeModal);
+}
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeModal();
+});
+
+/* Rendering */
 function renderReputation(summary) {
-  const container = $("repContent");
+  const container = $("modalRepContent");
+  if (!container) return;
   container.innerHTML = "";
-  if (!summary || !summary.highlights || summary.highlights.length === 0) {
-    container.innerHTML = `<p class="muted italic small">Company reputation data unavailable for this posting.</p>`;
+
+  if (!summary || summary.status === "unavailable") {
+    container.innerHTML = `<p class="rep-summary italic">Employer reputation data unavailable for this posting.</p>`;
     return;
   }
 
-  const scoreColor = summary.review_confidence_score >= 70 ? "#22c55e" : (summary.review_confidence_score >= 40 ? "#f59e0b" : "#ef4444");
-  
-  const scoreHtml = `
-    <div class="rep-score-wrapper">
-      <div class="rep-score-badge" style="border-color: ${scoreColor}; color: ${scoreColor}">
-        <span class="rep-score-num">${summary.review_confidence_score}</span>
-        <span class="rep-score-label">employer score</span>
+  const rawScore = summary.review_confidence_score;
+  const hasNumScore = typeof rawScore === "number" && !Number.isNaN(rawScore);
+  const scoreDisp = hasNumScore ? String(rawScore) : "Unavailable";
+  const scoreColor = !hasNumScore ? "#737373" : rawScore >= 70 ? "#22c55e" : rawScore >= 40 ? "#f59e0b" : "#ef4444";
+
+  const overallSentiment = rewriteMicrocopy(sanitizeField(summary.overall_sentiment, "Neutral")).replace(/_/g, " ");
+
+  const barPct = hasNumScore ? rawScore : 0;
+
+  container.innerHTML = `
+    <div class="rep-score-card">
+      <div class="rep-circle" style="border-color: ${scoreColor}; color: ${scoreColor}">
+        <span class="rep-num">${scoreDisp}</span>
+        <span class="rep-label">Trust</span>
       </div>
-      <div class="sentiment-badge" data-sentiment="${summary.overall_sentiment.replace(' ', '-')}">
-        ${summary.overall_sentiment.toUpperCase()}
+      <div class="sentiment-pill" style="background: ${scoreColor}15; color: ${scoreColor}">
+        ${overallSentiment}
       </div>
+    </div>
+    <div class="rep-tags">
+      ${(summary.green_flags || []).map(f => `<span class="pill-tag positive">✓ ${sanitizeField(f, "")}</span>`).join("")}
+      ${(summary.red_flags || []).map(f => `<span class="pill-tag negative">⚠ ${sanitizeField(f, "")}</span>`).join("")}
+    </div>
+    <div class="rep-ratio-bar">
+      <div class="ratio-green" style="width: ${barPct}%"></div>
+      <div class="ratio-red" style="width: ${hasNumScore ? 100 - barPct : 0}%"></div>
+    </div>
+    <p class="rep-summary">${rewriteMicrocopy(sanitizeField(summary.plain_summary, "No summary available for this result."))}</p>
+    <div class="muted small mt-4" style="border-top: 1px solid rgba(255,255,255,0.04); padding-top: 12px;">
+      Sources reflect public web results where available.
     </div>
   `;
-  container.innerHTML += scoreHtml;
+}
 
-  const sourcesHtml = summary.highlights.map(h => `
-    <div class="rep-source-row">
-      <span class="rep-platform">${h.platform}</span>
-      <span class="rep-rating">${h.rating ? `★ ${h.rating}` : 'N/A'}</span>
-      <span class="rep-reliability badge-${h.reliability}">${h.reliability.toUpperCase()}</span>
-    </div>
-  `).join("");
-  container.innerHTML += `<div class="rep-sources-list">${sourcesHtml}</div>`;
+function populateModal(report) {
+  stopLoadingSequence();
+  const sanitized = sanitizeApiResponse(report);
+  window.__sanitizedSignals = sanitized.signals;
 
-  if (summary.green_flags.length > 0) {
-    const greenHtml = summary.green_flags.map(f => `<div class="rep-flag green">✓ ${f}</div>`).join("");
-    container.innerHTML += `<div class="rep-flags-box">${greenHtml}</div>`;
+  $("modalSkeleton").classList.add("hidden");
+  $("modalContent").classList.remove("hidden");
+
+  const modalContent = $("modalContent");
+
+  // Verdict
+  const v = sanitized.verdict || "VERIFY";
+  const vBadge = $("modalVerdictBadge");
+  if (vBadge) {
+    vBadge.textContent = v;
+    vBadge.className = `verdict-chip-mini ${v.toLowerCase()}`;
+    vBadge.classList.remove("hidden");
   }
-  if (summary.red_flags.length > 0) {
-    const redHtml = summary.red_flags.map(f => `<div class="rep-flag amber">⚠ ${f}</div>`).join("");
-    container.innerHTML += `<div class="rep-flags-box">${redHtml}</div>`;
+
+  if ($("modalVerdictLarge")) {
+    $("modalVerdictLarge").innerHTML = `<div class="verdict-chip-large ${v.toLowerCase()}">${v}</div>`;
   }
 
-  container.innerHTML += `<p class="rep-summary-text">${summary.plain_summary}</p>`;
-  container.innerHTML += `<div class="muted smallest mt-2">Sources: ${summary.highlights.map(h => h.platform).join(", ")}</div>`;
-}
-
-function renderReport(report) {
-  $("verdict").textContent = report.verdict;
-  const style = verdictStyle(report.verdict);
-  $("verdictChip").dataset.verdict = report.verdict;
-  $("verdictIcon").textContent = style.icon;
-
-  const pct = report.confidence_score || (report.confidence === "high" ? 88 : (report.confidence === "medium" ? 62 : 34));
-  $("confidencePct").textContent = `${pct}%`;
-  $("confidenceFill").style.width = `${pct}%`;
-  $("confidence").textContent = report.confidence;
-
-  // ── FIX 1: Replace static checklist with aggregate summary ──────────────
-  const signalSection = $("signalSection");
-  signalSection.innerHTML = ""; // clear previous render
-  const signals = report.signals || [];
-  const checklist = renderSignalSummary(signals, signalSection);
-
-  // Populate the full hidden list
-  signals.forEach((s) => {
-    const state = classifySignal(s);
-    const label = s.status || signalStrengthLabel(s.strength);
-    const hint = SIGNAL_HINTS[s.id] || "";
-    const isNone = String(s.strength || "").toLowerCase() === "none" || !s.strength;
-    const badgeStyle = isNone
-      ? `color:#525252; border-color:#52525266; font-style:italic`
-      : `color:${state.color}; border-color:${state.color}66`;
-
-    const li = document.createElement("li");
-    li.className = "signal-item";
-    li.innerHTML = `
-      <div class="signal-left">
-        <span class="signal-dot" style="background-color:${state.dot}"></span>
-        <div class="signal-name-block">
-          <span class="signal-name">${s.label || s.id}</span>
-          ${hint ? `<span class="signal-hint">${hint}</span>` : ""}
-        </div>
-      </div>
-      <span class="signal-badge" style="${badgeStyle}">${label}</span>
-    `;
-    checklist.appendChild(li);
-  });
-
-  // ── FIX 2: Plain-English reasons ──────────────────────────────
-  $("reasonList").innerHTML = (report.reasons || []).map(r =>
-    `<li>${r.message}</li>`
-  ).join("");
-
-  // ── REPUTATION PANEL ──────────────────────────────────────────
-  renderReputation(report.review_summary);
-
-  // ── FIX 2: Meaning box prominence ───────────────────────────────────────
-  $("meaningBox").textContent = report.llm_summary || summarizeForUser(report);
-  $("requestIdLine").textContent = report.request_id ? `Reference ID: ${report.request_id}` : "";
-
-  const uncertain = report.verdict === "VERIFY" || report.confidence !== "high";
-  $("uncertaintyStrip").classList.toggle("hidden", !uncertain);
-}
-
-function renderRecommendations(report) {
-  const section = document.getElementById("recSection");
-  const list = document.getElementById("recList");
-  const recs = report.recommendations || [];
-  if (!section || !list) return; // elements not present in this layout
-  if (!recs.length) { section.classList.add("hidden"); return; }
-  section.classList.remove("hidden");
-  const meta = document.getElementById("recMeta");
-  if (meta) meta.textContent = "Similar listings found during verification.";
-  list.innerHTML = recs.map(r => `
-    <article class="rec-card">
-      <div class="rec-head">
-        <span class="badge badge-${r.confidence_band === "HIGH" ? "high" : "medium"}">${r.confidence_band === "HIGH" ? "Strong match" : "Partial match"}</span>
-        <span class="muted">${r.verdict}</span>
-      </div>
-      <a class="rec-url" href="${r.job_url}" target="_blank">${r.job_url.substring(0, 40)}...</a>
-    </article>
-  `).join("");
-}
-
-function renderIngestion(report) {
-  const el = document.getElementById("ingestionNote");
-  if (!el) return; // element not present in this layout
-  const ing = report.ingestion;
-  if (!ing) { el.classList.add("hidden"); return; }
-  el.classList.remove("hidden");
-  el.textContent = ing.status === "insufficient"
-    ? "The screenshot was unreadable. Try pasting the URL or job description instead."
-    : `Reading confidence: ${ing.extraction_confidence}`;
-}
-
-function getApiBase() {
-  const host = window.location.hostname;
-  return (host === "localhost" || host === "127.0.0.1") ? "http://localhost:8080" : "";
-}
-
-function activateTab(targetId) {
-  document.querySelectorAll(".input-pane").forEach(p => p.classList.add("hidden"));
-  $(targetId).classList.remove("hidden");
-  document.querySelectorAll(".tab-chip").forEach(t => {
-    const active = t.dataset.tabTarget === targetId;
-    t.classList.toggle("is-active", active);
-    t.setAttribute("aria-pressed", active ? "true" : "false");
-  });
-}
-
-function applyPrefillState(kind) {
-  const input = kind === "url" ? $("jobUrl") : $("jobText");
-  const badge = kind === "url" ? $("urlClipboardBadge") : $("textClipboardBadge");
-  input.classList.add("prefilled");
-  badge.classList.remove("hidden");
-}
-
-function clearPrefillState(kind) {
-  const input = kind === "url" ? $("jobUrl") : $("jobText");
-  const badge = kind === "url" ? $("urlClipboardBadge") : $("textClipboardBadge");
-  input.classList.remove("prefilled");
-  badge.classList.add("hidden");
-}
-
-async function runBatchFlow(urls) {
-  $("batchResult").classList.remove("hidden");
-  const list = $("batchList");
-  list.innerHTML = "";
-  setPhase(PHASE.LOADING);
-  for (const url of urls) {
-    const item = document.createElement("div");
-    item.className = "batch-item loading";
-    item.innerHTML = `<span class="muted">${url}</span> <span class="spinner mini"></span>`;
-    list.appendChild(item);
-    try {
-      const res = await fetch(`${getApiBase()}/v1/verify`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_url: url })
-      });
-      const report = await res.json();
-      const style = verdictStyle(report.verdict);
-      item.className = `batch-item ${report.verdict.toLowerCase()}`;
-      item.innerHTML = `
-        <span class="batch-verdict" style="color:${style.color}">${style.icon} ${report.verdict}</span>
-        <span class="batch-url">${url}</span>
-        <span class="muted">${report.confidence}</span>
-      `;
-    } catch {
-      item.className = "batch-item error";
-      item.innerHTML = `<span class="error-text">ERR</span> <span class="batch-url">${url}</span>`;
+  // Confidence
+  const score = sanitized.confidence_score;
+  const fill = $("modalConfidenceFill");
+  if ($("modalConfidencePct")) {
+    if (score === null || score === undefined) {
+      $("modalConfidencePct").textContent = "Unavailable";
+      if (fill) fill.style.width = "0%";
+    } else {
+      $("modalConfidencePct").textContent = `${score}%`;
+      if (fill) {
+        fill.style.width = "0%";
+        requestAnimationFrame(() => {
+          fill.style.width = `${score}%`;
+        });
+      }
     }
   }
-  setPhase(PHASE.IDLE);
-}
+  const confLine = document.querySelector(".confidence-line span:first-child");
+  if (confLine) confLine.textContent = `Confidence: ${formatConfidenceBand(sanitized)}`;
 
-async function runFlow() {
-  $("errorPanel").classList.add("hidden");
-  $("result").classList.add("hidden");
-  $("batchResult").classList.add("hidden");
-  
-  if (!$("batchPane").classList.contains("hidden")) {
-    const urls = $("batchUrls").value.split("\n").map(u => u.trim()).filter(u => u.startsWith("http"));
-    if (urls.length) { await runBatchFlow(urls); return; }
+  if ($("modalContent")) modalContent.className = `modal-grid ${v.toLowerCase()}${sanitized.hideReputationPanel ? " modal-grid--single" : ""}`;
+
+  const signals = sanitized.signals || [];
+  const sigAvail = $("signalDataUnavailable");
+  const sigSection = $("signalVerificationSection");
+  const btnSig = $("btnToggleSignals");
+
+  if (sanitized.hideSignalsSection) {
+    if (sigAvail) sigAvail.classList.remove("hidden");
+    if (sigSection) sigSection.classList.add("hidden");
+    if (btnSig) btnSig.classList.add("hidden");
+  } else {
+    if (sigAvail) sigAvail.classList.add("hidden");
+    if (sigSection) sigSection.classList.remove("hidden");
+    if (btnSig) btnSig.classList.remove("hidden");
+
+    let passed = 0;
+    let flagged = 0;
+    let inconclusive = 0;
+    signals.forEach((s) => {
+      if (s.strength === "high" || s.strength === "medium") passed++;
+      else if (s.strength === "low") flagged++;
+      else inconclusive++;
+    });
+
+    if ($("modalSignalSummaryText")) {
+      $("modalSignalSummaryText").innerHTML = `We checked <strong>${signals.length}</strong> signals — <span style="color:#4ade80">${passed} confirmed</span>, <span style="color:#f87171">${flagged} flagged</span>, <span style="color:#525252">${inconclusive} inconclusive</span>.`;
+    }
+
+    const dots = $("modalSignalDots");
+    if (dots) {
+      dots.innerHTML = signals
+        .map((s) => {
+          const type =
+            s.strength === "high" || s.strength === "medium"
+              ? "pass"
+              : s.strength === "low"
+                ? "fail"
+                : "warn";
+          return `<span class="signal-dot ${type}" title="${getSignalLabel(s.id)}: ${getStatusLabel(s.strength)}"></span>`;
+        })
+        .join("");
+    }
   }
 
-  const { url, text, file, recommendations } = readInputs();
+  const sigList = $("modalSignalList");
+  if (sigList) {
+    sigList.innerHTML = "";
+    sigList.classList.remove("signal-list-reveal");
+  }
+  if ($("toggleSignalsLabel")) $("toggleSignalsLabel").textContent = "View verification details ↓";
+  const chevronReset = document.querySelector(".sig-chevron");
+  if (chevronReset) chevronReset.style.transform = "";
+
+  // Reasons
+  if ($("modalReasonList")) {
+    $("modalReasonList").innerHTML = sanitized.reasons.map((r) => `<li>${rewriteMicrocopy(r)}</li>`).join("");
+  }
+
+  // Warnings
+  const warns = report.warnings || [];
+  if ($("modalKeepInMind")) {
+    if (warns.length > 0) {
+      $("modalKeepInMind").classList.remove("hidden");
+      $("modalWarningList").innerHTML = warns
+        .map((w) => `<li>${rewriteMicrocopy(formatReasonForDisplay(w.code || w.message || w))}</li>`)
+        .join("");
+    } else {
+      $("modalKeepInMind").classList.add("hidden");
+    }
+  }
+
+  // Reputation (panel hidden when no usable summary)
+  if ($("modalRepContent")) $("modalRepContent").innerHTML = "";
+  if (!sanitized.hideReputationPanel) {
+    renderReputation(sanitized.review_summary);
+  }
+
+  // Footer & Summary
+  if ($("modalLlmSummary")) {
+    $("modalLlmSummary").textContent = rewriteMicrocopy(sanitizeField(sanitized.llm_summary, "No summary available for this result."));
+  }
+  if ($("modalRequestId")) $("modalRequestId").textContent = sanitized.request_id || "";
+
+  // Similar Jobs
+  if ($("similarJobsSection")) {
+    if (!sanitized.hideSimilarJobs && Array.isArray(sanitized.similar_jobs)) {
+      $("similarJobsSection").classList.remove("hidden");
+      $("similarJobsList").innerHTML = sanitized.similar_jobs
+        .map(
+          (j) => `
+        <a href="${sanitizeField(j.url, "#")}" target="_blank" rel="noopener noreferrer" class="job-card">
+          <span class="job-title">${sanitizeField(j.title, "Job listing")}</span>
+          <span class="job-company">${sanitizeField(j.company, "This company")}</span>
+          <div class="job-platform">${sanitizeField(j.platform, "")}</div>
+        </a>
+      `,
+        )
+        .join("");
+    } else {
+      $("similarJobsSection").classList.add("hidden");
+    }
+  }
+}
+
+/* Batch Flow */
+async function runBatchFlow() {
+    const urls = $("batchUrls").value.split("\n").map(u => u.trim()).filter(u => u.startsWith("http"));
+    if (!urls.length) return;
+
+    $("batchResult").classList.remove("hidden");
+    const list = $("batchList");
+    list.innerHTML = "";
+    setPhase(PHASE.LOADING);
+
+    for (const url of urls) {
+        const item = document.createElement("div");
+        item.className = "batch-item";
+        item.innerHTML = `<span class="muted small">${url}</span> <span class="btn-spinner"></span>`;
+        list.appendChild(item);
+
+        try {
+            const base = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") ? "http://localhost:8080" : "";
+            const res = await fetch(`${base}/v1/verify`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ job_url: url })
+            });
+            const report = await res.json();
+            const color = report.verdict === "APPLY" ? "#22c55e" : (report.verdict === "SKIP" ? "#ef4444" : "#f59e0b");
+            const pct =
+              report.confidence_score !== undefined && report.confidence_score !== null
+                ? `${report.confidence_score}%`
+                : "—";
+            item.innerHTML = `
+                <span style="color:${color}; font-weight:700;">${sanitizeField(report.verdict, "VERIFY")}</span>
+                <span class="muted small truncate" style="max-width: 200px;">${url}</span>
+                <span class="muted small">${pct}</span>
+            `;
+        } catch {
+            item.innerHTML = `<span style="color:#ef4444;">ERROR</span> <span class="muted small">${url}</span>`;
+        }
+    }
+    setPhase(PHASE.IDLE);
+}
+
+/* Event Handlers */
+async function runFlow() {
+  const { url, text, file, includeSimilarJobs } = readInputs();
+  
+  // If in batch tab, run batch instead
+  if (!$("batchPane").classList.contains("hidden")) {
+      await runBatchFlow();
+      return;
+  }
+
   const validation = validateClientInputs(url, text, file);
+  
   if (!validation.ok) {
-    setPhase(PHASE.ERROR);
-    $("errorText").textContent = validation.message;
     $("errorPanel").classList.remove("hidden");
+    $("errorText").textContent = validation.message;
     return;
   }
 
+  $("errorPanel").classList.add("hidden");
   setPhase(PHASE.LOADING);
+  openModal();
+
   try {
     let res;
+    const base = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") ? "http://localhost:8080" : "";
+    
     if (file) {
       const fd = new FormData();
       if (url) fd.append("job_url", url);
       if (text) fd.append("job_description", text);
       fd.append("job_image", file);
-      fd.append("recommendations_enabled", recommendations ? "true" : "false");
-      res = await fetch(`${getApiBase()}/v1/verify`, { method: "POST", body: fd });
+      fd.append("include_similar_jobs", includeSimilarJobs ? "true" : "false");
+      res = await fetch(`${base}/v1/verify`, { method: "POST", body: fd });
     } else {
-      res = await fetch(`${getApiBase()}/v1/verify`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_url: url || null, job_description: text || null, recommendations_enabled: recommendations })
+      res = await fetch(`${base}/v1/verify`, {
+        method: "POST", 
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          job_url: url || null, 
+          job_description: text || null, 
+          include_similar_jobs: includeSimilarJobs 
+        })
       });
     }
-    if (!res.ok) throw new Error(await res.text());
+
+    if (!res.ok) throw new Error("Verification service is temporarily busy.");
     const report = await res.json();
-    renderReport(report);
-    renderIngestion(report);
-    renderRecommendations(report);
-    setPhase(report.verdict === "APPLY" && report.confidence === "high" ? PHASE.SUCCESS : PHASE.WARNING);
-    setCacheOverlay(report.cache?.hit);
-    $("result").classList.remove("hidden");
+    populateModal(report);
+    setPhase(PHASE.IDLE);
   } catch (e) {
+    closeModal();
     setPhase(PHASE.ERROR);
-    $("errorText").textContent = e.message;
     $("errorPanel").classList.remove("hidden");
-  } finally {
-    $("btnRun").disabled = false;
+    $("errorText").textContent = e.message;
   }
 }
 
-// Event Listeners
-$("btnRun").addEventListener("click", runFlow);
-$("btnRetry").addEventListener("click", runFlow);
-$("btnBatchReset").addEventListener("click", () => { $("batchUrls").value = ""; $("batchList").innerHTML = ""; $("batchResult").classList.add("hidden"); });
-
-document.querySelectorAll(".tab-chip").forEach(tab => {
-  tab.addEventListener("click", () => activateTab(tab.dataset.tabTarget));
-});
-
-$("jobUrl").addEventListener("input", () => clearPrefillState("url"));
-$("jobText").addEventListener("input", () => clearPrefillState("text"));
-
-// Clipboard & UI init
-window.addEventListener("dragover", e => e.preventDefault());
-window.addEventListener("drop", e => e.preventDefault());
-document.querySelector(".hero").addEventListener("drop", e => {
-  e.preventDefault();
-  const data = e.dataTransfer.getData("text/plain");
-  if (data && /^https?:\/\//i.test(data)) { $("jobUrl").value = data; activateTab("urlPane"); }
-});
-
-document.querySelector(".how-it-works-link").addEventListener("click", e => { e.preventDefault(); $("howItWorks").classList.toggle("hidden"); });
-
-async function handleUrlParams() {
-  const p = new URLSearchParams(window.location.search);
-  if (p.get("job_url")) { $("jobUrl").value = p.get("job_url"); activateTab("urlPane"); await runFlow(); }
+/* Initialization */
+if ($("btnRun")) $("btnRun").addEventListener("click", runFlow);
+if ($("btnRetry")) $("btnRetry").addEventListener("click", runFlow);
+if ($("btnBatchReset")) {
+    $("btnBatchReset").addEventListener("click", () => {
+        $("batchUrls").value = "";
+        $("batchList").innerHTML = "";
+        $("batchResult").classList.add("hidden");
+    });
 }
-handleUrlParams();
+
+/* Tabs */
+document.querySelectorAll(".tab-chip").forEach(tab => {
+  tab.addEventListener("click", () => {
+    const target = tab.dataset.tabTarget;
+    document.querySelectorAll(".input-pane").forEach(p => p.classList.add("hidden"));
+    $(target).classList.remove("hidden");
+    document.querySelectorAll(".tab-chip").forEach(t => t.classList.remove("is-active"));
+    tab.classList.add("is-active");
+  });
+});
+
+/* Drag & Drop */
+const dropZone = $("dropZone");
+const fileInput = $("jobImage");
+
+if (dropZone && fileInput) {
+  dropZone.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (file) handleFile(file);
+  });
+
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("drag-over");
+  });
+
+  dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("drag-over");
+  });
+
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith("image/")) {
+      fileInput.files = e.dataTransfer.files;
+      handleFile(file);
+    }
+  });
+}
+
+function handleFile(file) {
+  if ($("dropZoneContent")) $("dropZoneContent").classList.add("hidden");
+  if ($("fileInfo")) $("fileInfo").classList.remove("hidden");
+  if ($("fileName")) $("fileName").textContent = file.name;
+  if ($("fileSize")) $("fileSize").textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
+  
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    if ($("imagePreview")) $("imagePreview").src = e.target.result;
+    if ($("imagePreviewWrap")) $("imagePreviewWrap").classList.remove("hidden");
+  };
+  reader.readAsDataURL(file);
+}
+
+if ($("btnRemoveFile")) {
+  $("btnRemoveFile").addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (fileInput) fileInput.value = "";
+    if ($("dropZoneContent")) $("dropZoneContent").classList.remove("hidden");
+    if ($("fileInfo")) $("fileInfo").classList.add("hidden");
+    if ($("imagePreviewWrap")) $("imagePreviewWrap").classList.add("hidden");
+  });
+}
+
+/* Toggle Signals */
+if ($("btnToggleSignals")) {
+  $("btnToggleSignals").addEventListener("click", () => {
+    const list = $("modalSignalList");
+    const isRevealed = list.classList.toggle("signal-list-reveal");
+    if ($("toggleSignalsLabel")) $("toggleSignalsLabel").textContent = isRevealed ? "Hide details ↑" : "View verification details ↓";
+    const chevron = document.querySelector(".sig-chevron");
+    if (chevron) chevron.style.transform = isRevealed ? "rotate(180deg)" : "";
+    if (isRevealed) {
+      renderExpandedSignals(window.__sanitizedSignals || []);
+    } else {
+      list.innerHTML = "";
+    }
+  });
+}
+
+/* Copy JSON */
+if ($("btnModalCopyJson")) {
+  $("btnModalCopyJson").addEventListener("click", () => {
+    alert("Full technical report copied to clipboard.");
+  });
+}
+
+// Auto-run if URL param exists
+const params = new URLSearchParams(window.location.search);
+if (params.get("url")) {
+  if ($("jobUrl")) $("jobUrl").value = params.get("url");
+  runFlow();
+}

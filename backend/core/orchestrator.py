@@ -1,7 +1,7 @@
 """End-to-end verify orchestration (post–Sprint 4 vertical slice).
 
 This is the smallest glue layer that connects:
-validate -> normalize -> cache R/W -> fixtures evidence -> scoring -> report.
+validate -> normalize -> cache R/W -> live evidence -> scoring -> report.
 """
 
 from __future__ import annotations
@@ -34,7 +34,13 @@ from backend.core.normalization import NormalizationResult, normalize_job_input
 from backend.core.report import build_public_report
 from backend.core.scoring import SCORER_VERSION, decide_from_signals
 from backend.core.structured_log import log_stage
-from backend.evidence.company_reviews import get_company_reviews
+from backend.evidence.company_reviews import get_company_reviews, extract_company_name_hardened
+from backend.core.coordinator import EvidenceCoordinator
+from backend.core.llm_safe import call_llm_safe
+from backend.core.response_contract import (
+    build_preflight_skip_report,
+    build_preflight_verify_job_uncertain_report,
+)
 
 _MEM_CACHE = InMemoryCache()
 _REDIS_CACHE: CacheStore | None = None
@@ -110,14 +116,13 @@ def _insufficient_image_report(
         ingestion=ingestion,
     )
 
-
 async def _maybe_attach_recommendations(
     report: Dict[str, Any],
-    *,
     norm: NormalizationResult,
     merged_fields: Optional[ExtractedVisionFields],
     skip_recommendations: bool,
-    recommendations_enabled: Optional[bool],
+    include_similar_jobs: Optional[bool],
+    coordinator: Optional[EvidenceCoordinator] = None,
 ) -> None:
     if skip_recommendations:
         return
@@ -128,7 +133,7 @@ async def _maybe_attach_recommendations(
             candidate_url,
             None,
             skip_recommendations=True,
-            recommendations_enabled=False,
+            include_similar_jobs=False,
             image_bytes=None,
             image_media_type=None,
         )
@@ -137,8 +142,9 @@ async def _maybe_attach_recommendations(
         report,
         norm,
         merged_fields,
-        user_requested=recommendations_enabled,
+        user_requested=include_similar_jobs,
         verify_candidate=verify_candidate,
+        coordinator=coordinator,
     )
 
 
@@ -149,7 +155,7 @@ async def verify_job(
     image_bytes: Optional[bytes] = None,
     image_media_type: Optional[str] = None,
     skip_recommendations: bool = False,
-    recommendations_enabled: Optional[bool] = None,
+    include_similar_jobs: Optional[bool] = None,
     request_id: str = "unknown",
 ) -> Dict[str, Any]:
     t0 = time.perf_counter()
@@ -162,6 +168,15 @@ async def verify_job(
         url, text = validate_verify_inputs(job_url, job_description, has_image=has_image)
     except InputValidationError as e:
         raise ValueError(f"{e.code}: {e}") from e
+
+    if url:
+        from backend.core.url_preflight import evaluate_job_url_preflight
+
+        pf = await evaluate_job_url_preflight(url, text, cfg=cfg)
+        if pf.outcome == "skip":
+            return build_preflight_skip_report(reason=pf.plain_reason, request_id=request_id)
+        if pf.outcome == "verify_weak":
+            return build_preflight_verify_job_uncertain_report(reason=pf.plain_reason, request_id=request_id)
 
     user_supplied_url_or_text = bool(url or text)
     ingest_warnings: List[Dict[str, str]] = []
@@ -202,6 +217,11 @@ async def verify_job(
     steps = []
     steps.append({"id": "normalize", "label": "Normalized input"})
     
+    api_key = os.environ.get("SERPER_API_KEY") or os.environ.get("SEARCH_API_KEY") or ""
+    coordinator = EvidenceCoordinator(api_key=api_key)
+    if include_similar_jobs:
+        coordinator.set_max_calls(6) # Reserve 2 for recommendations
+    
     cache = _get_cache(cfg)
     cached = cache.get(cache_key.materialized)
     if cached:
@@ -226,9 +246,13 @@ async def verify_job(
             norm=norm,
             merged_fields=merged_fields,
             skip_recommendations=skip_recommendations,
-            recommendations_enabled=recommendations_enabled,
+            include_similar_jobs=include_similar_jobs,
+            coordinator=coordinator,
         )
-        report["similar_jobs"] = list(report.get("recommendations") or [])
+        if include_similar_jobs:
+            report["similar_jobs"] = list(report.get("recommendations") or [])
+        else:
+            report["similar_jobs"] = None
         log_stage(
             request_id=request_id,
             stage="report_returned",
@@ -277,19 +301,37 @@ async def verify_job(
     steps.append({"id": "evidence", "label": "Evidence collection"})
     
     from backend.core.extraction import extract_entities
-    from backend.core.evidence import build_evidence_bundle
+    from backend.core.evidence import build_evidence_bundle, _collect_serper_queries
     
     # Extract structural hints from the raw inputs
     ext = extract_entities(norm)
     
-    # SPRINT 9: Run company reviews in parallel with main evidence
-    review_task = asyncio.create_task(get_company_reviews(ext.company_hint or ""))
+    # SPRINT 9-B: Harden company name extraction
+    hardened_company = extract_company_name_hardened(
+        norm.canonical_url, norm.description_text, request_id=request_id
+    )
+    
+    # Run evidence and reviews in parallel
+    company = ext.company_hint or ""
+    title = ext.title_hint or ""
+    base_query = f"{company} {title}".strip() or (norm.canonical_url or "")
+    
+    evidence_task = asyncio.create_task(_collect_serper_queries(coordinator, base_query, company, title))
+    review_task = asyncio.create_task(get_company_reviews(coordinator, hardened_company, request_id=request_id))
+    
+    serp_results = await evidence_task
     
     # Build the concrete evidence bundle
-    bundle = build_evidence_bundle(norm, ext)
+    bundle = build_evidence_bundle(norm, ext, serp_results)
     signals.extend(bundle.signals)
     warnings.extend(bundle.warnings)
     log_stage(request_id=request_id, stage="evidence_gathered", duration_ms=(time.perf_counter() - t0) * 1000)
+    
+    # Finalize coordinator limit for recommendations if needed
+    if include_similar_jobs:
+        coordinator.set_max_calls(8) # Allow remaining calls for recommendations
+    
+    # await coordinator.close() # Move to the end of verify_job
 
     steps.append({"id": "llm", "label": "AI intelligence (T3)"})
     llm = build_llm_signals(job_text=norm.description_text or "")
@@ -307,41 +349,51 @@ async def verify_job(
     except Exception:
         review_summary = None
 
-    # SPRINT 9: Generate Human Verdict Summary via Kimi K2
-    llm_summary = ""
-    from backend.core.llm_fireworks import _client, _get
-    api_key = _get("FIREWORKS_API_KEY") or _get("LLM_API_KEY")
+    # Verdict briefing via Fireworks (safe wrapper)
+    from backend.core.llm_fireworks import _get
+
+    verdict_raw = decision["verdict"]
+    verdict_val = verdict_raw.value if hasattr(verdict_raw, "value") else str(verdict_raw)
+    reasons_list = decision.get("reasons") or []
+    primary_reason = (
+        str(reasons_list[0].get("message", "")).strip().rstrip(".")
+        if reasons_list
+        else "Manual verification is recommended."
+    )
+    signal_count = len(signals)
+    conf_band = str(decision.get("confidence") or "low").lower()
+    fallback_txt = (
+        f"Based on {signal_count} signals checked, this posting received a {verdict_val} verdict "
+        f"with {conf_band} confidence. {primary_reason}."
+    )
+
+    api_key_llm = _get("FIREWORKS_API_KEY") or _get("LLM_API_KEY")
     llm_enabled = os.environ.get("ENABLE_LLM_SIGNALS", "1") != "0"
-    if api_key and llm_enabled:
-        try:
-            c = _client()
-            prompt = (
-                "You are JobSignal, a job verification assistant. Based on the following evidence, write a 2-sentence plain English summary for a job seeker.\n"
-                "Be honest. Do not use jargon. Do not hedge excessively. If the job looks risky, say so clearly. If it looks fine, say so.\n"
-                "Tone: professional but direct, like a recruiter giving a quick briefing.\n\n"
-                f"VERDICT: {decision['verdict'].value}\n"
-                f"CONFIDENCE: {decision['confidence']}\n"
-                f"SIGNALS: {', '.join([s.get('id', '') for s in signals if s.get('strength') in ('high', 'medium')])}\n"
-                f"REPUTATION: {review_summary.plain_summary if review_summary else 'N/A'}\n\n"
-                "Summary:"
-            )
-            resp = c.chat.completions.create(
-                model=_get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2p5"),
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=150,
-                timeout=10
-            )
-            llm_summary = resp.choices[0].message.content.strip()
-        except Exception:
-            pass
-    
-    if not llm_summary:
-        # Fallback template
-        if decision["verdict"].value == "APPLY":
-            llm_summary = "Automated checks found supportive evidence across available sources. This listing looks legitimate."
-        else:
-            llm_summary = "Automated analysis found limited corroboration. Verify against the official careers page before applying."
+    if api_key_llm and llm_enabled:
+        llm_summary = await call_llm_safe(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are JobSignal, a verification assistant. Write a 2-sentence briefing for a job seeker. No jargon. No headers. Output ONLY the briefing text.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Decision: {decision['verdict'].value}, Confidence: {decision['confidence']}\n"
+                        f"Signals: {', '.join([s.get('id', '') for s in signals if s.get('strength') in ('high', 'medium')])}\n"
+                        f"Reputation: {review_summary.plain_summary if review_summary else 'N/A'}"
+                    ),
+                },
+            ],
+            fallback=fallback_txt,
+            request_id=request_id,
+            model=_get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2-instruct"),
+            temperature=0.3,
+            max_tokens=150,
+            timeout=10.0,
+        )
+    else:
+        llm_summary = fallback_txt
 
     log_stage(request_id=request_id, stage="score_computed", duration_ms=(time.perf_counter() - t0) * 1000, verdict=decision["verdict"].value)
     report = build_public_report(
@@ -363,15 +415,19 @@ async def verify_job(
         norm=norm,
         merged_fields=merged_fields,
         skip_recommendations=skip_recommendations,
-        recommendations_enabled=recommendations_enabled,
+        include_similar_jobs=include_similar_jobs,
+        coordinator=coordinator,
     )
-    report["similar_jobs"] = list(report.get("recommendations") or [])
+    if include_similar_jobs:
+        report["similar_jobs"] = list(report.get("recommendations") or [])
+    else:
+        report["similar_jobs"] = None
 
     shared_payload = strip_tenant_fields(
         {
             "schema_version": "1",
             "pipeline_version": cfg.source_pipeline_version,
-            "source_set_version": "fixtures-v1",
+            "source_set_version": "live-v1",
             "normalization_version": norm.normalization_version,
             "signals": signals,
             "warnings": [w["code"] for w in warnings],
@@ -385,4 +441,5 @@ async def verify_job(
         duration_ms=(time.perf_counter() - t0) * 1000,
         verdict=str(report.get("verdict", "")),
     )
+    await coordinator.close()
     return report

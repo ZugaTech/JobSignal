@@ -102,10 +102,14 @@ def extract_job_fields_from_image_vision(
         f"(Image MIME hint for debugging: {mime_type}.)\n"
     )
 
+    json_fallback = (
+        '{"extraction_confidence":"low","job_title":null,"company_name":null,'
+        '"job_url_hint":null,"extracted_job_text":"","notes":"Vision unavailable."}'
+    )
     try:
-        c = _client()
-        resp = c.chat.completions.create(
-            model=model,
+        from backend.core.llm_safe import call_llm_safe_chat_sync
+
+        content = call_llm_safe_chat_sync(
             messages=[
                 {
                     "role": "system",
@@ -115,17 +119,19 @@ def extract_job_fields_from_image_vision(
                     "role": "user",
                     "content": [
                         {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": data_url},
-                        },
+                        {"type": "image_url", "image_url": {"url": data_url}},
                     ],
                 },
             ],
+            fallback=json_fallback,
+            request_id="vision_extract",
+            model=model,
             temperature=0.1,
-            timeout=timeout_s,
+            max_tokens=512,
+            timeout=float(timeout_s),
+            prose_mode=False,
+            max_chars=16_000,
         )
-        content = (resp.choices[0].message.content or "").strip()
     except Exception as e:  # noqa: BLE001
         warnings.append(
             {
@@ -202,18 +208,24 @@ def build_llm_signals(*, job_text: str) -> LlmSignalResult:
         + job_text[:20_000]
     )
 
+    json_fallback = '{"specificity":"low","red_flags":[],"missing_fields":[],"notes":"Unavailable."}'
     try:
-        c = _client()
-        resp = c.chat.completions.create(
-            model=model,
+        from backend.core.llm_safe import call_llm_safe_chat_sync
+
+        content = call_llm_safe_chat_sync(
             messages=[
                 {"role": "system", "content": "You are a cautious evaluator. Prefer 'missing' over guessing."},
                 {"role": "user", "content": prompt},
             ],
+            fallback=json_fallback,
+            request_id="jd_signals",
+            model=model,
             temperature=0.2,
-            timeout=timeout_s,
+            max_tokens=512,
+            timeout=float(timeout_s),
+            prose_mode=False,
+            max_chars=16_000,
         )
-        content = (resp.choices[0].message.content or "").strip()
     except Exception as e:  # noqa: BLE001 - surfaced as warning only
         return LlmSignalResult(
             signals=[],
@@ -222,17 +234,17 @@ def build_llm_signals(*, job_text: str) -> LlmSignalResult:
 
     try:
         # Robust JSON extraction: look for the first { and last }
-        start = content.find('{')
-        end = content.rfind('}')
+        start = content.find("{")
+        end = content.rfind("}")
         if start != -1 and end != -1:
-            json_str = content[start:end+1]
+            json_str = content[start : end + 1]
         else:
             json_str = content
         data = json.loads(json_str)
     except Exception:  # noqa: BLE001 - surfaced as warning only
         return LlmSignalResult(
             signals=[],
-            warnings=[{"code": "LLM_MALFORMED", "message": f"LLM returned non-JSON output; continuing without LLM signals. Raw: {content[:100]}..."}],
+            warnings=[{"code": "LLM_MALFORMED", "message": "LLM returned non-JSON output; continuing without LLM-derived signals."}],
         )
 
     specificity = str(data.get("specificity") or "").lower()

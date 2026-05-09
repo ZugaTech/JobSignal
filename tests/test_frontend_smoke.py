@@ -12,7 +12,7 @@ def _read(rel: str) -> str:
 
 
 def test_frontend_files_exist():
-    for rel in ("frontend/index.html", "frontend/app.js", "frontend/styles.css"):
+    for rel in ("frontend/index.html", "frontend/app.js", "frontend/styles.css", "frontend/labels.js"):
         assert (ROOT / rel).is_file(), f"missing {rel}"
 
 
@@ -23,7 +23,9 @@ def test_frontend_files_exist():
 def test_frontend_documents_ui_phases(token: str):
     html = _read("frontend/index.html")
     js = _read("frontend/app.js")
-    assert token in html or token in js
+    labels = _read("frontend/labels.js")
+    blob = html + js + labels
+    assert token in blob
 
 
 def test_frontend_includes_client_validation():

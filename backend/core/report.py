@@ -77,19 +77,8 @@ class PublicVerifyReport(TypedDict, total=False):
     trust_signals: list[dict[str, str]]
     evidence_sources: list[dict[str, str]]
     llm_summary: str
-    similar_jobs: list[dict[str, Any]]
-    disclaimer: str
-    data_freshness: str
-    company_legitimacy_score: int
-    company_signals: list[dict[str, Any]]
-    posting_authenticity_score: int
-    posting_signals: list[dict[str, Any]]
-    freshness_score: int
-    staleness_flag: bool
-    first_seen_estimate: Optional[str]
-    verified_signal_count: int
-    total_signal_count: int
     coverage_ratio: float
+    similar_jobs: list[dict[str, Any]]
 
 
 def _signal_label(s: dict[str, Any]) -> str:
@@ -181,11 +170,11 @@ def build_public_report(
         "coverage_ratio": float(payload.get("coverage_ratio", 0.0)),
         "trust_signals": trust_signals,
         "evidence_sources": evidence_sources or [],
-        "llm_summary": merged_llm_summary if "merged_llm_summary" in locals() else payload.get("llm_summary", ""),
+        "llm_summary": str(payload.get("llm_summary") or ""),
         "review_summary": review_summary,
         "reasons": human_reasons,
         "warnings": human_warnings,
-        "similar_jobs": [],
+        "similar_jobs": payload.get("similar_jobs") or [],
         "disclaimer": str(payload.get("disclaimer") or "This assessment is advisory and may be incomplete. Always verify directly with the employer."),
         "data_freshness": data_freshness or datetime.now(timezone.utc).isoformat(),
         "recommendation": rec_map.get(payload["verdict"], "Verify manually."),

@@ -9,7 +9,7 @@ import pytest
 async def test_verify_pipeline_completes_under_15_seconds_with_mocked_sources(monkeypatch):
     orchestrator._MEM_CACHE._data.clear()
 
-    async def _fake_collect_serper_queries(base_query: str, company: str, title: str):
+    async def _fake_collect_serper_queries(_coordinator, base_query: str, company: str, title: str):
         return {
             "careers": ([], "verified", None),
             "board": ([], "verified", None),
@@ -28,7 +28,7 @@ async def test_verify_pipeline_completes_under_15_seconds_with_mocked_sources(mo
         "https://example.com/jobs/backend-engineer",
         "Backend Engineer. Salary $110000-$130000. Contact: hiring@example.com",
         skip_recommendations=True,
-        recommendations_enabled=False,
+        include_similar_jobs=False,
     )
     elapsed = time.perf_counter() - started
 

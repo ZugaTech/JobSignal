@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from backend.core.metrics import METRICS
 from backend.core.orchestrator import verify_job
+from backend.core.response_contract import validate_and_repair_response
 
 router = APIRouter()
 
@@ -27,7 +28,7 @@ _JOB_HINT_PATTERN = re.compile(r"(job|jobs|career|careers|position|apply|hiring)
 class VerifyRequest(BaseModel):
     job_url: Optional[str] = Field(default=None, description="Job posting URL")
     job_description: Optional[str] = Field(default=None, description="Pasted job description text")
-    recommendations_enabled: Optional[bool] = Field(
+    include_similar_jobs: Optional[bool] = Field(
         default=None,
         description="If set, request similar-job recommendations (still requires search config).",
     )
@@ -48,25 +49,44 @@ def _coerce_optional_bool(raw: Any) -> Optional[bool]:
 
 async def _verify_or_http_exc(**kwargs: Any) -> dict:
     try:
-        return await verify_job(**kwargs)
+        raw = await verify_job(**kwargs)
+        rid = str(kwargs.get("request_id") or "unknown")
+        return validate_and_repair_response(raw, request_id=rid)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/v1/classify-url")
 async def classify_url(url: str = Query(..., min_length=4, max_length=4096)) -> dict:
+    """Heuristic URL hint only — no numeric confidence (not derived from live verification)."""
     value = url.strip()
     if not re.match(r"^https?://", value, re.I):
-        return {"is_job_posting": False, "confidence": 0.0, "platform": None}
+        return {
+            "is_job_posting": False,
+            "platform": None,
+            "classification_basis": "invalid_or_non_http_url",
+        }
 
     for platform, pattern in _JOB_URL_PATTERNS.items():
         if pattern.search(value):
-            return {"is_job_posting": True, "confidence": 0.95, "platform": platform}
+            return {
+                "is_job_posting": True,
+                "platform": platform,
+                "classification_basis": "known_job_board_url_pattern",
+            }
 
     if _JOB_HINT_PATTERN.search(value):
-        return {"is_job_posting": True, "confidence": 0.7, "platform": "unknown"}
+        return {
+            "is_job_posting": True,
+            "platform": "unknown",
+            "classification_basis": "url_keyword_hint_only",
+        }
 
-    return {"is_job_posting": False, "confidence": 0.2, "platform": None}
+    return {
+        "is_job_posting": False,
+        "platform": None,
+        "classification_basis": "no_job_posting_patterns_detected",
+    }
 
 
 @router.post("/v1/verify")
@@ -92,7 +112,7 @@ async def verify(request: Request) -> dict:
             raw = await up.read()
             mime = getattr(up, "content_type", None)
 
-        rec_raw = form.get("recommendations_enabled")
+        rec_raw = form.get("include_similar_jobs") or form.get("recommendations_enabled")
         rec_opt = _coerce_optional_bool(rec_raw)
 
         report = await _verify_or_http_exc(
@@ -100,10 +120,9 @@ async def verify(request: Request) -> dict:
             job_description=text_s,
             image_bytes=raw if raw else None,
             image_media_type=mime,
-            recommendations_enabled=rec_opt,
+            include_similar_jobs=rec_opt,
             request_id=getattr(request.state, "request_id", "unknown"),
         )
-        report["request_id"] = getattr(request.state, "request_id", "unknown")
         METRICS.record_verification(str(report.get("verdict", "VERIFY")), cache_hit=bool(report.get("cache", {}).get("hit")))
         return report
 
@@ -125,9 +144,8 @@ async def verify(request: Request) -> dict:
     report = await _verify_or_http_exc(
         job_url=req.job_url,
         job_description=req.job_description,
-        recommendations_enabled=req.recommendations_enabled,
+        include_similar_jobs=req.include_similar_jobs,
         request_id=getattr(request.state, "request_id", "unknown"),
     )
-    report["request_id"] = getattr(request.state, "request_id", "unknown")
     METRICS.record_verification(str(report.get("verdict", "VERIFY")), cache_hit=bool(report.get("cache", {}).get("hit")))
     return report

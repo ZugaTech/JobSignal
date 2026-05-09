@@ -95,6 +95,9 @@ class AppConfig:
 
 
 def validate_startup_config() -> AppConfig:
+    from backend.core.response_contract import assert_no_demo_mode_in_production
+
+    assert_no_demo_mode_in_production()
     cfg = AppConfig.load()
     node_env = str(cfg.get("NODE_ENV") or "development").lower()
     if node_env in ("production", "staging") and not cfg.get("CACHE_URL"):

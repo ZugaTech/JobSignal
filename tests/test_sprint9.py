@@ -3,6 +3,12 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from backend.evidence.company_reviews import get_company_reviews
 from backend.core.orchestrator import verify_job
 
+class DummyCoordinator:
+    def __init__(self, ret=None):
+        self.ret = ret or []
+    async def search(self, *args, **kwargs):
+        return self.ret
+
 @pytest.mark.asyncio
 async def test_review_signals_with_sources():
     mock_serper = [
@@ -11,26 +17,24 @@ async def test_review_signals_with_sources():
     ]
     
     with patch.dict("os.environ", {"SERPER_API_KEY": "test_key", "FIREWORKS_API_KEY": "test_key"}):
-        with patch("backend.evidence.company_reviews._serper_search", return_value=mock_serper):
-            with patch("backend.core.llm_fireworks._client") as mock_llm:
-                mock_llm.return_value.chat.completions.create.return_value.choices[0].message.content = "This company has a stellar reputation."
-                
-                res = await get_company_reviews("Test Company")
-                assert res is not None
-                assert res.sources_found == 2
-                assert res.review_confidence_score > 70
-                assert "Glassdoor" in [h["platform"] for h in res.highlights]
-                assert res.overall_sentiment == "mostly positive"
+        with patch("backend.core.llm_fireworks._client") as mock_llm:
+            mock_llm.return_value.chat.completions.create.return_value.choices[0].message.content = "This company has a stellar reputation."
+            
+            res = await get_company_reviews(DummyCoordinator(mock_serper), "Test Company")
+            assert res is not None
+            assert res.sources_found >= 2
+            assert res.review_confidence_score > 70
+            assert "Glassdoor" in [h["platform"] for h in res.highlights]
+            assert res.overall_sentiment == "mostly positive"
 
 @pytest.mark.asyncio
 async def test_review_signals_zero_sources():
     with patch.dict("os.environ", {"SERPER_API_KEY": "test_key"}):
-        with patch("backend.evidence.company_reviews._serper_search", return_value=[]):
-            res = await get_company_reviews("NonExistentCompanyXYZ")
-            assert res is not None
-            assert res.sources_found == 0
-            assert res.review_confidence_score is None
-            assert res.overall_sentiment == "unknown"
+        res = await get_company_reviews(DummyCoordinator([]), "NonExistentCompanyXYZ")
+        assert res is not None
+        assert res.sources_found == 0
+        assert res.review_confidence_score is None
+        assert res.overall_sentiment == "unknown"
 
 @pytest.mark.asyncio
 async def test_full_orchestration_with_reviews():
