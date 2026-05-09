@@ -3,12 +3,11 @@ const $ = (id) => document.getElementById(id);
 const PHASE = {
   IDLE: "idle",
   LOADING: "loading",
-  SUCCESS: "success",
-  WARNING: "warning",
   ERROR: "error",
 };
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const BATCH_VERIFY_CONCURRENCY = 3;
 
 /** API origin for /v1/*. Same-origin when UI is served from FastAPI on :8080; fixed host when UI is file:// or another port. */
 /** Fetch wrapper: network-level failures get a clean user message (no silent console-only errors). */
@@ -41,11 +40,18 @@ function resolveApiBase() {
   return "";
 }
 
+function getActivePaneId() {
+  const active = Array.from(document.querySelectorAll(".input-pane")).find((pane) => !pane.classList.contains("hidden"));
+  return active?.id || "urlPane";
+}
+
 function readInputs() {
+  const activePane = getActivePaneId();
   return {
-    url: $("jobUrl").value.trim(),
-    text: $("jobText").value.trim(),
-    file: $("jobImage").files?.[0] ?? null,
+    url: activePane === "urlPane" || activePane === "imagePane" ? $("jobUrl")?.value.trim() || "" : "",
+    text: activePane === "textPane" || activePane === "imagePane" ? $("jobText")?.value.trim() || "" : "",
+    file: activePane === "imagePane" ? $("jobImage")?.files?.[0] ?? null : null,
+    activePane,
     includeSimilarJobs: $("includeSimilarJobs").checked,
   };
 }
@@ -91,8 +97,9 @@ function rewriteMicrocopy(text) {
 function getConfidenceLevel(score) {
   const n = Number(score);
   if (Number.isNaN(n)) return "Unavailable";
-  if (n < 40) return "Low";
-  if (n < 70) return "Moderate";
+  if (n <= 0) return "No rating";
+  if (n < 34) return "Low";
+  if (n < 67) return "Moderate";
   return "High";
 }
 
@@ -146,6 +153,7 @@ function startLoadingSequence() {
   const textEl = $("loadingStepText");
   const reassEl = $("loadingReassurance");
   const barEl = $("modalLoadingBar");
+  if (!textEl || !reassEl || !barEl) return;
 
   barEl.classList.remove("hidden");
   reassEl.classList.add("hidden");
@@ -176,7 +184,7 @@ function stopLoadingSequence() {
   loadingInterval = null;
   if (loadingReassuranceTimeout) clearTimeout(loadingReassuranceTimeout);
   loadingReassuranceTimeout = null;
-  $("modalLoadingBar").classList.add("hidden");
+  if ($("modalLoadingBar")) $("modalLoadingBar").classList.add("hidden");
 }
 
 /* Modal Management */
@@ -380,9 +388,11 @@ function populateModal(report) {
   if ($("modalKeepInMind")) {
     if (warns.length > 0) {
       $("modalKeepInMind").classList.remove("hidden");
-      $("modalWarningList").innerHTML = warns
-        .map((w) => `<li>${rewriteMicrocopy(formatReasonForDisplay(w.code || w.message || w))}</li>`)
-        .join("");
+      if ($("modalWarningList")) {
+        $("modalWarningList").innerHTML = warns
+          .map((w) => `<li>${rewriteMicrocopy(formatReasonForDisplay(w.code || w.message || w))}</li>`)
+          .join("");
+      }
     } else {
       $("modalKeepInMind").classList.add("hidden");
     }
@@ -467,10 +477,27 @@ function buildHumanReadableReport(s) {
   return lines.join("\n");
 }
 
+async function mapWithConcurrency(items, worker, limit = BATCH_VERIFY_CONCURRENCY) {
+  const safeLimit = Math.max(1, Number(limit) || 1);
+  const queue = [...items];
+  const runners = Array.from({ length: Math.min(safeLimit, queue.length) }, async () => {
+    while (queue.length) {
+      const next = queue.shift();
+      if (!next) return;
+      await worker(next);
+    }
+  });
+  await Promise.all(runners);
+}
+
 /* Batch Flow */
 async function runBatchFlow() {
     const rawLines = $("batchUrls").value.split("\n").map((u) => u.trim()).filter(Boolean);
-    if (!rawLines.length) return;
+    if (!rawLines.length) {
+      $("errorPanel").classList.remove("hidden");
+      $("errorText").textContent = "Add at least one URL for batch verification.";
+      return;
+    }
 
     const includeSimilarJobs = $("includeSimilarJobs")?.checked ?? false;
 
@@ -494,19 +521,22 @@ async function runBatchFlow() {
     const validation = await vr.res.json();
     const rows = Array.isArray(validation.results) ? validation.results : [];
 
-    for (const row of rows) {
+    const rowEntries = rows.map((row) => {
         const url = row.url || "";
         const item = document.createElement("div");
         item.className = "batch-item";
         item.innerHTML = `<span class="muted small">${url || "(empty line)"}</span> <span class="btn-spinner"></span>`;
         list.appendChild(item);
+        return { row, url, item };
+    });
 
+    await mapWithConcurrency(rowEntries, async ({ row, url, item }) => {
         if (!row.ok) {
             item.innerHTML = `
                 <span style="color:#ef4444;">SKIP</span>
                 <span class="muted small truncate" style="max-width:220px;">${url}</span>
                 <span class="muted small">${sanitizeField(row.reason, "Invalid URL.")}</span>`;
-            continue;
+            return;
         }
 
         try {
@@ -516,7 +546,7 @@ async function runBatchFlow() {
             });
             if (!fr.ok) {
               item.innerHTML = `<span style="color:#ef4444;">ERROR</span> <span class="muted small">${url}</span> <span class="muted small">JobSignal is temporarily unavailable.</span>`;
-              continue;
+              return;
             }
             const res = fr.res;
             const report = await res.json();
@@ -533,16 +563,16 @@ async function runBatchFlow() {
         } catch {
             item.innerHTML = `<span style="color:#ef4444;">ERROR</span> <span class="muted small">${url}</span>`;
         }
-    }
+    });
     setPhase(PHASE.IDLE);
 }
 
 /* Event Handlers */
 async function runFlow() {
-  const { url, text, file, includeSimilarJobs } = readInputs();
+  const { url, text, file, activePane, includeSimilarJobs } = readInputs();
   
   // If in batch tab, run batch instead
-  if (!$("batchPane").classList.contains("hidden")) {
+  if (activePane === "batchPane") {
       await runBatchFlow();
       return;
   }
