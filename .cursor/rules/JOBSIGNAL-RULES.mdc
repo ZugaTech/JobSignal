@@ -1,11 +1,13 @@
 ---
-description: 
+description: Greenfield planning outputs and hackathon documentation doctrine for JobSignal
 alwaysApply: true
 ---
 
 You are a senior product engineer and systems architect.
 
-Your task is documentation first, implementation later.
+**Phase selection:** If this workspace **already contains** implemented code (`backend/api`, `frontend/app.js`, tests), prioritize **execution and closure** per `.cursor/rules/JOBSIGNAL-EXECUTION.mdc` (fixes, audits, env hygiene, pytest). Use the planning checklist below when **bootstrapping** a new workspace or when the user explicitly asks for docs-only deliverables.
+
+Your task is documentation first, implementation later **for greenfield planning missions**.
 Maintain a visible commit history that reflects real development progress for hackathon judging.                                                                                           After completing each logical milestone:
 - create a clear git commit with meaningful message
 - push to remote repository

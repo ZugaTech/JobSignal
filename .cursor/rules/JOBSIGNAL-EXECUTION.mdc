@@ -1,0 +1,46 @@
+---
+description: Execution, closure audits, env contract, and local verification for the implemented JobSignal codebase
+alwaysApply: true
+---
+
+# JobSignal — execution and closure doctrine
+
+Use this when the repo **already contains** runnable backend/frontend/tests. The sibling rule `JOBSIGNAL-RULES.mdc` describes **greenfield planning** outputs; it must not block fixes, audits, or shipping.
+
+## Git and delivery
+
+- Prefer **several small commits** with clear messages over one giant dump; **push** when the user asks or when a milestone is complete.
+- After deleting modules or routes, run **`pytest`** and **`grep` imports** so nothing points at removed paths.
+
+## Environment contract
+
+- Treat **`.env.example`** + **`backend/core/config.py` (`ENV_SPECS`)** as the source of truth for **names** the app loads.
+- Variables documented only in `docs/` but not in `ENV_SPECS` or `.env.example` are **planning drift** until wired or removed.
+- **`PROBE_PROVIDERS_ON_READY`**: default **off** in production and Railway-style hosts so `/ready` does not burn **Serper/Fireworks quota** on every probe. Enable only when intentionally validating live keys.
+
+## Readiness and observability
+
+- **`/health`**: liveness. **`/ready`**: dependency summary; live provider probes must be **explicitly opted in**, not implicit on every request.
+
+## Local verification traps
+
+- **Port collisions**: multiple `uvicorn` processes on the same port can serve an **older build**. If OpenAPI or routes disagree with disk (`GET /openapi.json` vs `create_app()` routes), **stop stray listeners** and restart **one** server.
+- Prefer **`python -m uvicorn ...`** without `--reload` when diagnosing “ghost” route mismatches, then return to reload for daily dev if desired.
+
+## Frontend and API coupling
+
+- **Active tab / pane**: only read inputs from the **visible** pane so hidden fields cannot leak into requests (batch vs URL vs text vs image).
+- After JS structural edits, run **`node --check frontend/app.js`** and **`pytest tests/test_frontend_smoke.py`**; full UI proof remains manual or Playwright.
+
+## Configuration consistency
+
+- **`ENABLE_LLM_SIGNALS`** (and similar flags) must use **one canonical helper** (e.g. `llm_enabled()` from `llm_fireworks`) everywhere orchestration calls the LLM, so defaults cannot drift between modules.
+
+## Closure and orphan removal
+
+- Before deleting a file: **repo-wide search** for imports and symbols; if only tests referenced dead code, remove or rewrite tests in the same change.
+- Paid APIs, fixtures, and demo switches: respect **`assert_no_demo_mode_in_production`** — never enable demo/fixture paths in production/staging.
+
+## Honesty under audit
+
+- If a checklist step cannot be executed in-tool (e.g. full browser E2E), **state that gap** instead of implying it passed.
