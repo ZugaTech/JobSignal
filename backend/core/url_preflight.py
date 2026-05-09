@@ -6,7 +6,7 @@ import ipaddress
 import re
 from dataclasses import dataclass
 from typing import Literal, Optional
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import httpx
 
@@ -24,7 +24,11 @@ _JOB_KEYWORD_RE = re.compile(
     r"\b(salary|responsibilities|requirements|apply|hiring|position|experience)\b",
     re.I,
 )
-_SQLISH = re.compile(r"(--|;|--|\bunion\b\s+\bselect\b|\bdrop\b\s+\btable\b)", re.I)
+# Never scan the raw full URL for "--" or ";": tracking/query tokens (LinkedIn eBP, base64, etc.) contain those substrings.
+_PATH_SQL_HINT = re.compile(
+    r"(\bunion\b\s+\bselect\b|\bdrop\b\s+\btable\b|\binto\b\s+outfile\b|\bexec\b\s*\()",
+    re.I,
+)
 _TRAVERSAL = re.compile(r"(\.\./|%2e%2e|%252e|\\\\|\.\.\\)", re.I)
 
 _SHORTENERS = (
@@ -61,19 +65,27 @@ def _host_is_literal_blocked_ip(host: str) -> bool:
     return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved
 
 
+def _sql_injection_hint_in_path(path: str) -> bool:
+    """Classic SQLi fragments belong in path segments; query strings use arbitrary encodings."""
+    if not path or path == "/":
+        return False
+    return bool(_PATH_SQL_HINT.search(unquote(path)))
+
+
 def validate_url_format(url: str) -> Optional[str]:
     """Return plain-English failure reason or ``None`` if format is acceptable."""
     u = url.strip()
     if not u.startswith(("http://", "https://")):
         return _REASON_SKIP_FORMAT
 
+    parsed = urlparse(u)
+
     if _TRAVERSAL.search(u):
         return _REASON_SKIP_FORMAT
 
-    if _SQLISH.search(u):
+    if _sql_injection_hint_in_path(parsed.path):
         return _REASON_SKIP_FORMAT
 
-    parsed = urlparse(u)
     host = (parsed.hostname or "").lower()
     if not host:
         return _REASON_SKIP_FORMAT
