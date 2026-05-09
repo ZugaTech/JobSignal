@@ -33,8 +33,8 @@ function resolveApiBase() {
 
 function readInputs() {
   return {
-    url: $("jobUrl").value,
-    text: $("jobText").value,
+    url: $("jobUrl").value.trim(),
+    text: $("jobText").value.trim(),
     file: $("jobImage").files?.[0] ?? null,
     includeSimilarJobs: $("includeSimilarJobs").checked,
   };
@@ -45,7 +45,6 @@ function validateClientInputs(urlRaw, textRaw, file) {
   const text = String(textRaw ?? "").trim();
   if (!url && !text && !file) return { ok: false, message: "Add a link, description, or screenshot." };
   if (file && file.size > MAX_IMAGE_BYTES) return { ok: false, message: "File exceeds 5MB." };
-  if (url && !/^https?:\/\//i.test(url)) return { ok: false, message: "Only secure web links supported." };
   return { ok: true };
 }
 

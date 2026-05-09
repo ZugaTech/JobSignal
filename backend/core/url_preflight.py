@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import socket
 from dataclasses import dataclass
 from typing import Literal, Optional
 from urllib.parse import unquote, urlparse
@@ -23,6 +24,38 @@ _JOB_PATH_RE = re.compile(
 _JOB_KEYWORD_RE = re.compile(
     r"\b(salary|responsibilities|requirements|apply|hiring|position|experience)\b",
     re.I,
+)
+_KNOWN_JOB_PLATFORMS = frozenset(
+    {
+        "linkedin.com",
+        "indeed.com",
+        "glassdoor.com",
+        "greenhouse.io",
+        "lever.co",
+        "myworkdayjobs.com",
+        "workday.com",
+        "wellfound.com",
+        "angel.co",
+        "jobvite.com",
+        "smartrecruiters.com",
+        "ashbyhq.com",
+        "recruitee.com",
+        "breezy.hr",
+        "bamboohr.com",
+        "icims.com",
+        "taleo.net",
+        "successfactors.com",
+        "ziprecruiter.com",
+        "monster.com",
+        "careerbuilder.com",
+        "simplyhired.com",
+        "dice.com",
+        "hired.com",
+        "remote.co",
+        "weworkremotely.com",
+        "remoteok.com",
+        "ycombinator.com",
+    }
 )
 # Never scan the raw full URL for "--" or ";": tracking/query tokens (LinkedIn eBP, base64, etc.) contain those substrings.
 _PATH_SQL_HINT = re.compile(
@@ -46,6 +79,7 @@ _REASON_SKIP_DOMAIN = "This domain could not be reached. The link may be broken 
 _REASON_SKIP_SHORTENER = "Please paste the final destination URL, not a shortened link."
 _REASON_SKIP_GOOGLE = "Please paste the direct link to the job posting, not a search results page."
 _REASON_SKIP_OTHER = "This link format cannot be verified automatically. Paste the direct job posting URL instead."
+_REASON_VERIFY_DOMAIN = "This job page could not be reached right now. It may be behind a login or temporarily unavailable."
 _REASON_VERIFY_JOBISH = (
     "We could not confirm this is a job posting. If it is, paste the job description directly for a better result."
 )
@@ -70,6 +104,11 @@ def _sql_injection_hint_in_path(path: str) -> bool:
     if not path or path == "/":
         return False
     return bool(_PATH_SQL_HINT.search(unquote(path)))
+
+
+def is_known_job_platform(hostname: str) -> bool:
+    host = hostname.lower().strip().rstrip(".")
+    return any(host == domain or host.endswith(f".{domain}") for domain in _KNOWN_JOB_PLATFORMS)
 
 
 def validate_url_format(url: str) -> Optional[str]:
@@ -101,43 +140,59 @@ def validate_url_format(url: str) -> Optional[str]:
     if len(labels) < 2 or len(labels[-1]) < 2:
         return _REASON_SKIP_FORMAT
 
-    lu = u.lower()
-    if "google." in host and ("/search" in parsed.path or "google.com/url" in lu):
+    lower_path = (parsed.path or "").lower()
+    if "google." in host and (lower_path == "/search" or lower_path.startswith("/url")):
         return _REASON_SKIP_GOOGLE
 
     for s in _SHORTENERS:
-        if s in lu:
+        if host == s.rstrip("/") or host.endswith("." + s.rstrip("/")):
             return _REASON_SKIP_SHORTENER
 
-    if parsed.scheme == "mailto" or lu.startswith("mailto:"):
+    if parsed.scheme == "mailto":
         return _REASON_SKIP_OTHER
 
     return None
 
 
-async def head_domain_root(url: str) -> Literal["ok", "unreachable"]:
-    """Lightweight HEAD to origin; unreachable on DNS/connect/TLS failures."""
+def domain_resolves(url: str) -> bool:
+    if under_pytest():
+        return True
+    host = urlparse(url.strip()).hostname or ""
+    if not host:
+        return False
+    try:
+        socket.getaddrinfo(host, None)
+        return True
+    except socket.gaierror:
+        return False
+
+
+async def head_domain_root(url: str) -> Literal["ok", "unknown"]:
+    """Best-effort positive signal only; blocked HEAD/TLS/timeouts do not reject valid URLs."""
     if under_pytest():
         return "ok"
-
     parsed = urlparse(url.strip())
     scheme = (parsed.scheme or "https").lower()
     host = parsed.hostname or ""
     if not host:
-        return "unreachable"
+        return "unknown"
     origin = f"{scheme}://{host}/"
     try:
-        async with httpx.AsyncClient(follow_redirects=False, timeout=4.0) as client:
+        async with httpx.AsyncClient(follow_redirects=False, timeout=3.0) as client:
             r = await client.head(origin)
             # Any HTTP response means transport worked
             _ = r.status_code
             return "ok"
     except httpx.RequestError:
-        return "unreachable"
+        return "unknown"
 
 
 def _url_matches_job_heuristic(url: str) -> bool:
-    return bool(_JOB_PATH_RE.search(url))
+    parsed = urlparse(url.strip())
+    host = parsed.hostname or ""
+    if is_known_job_platform(host):
+        return True
+    return bool(_JOB_PATH_RE.search(parsed.path or ""))
 
 
 def _description_matches_job_keywords(desc: Optional[str]) -> bool:
@@ -158,12 +213,13 @@ async def evaluate_job_url_preflight(
     if fmt:
         return UrlPreflightResult(outcome="skip", plain_reason=fmt)
 
-    reach = await head_domain_root(url)
-    if reach == "unreachable":
-        return UrlPreflightResult(outcome="skip", plain_reason=_REASON_SKIP_DOMAIN)
-
     if _url_matches_job_heuristic(url) or _description_matches_job_keywords(description_text):
         return UrlPreflightResult(outcome="proceed", plain_reason="")
+
+    if not domain_resolves(url):
+        return UrlPreflightResult(outcome="verify_weak", plain_reason=_REASON_VERIFY_DOMAIN)
+
+    await head_domain_root(url)
 
     page_blob = ""
     if job_fetch_enabled():

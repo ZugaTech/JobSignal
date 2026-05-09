@@ -1,6 +1,11 @@
 """Regression: job URLs with long query strings must not false-positive as SQL injection."""
 
+import pytest
+
+from backend.core.env import EnvConfig
+from backend.core.normalization import normalize_job_url
 from backend.core.url_preflight import validate_url_format
+from backend.core.url_preflight import evaluate_job_url_preflight
 
 LINKEDIN_TRACKING_URL = (
     "https://www.linkedin.com/jobs/view/4403231467/?alternateChannel=search"
@@ -24,3 +29,28 @@ def test_union_select_in_path_still_rejected():
 
 def test_double_hyphen_only_in_query_does_not_reject():
     assert validate_url_format("https://jobs.example.com/posting?token=ab--cd") is None
+
+
+def test_normalization_strips_linkedin_tracking_params():
+    clean, _hash = normalize_job_url(LINKEDIN_TRACKING_URL)
+    assert clean == "https://www.linkedin.com/jobs/view/4403231467/"
+
+
+@pytest.mark.asyncio
+async def test_known_job_platform_does_not_depend_on_head(monkeypatch):
+    async def fail_head(_url: str):
+        raise AssertionError("known job platforms should not require HEAD preflight")
+
+    monkeypatch.setattr("backend.core.url_preflight.head_domain_root", fail_head)
+    cfg = EnvConfig.load(strict=False)
+    result = await evaluate_job_url_preflight(LINKEDIN_TRACKING_URL, None, cfg=cfg)
+    assert result.outcome == "proceed"
+
+
+@pytest.mark.asyncio
+async def test_unknown_domain_dns_failure_degrades_to_verify(monkeypatch):
+    monkeypatch.setattr("backend.core.url_preflight.domain_resolves", lambda _url: False)
+    cfg = EnvConfig.load(strict=False)
+    result = await evaluate_job_url_preflight("https://example.invalid/anything", None, cfg=cfg)
+    assert result.outcome == "verify_weak"
+    assert "could not be reached" in result.plain_reason
