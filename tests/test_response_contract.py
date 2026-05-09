@@ -1,0 +1,42 @@
+"""Confidence label must always follow the numeric score (no drift)."""
+
+from backend.core.response_contract import validate_and_repair_response
+
+
+def test_confidence_label_derived_from_score_not_incoming_label():
+    raw = {
+        "verdict": "VERIFY",
+        "confidence_score": 85,
+        "confidence_label": "Low",  # inconsistent — must be repaired
+        "trust_signals": [],
+        "signals": [],
+        "reasons": ["Test."],
+        "warnings": [],
+        "llm_summary": "Not enough data.",
+        "review_summary": None,
+        "cache": {"hit": False},
+        "report_schema_version": "2.0.0",
+        "request_id": "00000000-0000-4000-8000-000000000001",
+    }
+    out = validate_and_repair_response(raw, request_id="x")
+    assert out["confidence_score"] == 85
+    assert out["confidence_label"] == "High"
+
+
+def test_score_zero_maps_to_none_label():
+    raw = {
+        "verdict": "SKIP",
+        "confidence_score": 0,
+        "confidence_label": "High",
+        "trust_signals": [],
+        "signals": [],
+        "reasons": ["Bad URL."],
+        "warnings": [],
+        "llm_summary": "Skipped.",
+        "review_summary": None,
+        "cache": {"hit": False},
+        "report_schema_version": "2.0.0",
+        "request_id": "00000000-0000-4000-8000-000000000002",
+    }
+    out = validate_and_repair_response(raw, request_id="x")
+    assert out["confidence_label"] == "None"

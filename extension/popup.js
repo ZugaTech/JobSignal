@@ -1,3 +1,4 @@
+/** Default matches local FastAPI; override in settings for Railway or another host. */
 let backendUrl = "http://localhost:8080";
 let currentJobData = null;
 let currentTabUrl = "";
@@ -15,9 +16,12 @@ function showState(stateEl) {
 }
 
 chrome.storage.local.get(["backendUrl"], (res) => {
+  const input = document.getElementById("backendUrlInput");
   if (res.backendUrl) {
     backendUrl = res.backendUrl;
-    document.getElementById("backendUrlInput").value = backendUrl;
+    if (input) input.value = backendUrl;
+  } else if (input && !input.value) {
+    input.placeholder = "https://your-app.up.railway.app";
   }
 });
 
@@ -37,8 +41,14 @@ document.getElementById("btnClearCache").addEventListener("click", () => {
 });
 
 function openWebApp(url, text) {
-  const appUrl = new URL("http://localhost:3000"); 
-  if (url) appUrl.searchParams.set("job_url", url);
+  let origin = "http://localhost:8080";
+  try {
+    origin = new URL(backendUrl).origin;
+  } catch {
+    /* keep default */
+  }
+  const appUrl = new URL(origin);
+  if (url) appUrl.searchParams.set("url", url);
   if (text) appUrl.searchParams.set("job_description", btoa(unescape(encodeURIComponent(text))));
   chrome.tabs.create({ url: appUrl.toString() });
 }

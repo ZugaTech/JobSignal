@@ -17,22 +17,35 @@ def build_health_payload() -> Dict[str, Any]:
     return {"status": "ok", "service": "jobsignal-api", "checks": {"process": "ok"}}
 
 
-def build_ready_payload(cfg: EnvConfig, *, cache_ping_ok: Optional[bool] = None) -> Dict[str, Any]:
+def build_ready_payload(
+    cfg: EnvConfig,
+    *,
+    cache_ping_ok: Optional[bool] = None,
+    fireworks_reachable: Optional[bool] = None,
+    serper_reachable: Optional[bool] = None,
+) -> Dict[str, Any]:
     """Readiness with explicit pass/fail/skip checks and degraded mode."""
 
     has_llm_key = bool((os.environ.get("FIREWORKS_API_KEY") or os.environ.get("LLM_API_KEY")))
     rec_enabled = env_recommendations_default_on()
-    has_serp_key = bool((os.environ.get("SERPAPI_API_KEY") or os.environ.get("SEARCH_API_KEY")))
+    has_serp_key = bool(
+        (os.environ.get("SERPER_API_KEY") or os.environ.get("SERPAPI_API_KEY") or os.environ.get("SEARCH_API_KEY") or "").strip()
+    )
 
     checks: Dict[str, str] = {
         "redis": "skip",
         "llm_key": "pass" if has_llm_key else "fail",
         "serp_key_for_recommendations": "skip",
     }
+    if has_llm_key and fireworks_reachable is not None:
+        checks["llm_key"] = "pass" if fireworks_reachable else "fail"
+
     if cfg.cache_url:
         checks["redis"] = "pass" if cache_ping_ok else "fail"
     if rec_enabled:
         checks["serp_key_for_recommendations"] = "pass" if has_serp_key else "fail"
+        if has_serp_key and serper_reachable is not None:
+            checks["serp_key_for_recommendations"] = "pass" if serper_reachable else "fail"
 
     hard_fail = checks["redis"] == "fail"
     degraded = checks["llm_key"] == "fail" or checks["serp_key_for_recommendations"] == "fail"

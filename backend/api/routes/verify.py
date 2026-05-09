@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 from backend.core.metrics import METRICS
 from backend.core.orchestrator import verify_job
 from backend.core.response_contract import validate_and_repair_response
+from backend.core.url_preflight import validate_url_format
 
 router = APIRouter()
 
@@ -32,6 +33,10 @@ class VerifyRequest(BaseModel):
         default=None,
         description="If set, request similar-job recommendations (still requires search config).",
     )
+
+
+class ValidateUrlsRequest(BaseModel):
+    urls: list[str] = Field(default_factory=list, max_length=40)
 
 
 def _coerce_optional_bool(raw: Any) -> Optional[bool]:
@@ -60,6 +65,14 @@ async def _verify_or_http_exc(**kwargs: Any) -> dict:
 async def classify_url(url: str = Query(..., min_length=4, max_length=4096)) -> dict:
     """Heuristic URL hint only — no numeric confidence (not derived from live verification)."""
     value = url.strip()
+    fmt = validate_url_format(value)
+    if fmt:
+        return {
+            "is_job_posting": False,
+            "platform": None,
+            "classification_basis": "invalid_url_format",
+            "validation_message": fmt,
+        }
     if not re.match(r"^https?://", value, re.I):
         return {
             "is_job_posting": False,
@@ -87,6 +100,24 @@ async def classify_url(url: str = Query(..., min_length=4, max_length=4096)) -> 
         "platform": None,
         "classification_basis": "no_job_posting_patterns_detected",
     }
+
+
+@router.post("/v1/validate-urls")
+async def validate_urls(body: ValidateUrlsRequest) -> dict:
+    """Run the same urlparse-based format checks as the live verify pipeline (no external I/O)."""
+
+    results: list[dict[str, Any]] = []
+    for raw in body.urls:
+        s = raw.strip() if isinstance(raw, str) else ""
+        reason = validate_url_format(s) if s else "This does not appear to be a valid URL. Please check the link and try again."
+        results.append(
+            {
+                "url": s,
+                "ok": reason is None,
+                "reason": reason or "",
+            }
+        )
+    return {"results": results}
 
 
 @router.post("/v1/verify")

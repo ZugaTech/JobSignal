@@ -11,6 +11,16 @@ const PHASE = {
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /** API origin for /v1/*. Same-origin when UI is served from FastAPI on :8080; fixed host when UI is file:// or another port. */
+/** Fetch wrapper: network-level failures get a clean user message (no silent console-only errors). */
+async function apiFetch(url, options = {}) {
+  try {
+    const res = await fetch(url, options);
+    return { ok: true, res };
+  } catch {
+    return { ok: false, res: null };
+  }
+}
+
 function resolveApiBase() {
   if (typeof window.JOBSIGNAL_API_BASE === "string" && window.JOBSIGNAL_API_BASE.trim()) {
     return window.JOBSIGNAL_API_BASE.replace(/\/$/, "");
@@ -119,8 +129,11 @@ function renderExpandedSignals(signals) {
 
 let loadingInterval = null;
 let loadingReassuranceTimeout = null;
+let loadingSeqGen = 0;
 
 function startLoadingSequence() {
+  loadingSeqGen += 1;
+  const gen = loadingSeqGen;
   const steps = [
     "Checking the job listing...",
     "Verifying company signals...",
@@ -140,23 +153,29 @@ function startLoadingSequence() {
   textEl.textContent = steps[0];
 
   loadingInterval = setInterval(() => {
+    if (gen !== loadingSeqGen) return;
     currentStep = (currentStep + 1) % steps.length;
     textEl.style.opacity = "0";
     setTimeout(() => {
+      if (gen !== loadingSeqGen) return;
       textEl.textContent = steps[currentStep];
       textEl.style.opacity = "1";
     }, 400);
   }, 3000);
 
   loadingReassuranceTimeout = setTimeout(() => {
+    if (gen !== loadingSeqGen) return;
     reassEl.classList.remove("hidden");
     reassEl.style.opacity = "1";
   }, 20000);
 }
 
 function stopLoadingSequence() {
+  loadingSeqGen += 1;
   if (loadingInterval) clearInterval(loadingInterval);
+  loadingInterval = null;
   if (loadingReassuranceTimeout) clearTimeout(loadingReassuranceTimeout);
+  loadingReassuranceTimeout = null;
   $("modalLoadingBar").classList.add("hidden");
 }
 
@@ -227,6 +246,7 @@ function renderReputation(summary) {
   const barPct = hasNumScore ? rawScore : 0;
 
   container.innerHTML = `
+    <p class="muted small" style="margin-bottom: 12px;">Employer reputation score — reflects public mentions of the company, separate from this posting.</p>
     <div class="rep-score-card">
       <div class="rep-circle" style="border-color: ${scoreColor}; color: ${scoreColor}">
         <span class="rep-num">${scoreDisp}</span>
@@ -254,6 +274,8 @@ function renderReputation(summary) {
 function populateModal(report) {
   stopLoadingSequence();
   const sanitized = sanitizeApiResponse(report);
+  window.__lastRawReport = report;
+  window.__lastSanitizedReport = sanitized;
   window.__sanitizedSignals = sanitized.signals;
 
   $("modalSkeleton").classList.add("hidden");
@@ -394,8 +416,15 @@ function populateModal(report) {
               j.confidence_score !== undefined && j.confidence_score !== null
                 ? `${j.confidence_score}%`
                 : "—";
-            return `
-        <a href="${sanitizeField(j.url, "#")}" target="_blank" rel="noopener noreferrer" class="job-card">
+            const hrefRaw = sanitizeField(j.url, "");
+            let safeUrl = false;
+            try {
+              const u = new URL(hrefRaw);
+              safeUrl = u.protocol === "http:" || u.protocol === "https:";
+            } catch {
+              safeUrl = false;
+            }
+            const inner = `
           <span class="job-title">${sanitizeField(j.title, "Job listing")}</span>
           <span class="job-company">${sanitizeField(j.company, "Employer")}</span>
           <div class="job-card-meta">
@@ -403,7 +432,10 @@ function populateModal(report) {
             <span>Confidence ${pct}</span>
           </div>
           <div class="job-platform">${sanitizeField(j.platform, "")}</div>
-        </a>`;
+          ${safeUrl ? "" : `<p class="muted small" style="margin-top:8px;">Link unavailable</p>`}`;
+            return safeUrl
+              ? `<a href="${hrefRaw}" target="_blank" rel="noopener noreferrer" class="job-card">${inner}</a>`
+              : `<div class="job-card job-card--disabled">${inner}</div>`;
           })
           .join("");
       } else {
@@ -415,10 +447,30 @@ function populateModal(report) {
   }
 }
 
+function buildHumanReadableReport(s) {
+  const lines = [];
+  lines.push(`Verdict: ${sanitizeField(s.verdict, "VERIFY")}`);
+  if (s.confidence_score != null) lines.push(`Job posting confidence: ${s.confidence_score}% (${sanitizeField(s.confidence_label, "")})`);
+  lines.push("");
+  lines.push("Summary:");
+  lines.push(rewriteMicrocopy(sanitizeField(s.llm_summary, "")));
+  if (s.reasons && s.reasons.length) {
+    lines.push("");
+    lines.push("Why:");
+    s.reasons.forEach((r) => lines.push(`- ${rewriteMicrocopy(r)}`));
+  }
+  if (s.review_summary && s.review_summary.plain_summary) {
+    lines.push("");
+    lines.push("Employer reputation:");
+    lines.push(rewriteMicrocopy(sanitizeField(s.review_summary.plain_summary, "")));
+  }
+  return lines.join("\n");
+}
+
 /* Batch Flow */
 async function runBatchFlow() {
-    const urls = $("batchUrls").value.split("\n").map(u => u.trim()).filter(u => u.startsWith("http"));
-    if (!urls.length) return;
+    const rawLines = $("batchUrls").value.split("\n").map((u) => u.trim()).filter(Boolean);
+    if (!rawLines.length) return;
 
     const includeSimilarJobs = $("includeSimilarJobs")?.checked ?? false;
 
@@ -427,18 +479,46 @@ async function runBatchFlow() {
     list.innerHTML = "";
     setPhase(PHASE.LOADING);
 
-    for (const url of urls) {
+    const base = resolveApiBase();
+    const vr = await apiFetch(`${base}/v1/validate-urls`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls: rawLines }),
+    });
+    if (!vr.ok) {
+      setPhase(PHASE.IDLE);
+      $("errorPanel").classList.remove("hidden");
+      $("errorText").textContent = "JobSignal is temporarily unavailable. Please try again in a moment.";
+      return;
+    }
+    const validation = await vr.res.json();
+    const rows = Array.isArray(validation.results) ? validation.results : [];
+
+    for (const row of rows) {
+        const url = row.url || "";
         const item = document.createElement("div");
         item.className = "batch-item";
-        item.innerHTML = `<span class="muted small">${url}</span> <span class="btn-spinner"></span>`;
+        item.innerHTML = `<span class="muted small">${url || "(empty line)"}</span> <span class="btn-spinner"></span>`;
         list.appendChild(item);
 
+        if (!row.ok) {
+            item.innerHTML = `
+                <span style="color:#ef4444;">SKIP</span>
+                <span class="muted small truncate" style="max-width:220px;">${url}</span>
+                <span class="muted small">${sanitizeField(row.reason, "Invalid URL.")}</span>`;
+            continue;
+        }
+
         try {
-            const base = resolveApiBase();
-            const res = await fetch(`${base}/v1/verify`, {
+            const fr = await apiFetch(`${base}/v1/verify`, {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ job_url: url, include_similar_jobs: includeSimilarJobs })
+                body: JSON.stringify({ job_url: url, include_similar_jobs: includeSimilarJobs }),
             });
+            if (!fr.ok) {
+              item.innerHTML = `<span style="color:#ef4444;">ERROR</span> <span class="muted small">${url}</span> <span class="muted small">JobSignal is temporarily unavailable.</span>`;
+              continue;
+            }
+            const res = fr.res;
             const report = await res.json();
             const color = report.verdict === "APPLY" ? "#22c55e" : (report.verdict === "SKIP" ? "#ef4444" : "#f59e0b");
             const pct =
@@ -489,9 +569,11 @@ async function runFlow() {
       if (text) fd.append("job_description", text);
       fd.append("job_image", file);
       fd.append("include_similar_jobs", includeSimilarJobs ? "true" : "false");
-      res = await fetch(`${base}/v1/verify`, { method: "POST", body: fd });
+      const fr = await apiFetch(`${base}/v1/verify`, { method: "POST", body: fd });
+      if (!fr.ok) throw new Error("UNAVAILABLE");
+      res = fr.res;
     } else {
-      res = await fetch(`${base}/v1/verify`, {
+      const fr = await apiFetch(`${base}/v1/verify`, {
         method: "POST", 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -500,6 +582,8 @@ async function runFlow() {
           include_similar_jobs: includeSimilarJobs 
         })
       });
+      if (!fr.ok) throw new Error("UNAVAILABLE");
+      res = fr.res;
     }
 
     if (!res.ok) throw new Error("Verification service is temporarily busy.");
@@ -510,7 +594,11 @@ async function runFlow() {
     closeModal();
     setPhase(PHASE.ERROR);
     $("errorPanel").classList.remove("hidden");
-    $("errorText").textContent = e.message;
+    const msg =
+      e && e.message === "UNAVAILABLE"
+        ? "JobSignal is temporarily unavailable. Please try again in a moment."
+        : (e && e.message) || "Something went wrong. Please try again.";
+    $("errorText").textContent = msg;
   }
 }
 
@@ -608,10 +696,19 @@ if ($("btnToggleSignals")) {
   });
 }
 
-/* Copy JSON */
+/* Copy report: human-readable by default; Shift+click copies technical JSON */
 if ($("btnModalCopyJson")) {
-  $("btnModalCopyJson").addEventListener("click", () => {
-    alert("Full technical report copied to clipboard.");
+  $("btnModalCopyJson").addEventListener("click", async (ev) => {
+    const wantJson = ev.shiftKey === true;
+    const payload = wantJson
+      ? JSON.stringify(window.__lastRawReport || {}, null, 2)
+      : buildHumanReadableReport(window.__lastSanitizedReport || {});
+    try {
+      await navigator.clipboard.writeText(payload);
+      alert(wantJson ? "Technical JSON copied to clipboard." : "Summary report copied to clipboard. (Shift+click button for JSON.)");
+    } catch {
+      alert("Could not copy to clipboard.");
+    }
   });
 }
 

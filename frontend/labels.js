@@ -78,6 +78,16 @@ function getReasonLabel(code) {
   return c.replace(/_/g, " ").replace(/\b\w/g, (c2) => c2.toUpperCase()) + ".";
 }
 
+/** Align with backend ``_score_to_label`` thresholds (response_contract). */
+function scoreToConfidenceLabel(score) {
+  if (score === null || score === undefined || Number.isNaN(Number(score))) return "";
+  const n = Math.max(0, Math.min(100, Number(score)));
+  if (n <= 0) return "None";
+  if (n < 34) return "Low";
+  if (n < 67) return "Moderate";
+  return "High";
+}
+
 function sanitizeField(value, fallback) {
   if (value === undefined || value === null) return fallback;
   if (typeof value === "number" && Number.isNaN(value)) return fallback;
@@ -126,7 +136,8 @@ function sanitizeApiResponse(raw) {
     out.confidence_score = Math.max(0, Math.min(100, Number(out.confidence_score)));
   }
 
-  out.confidence_label = sanitizeField(out.confidence_label, "");
+  const derivedLbl = scoreToConfidenceLabel(out.confidence_score);
+  out.confidence_label = derivedLbl || sanitizeField(out.confidence_label, "");
 
   const reasonsIn = Array.isArray(out.reasons) ? out.reasons : [];
   out.reasons = reasonsIn.map((r) => formatReasonForDisplay(r));

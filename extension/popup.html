@@ -12,8 +12,11 @@
   </div>
   
   <div id="settingsPanel" class="hidden">
-    <label>Backend URL:</label>
-    <input type="text" id="backendUrlInput" />
+    <p class="muted small" style="margin-bottom:8px;">
+      Before a demo or production use, set this to your deployed API origin (for example your Railway URL). Local development defaults are not shipped to users.
+    </p>
+    <label>Backend URL (API origin, no trailing path):</label>
+    <input type="text" id="backendUrlInput" placeholder="https://your-app.up.railway.app" />
     <button id="btnClearCache" class="ghost-btn">Clear Session Cache</button>
     <button id="btnSaveSettings" class="btn-primary">Save</button>
   </div>

@@ -48,7 +48,7 @@ def _score_to_label(score: int) -> str:
 def _fallback_llm_from_verdict(report: Dict[str, Any]) -> str:
     v = str(report.get("verdict") or "VERIFY")
     cs = int(report.get("confidence_score") if report.get("confidence_score") is not None else 0)
-    lbl = str(report.get("confidence_label") or _score_to_label(cs))
+    lbl = _score_to_label(cs)
     sig_n = len(report.get("trust_signals") or report.get("signals") or [])
     reasons = report.get("reasons") or []
     primary = "Verification could not complete with full detail."
@@ -133,15 +133,8 @@ def validate_and_repair_response(report: Dict[str, Any], *, request_id: str) -> 
         cs = cmap.get(str(out.get("confidence") or "").lower(), 35)
     cs = max(0, min(100, cs))
     out["confidence_score"] = cs
-
-    allowed_labels = {"None", "Low", "Moderate", "High"}
-    lbl_raw = str(out.get("confidence_label") or "").strip()
-    if lbl_raw.lower() == "none":
-        out["confidence_label"] = "None"
-    elif lbl_raw in allowed_labels:
-        out["confidence_label"] = lbl_raw
-    else:
-        out["confidence_label"] = _score_to_label(cs)
+    # Label is always derived from the numeric score so UI cannot drift from the bar.
+    out["confidence_label"] = _score_to_label(cs)
 
     reasons_in = out.get("reasons")
     reasons_out: List[str] = []
