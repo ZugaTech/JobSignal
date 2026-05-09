@@ -158,7 +158,23 @@ function sanitizeApiResponse(raw) {
   out.hideReputationPanel = !hasRep;
 
   const sj = out.similar_jobs;
-  out.hideSimilarJobs = sj == null || !Array.isArray(sj) || sj.length === 0;
+  const meta = out.meta && typeof out.meta === "object" ? out.meta : {};
+  const requested = !!meta.similar_jobs_requested;
+  out.similarJobsRequested = requested;
+  if (sj == null) {
+    out.hideSimilarJobs = true;
+    out.similarJobsEmptyMessage = null;
+  } else if (Array.isArray(sj) && sj.length === 0 && requested) {
+    out.hideSimilarJobs = false;
+    out.similarJobsEmptyMessage =
+      "No similar postings met the high-confidence bar for this check. Try again later or paste a fuller job description.";
+  } else if (Array.isArray(sj) && sj.length === 0 && !requested) {
+    out.hideSimilarJobs = true;
+    out.similarJobsEmptyMessage = null;
+  } else {
+    out.hideSimilarJobs = false;
+    out.similarJobsEmptyMessage = null;
+  }
 
   out.request_id = sanitizeField(out.request_id, "");
 

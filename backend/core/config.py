@@ -40,6 +40,12 @@ ENV_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("ENABLE_LLM_SIGNALS", _as_bool, False, "Enable LLM-based text signal extraction"),
     EnvVarSpec("ENABLE_IMAGE_VERIFY", _as_bool, False, "Enable screenshot OCR/vision flow"),
     EnvVarSpec("RECOMMENDATIONS_ENABLED", _as_bool, False, "Enable similar-job recommendation flow by default"),
+    EnvVarSpec(
+        "RECOMMENDATIONS_MIN_VERIFY_SCORE",
+        _as_int,
+        70,
+        "Minimum nested verify confidence_score (0-100) for similar-job recommendations",
+    ),
     EnvVarSpec("MAX_UPLOAD_BYTES", _as_int, 5 * 1024 * 1024, "Max upload size for screenshot input bytes"),
     EnvVarSpec("RATE_LIMIT_REQUESTS_PER_MINUTE", _as_int, 20, "Per-IP request quota per minute"),
     EnvVarSpec("RATE_LIMIT_BURST", _as_int, 5, "Per-IP additional burst allowance within a window"),

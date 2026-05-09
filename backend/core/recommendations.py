@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-import json
+import asyncio
 import os
 import re
-import asyncio
-from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Awaitable
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
-import httpx
-
+from backend.core.coordinator import EvidenceCoordinator
+from backend.core.extraction import ExtractionResult, extract_entities
 from backend.core.image_ingest import ExtractedVisionFields
 from backend.core.normalization import NormalizationResult, normalize_job_url
-from backend.core.coordinator import EvidenceCoordinator
 
-RECOMMENDATIONS_VERSION = "1.1.0"
+RECOMMENDATIONS_VERSION = "1.2.0"
 _HARD_MAX_RECOMMENDATIONS = 3
+
+_LINKEDIN_VIEW_ID = re.compile(r"linkedin\.com/jobs/view/(\d+)", re.I)
 
 
 def _get(name: str, default: Optional[str] = None) -> Optional[str]:
@@ -48,20 +48,97 @@ def candidate_pool_limit() -> int:
     return max(3, min(n, 20))
 
 
-class SearchProvider(Protocol):
-    name: str
+def recommendations_min_verify_score() -> int:
+    """Minimum nested verify confidence_score (0–100) for a similar job to be shown."""
+    try:
+        n = int(_get("RECOMMENDATIONS_MIN_VERIFY_SCORE", "70") or "70")
+    except ValueError:
+        n = 70
+    return max(0, min(100, n))
 
-    async def search(self, coordinator: EvidenceCoordinator, query: str, *, limit: int) -> List[Dict[str, Any]]: ...
+
+def _canonical_url_string(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    u, _h = normalize_job_url(raw)
+    return u
+
+
+def _linkedin_job_view_id(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    m = _LINKEDIN_VIEW_ID.search(url)
+    return m.group(1) if m else None
+
+
+def _resolve_title_company(
+    extracted: Optional[ExtractedVisionFields],
+    ext: ExtractionResult,
+) -> tuple[Optional[str], Optional[str]]:
+    jt: Optional[str] = None
+    cn: Optional[str] = None
+    if extracted:
+        jt = (extracted.job_title or "").strip() or None
+        cn = (extracted.company_name or "").strip() or None
+    if not jt:
+        jt = ext.title_hint
+    if not cn:
+        cn = ext.company_hint
+    return jt, cn
+
+
+def _build_discovery_query(
+    normalized: NormalizationResult,
+    extracted: Optional[ExtractedVisionFields],
+    ext: ExtractionResult,
+) -> Optional[str]:
+    job_title, company_name = _resolve_title_company(extracted, ext)
+
+    if job_title:
+        clean_title = re.sub(r"\(.*?\)|\[.*?\]", "", job_title).strip()
+        if clean_title:
+            q = f'"{clean_title}" jobs'
+            if company_name:
+                q += f' "{company_name}"'
+            q += " site:linkedin.com OR site:indeed.com OR site:greenhouse.io OR site:lever.co"
+            return q
+
+    domain = (normalized.registrable_domain or "").strip()
+    if company_name:
+        q = f'"{company_name}" jobs OR careers'
+        q += " site:linkedin.com OR site:indeed.com OR site:greenhouse.io OR site:lever.co"
+        return q
+
+    if domain:
+        q = f"site:{domain} jobs OR careers"
+        q += " site:linkedin.com OR site:indeed.com OR site:greenhouse.io OR site:lever.co"
+        return q
+
+    canonical = normalized.canonical_url or ""
+    li_id = _linkedin_job_view_id(canonical)
+    if li_id:
+        return (
+            f'"{li_id}" jobs site:linkedin.com OR site:indeed.com '
+            "OR site:greenhouse.io OR site:lever.co"
+        )
+
+    host = (urlparse(canonical).hostname or "").lower()
+    if host:
+        return (
+            f'"{host}" jobs hiring '
+            "site:linkedin.com OR site:indeed.com OR site:greenhouse.io OR site:lever.co"
+        )
+
+    return None
 
 
 class SerperDiscoveryProvider:
     name = "serper"
 
     async def search(self, coordinator: EvidenceCoordinator, query: str, *, limit: int) -> List[Dict[str, Any]]:
-        # This will use the shared coordinator to respect call budget
         results = await coordinator.search(query)
         out = []
-        for r in results:
+        for r in results or []:
             if not r.get("link"):
                 continue
             title_raw = (r.get("title") or "").strip()
@@ -71,7 +148,7 @@ class SerperDiscoveryProvider:
                 "company": company_raw or "Employer name not provided by search.",
                 "url": r.get("link"),
                 "platform": r.get("source") or urlparse(r.get("link")).netloc,
-                "snippet": r.get("snippet", "")
+                "snippet": r.get("snippet", ""),
             })
         return out[:limit]
 
@@ -81,55 +158,51 @@ async def build_recommendations(
     normalized: NormalizationResult,
     *,
     extracted: Optional[ExtractedVisionFields] = None,
-    max_results: int = 3
+    max_collect: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    """Discover similar jobs using official sources and cross-platform signals."""
-    
+    """Discover candidate similar-job URLs before nested verification."""
     if not any_search_configured():
         return []
 
-    # Use titles/company from normalized or extracted vision
-    job_title = normalized.title or (extracted.job_title if extracted else None)
-    company_name = normalized.company or (extracted.company_name if extracted else None)
-    
-    if not job_title:
+    ext = extract_entities(normalized)
+    query = _build_discovery_query(normalized, extracted, ext)
+    if not query:
         return []
 
-    # Filter out common generic noise
-    clean_title = re.sub(r'\(.*?\)|\[.*?\]', '', job_title).strip()
-    
-    # Core discovery query: title + optional company + trusted platforms
-    # We want results from major job boards or official careers pages
-    query = f'"{clean_title}" jobs'
-    if company_name:
-        query += f' "{company_name}"'
-    
-    query += " site:linkedin.com OR site:indeed.com OR site:greenhouse.io OR site:lever.co"
-
+    pool = max_collect if max_collect is not None else candidate_pool_limit()
     provider = SerperDiscoveryProvider()
     try:
-        # We cap candidate pool to avoid blowing budget on one provider
-        candidates = await provider.search(coordinator, query, limit=candidate_pool_limit())
-        
-        # Deduplicate by normalized URL
-        seen_urls = set()
-        if normalized.url:
-            seen_urls.add(normalize_job_url(normalized.url))
-            
-        final = []
+        candidates = await provider.search(coordinator, query, limit=pool)
+        seen_urls: set[str] = set()
+        seed = _canonical_url_string(normalized.canonical_url)
+        if seed:
+            seen_urls.add(seed)
+
+        final: List[Dict[str, Any]] = []
         for c in candidates:
-            norm_c = normalize_job_url(c["url"])
-            if norm_c in seen_urls:
+            raw_link = c.get("url")
+            if not raw_link:
                 continue
-            seen_urls.add(norm_c)
+            nu = _canonical_url_string(str(raw_link))
+            if not nu or nu in seen_urls:
+                continue
+            seen_urls.add(nu)
             final.append(c)
-            if len(final) >= max_results:
+            if len(final) >= pool:
                 break
-        
         return final
     except Exception:
-        # Graceful failure for discovery - don't crash verification
         return []
+
+
+def _nested_confidence_score(report: Dict[str, Any]) -> Optional[int]:
+    raw = report.get("confidence_score")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 async def extend_report_with_recommendations(
@@ -139,34 +212,45 @@ async def extend_report_with_recommendations(
     *,
     user_requested: Optional[bool],
     verify_candidate: Callable[[str], Awaitable[Dict[str, Any]]],
-    coordinator: Optional[EvidenceCoordinator] = None
+    coordinator: Optional[EvidenceCoordinator] = None,
 ) -> None:
-    """Orchestrates the discovery and optional verification of similar jobs."""
+    """Discover candidates, nested-verify each, keep only high-confidence non-SKIP rows."""
     if not user_requested or not coordinator:
         return
 
-    # 1. Discover candidates
-    candidates = await build_recommendations(
-        coordinator,
-        normalized,
-        extracted=extracted,
-        max_results=effective_recommendations_max()
-    )
-    
+    min_score = recommendations_min_verify_score()
+    candidates = await build_recommendations(coordinator, normalized, extracted=extracted)
+
     if not candidates:
         report["recommendations"] = []
+        report["meta"] = dict(report.get("meta") or {})
+        report["meta"]["recommendations_status"] = "empty"
+        report["meta"]["recommendations_version"] = RECOMMENDATIONS_VERSION
         return
 
-    # 2. Parallel verification (Sprint 9 logic)
-    tasks = [verify_candidate(c["url"]) for c in candidates]
+    tasks = [verify_candidate(str(c["url"])) for c in candidates]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    verified_list = []
+
+    scored: List[Dict[str, Any]] = []
     for i, res in enumerate(results):
-        cand = candidates[i]
-        if isinstance(res, dict) and res.get("verdict"):
-            cand["verdict"] = res["verdict"]
-            cand["confidence"] = res.get("confidence_score") or res.get("confidence")
-        verified_list.append(cand)
-        
-    report["recommendations"] = verified_list
+        cand = dict(candidates[i])
+        if isinstance(res, BaseException) or not isinstance(res, dict):
+            continue
+        verdict = str(res.get("verdict") or "").upper()
+        cs = _nested_confidence_score(res)
+        if verdict == "SKIP":
+            continue
+        if cs is None or cs < min_score:
+            continue
+        cand["verdict"] = verdict
+        cand["confidence_score"] = cs
+        cand["recommendation_note"] = "Verified similar posting at high confidence."
+        scored.append(cand)
+
+    scored.sort(key=lambda x: int(x.get("confidence_score") or 0), reverse=True)
+    cap = effective_recommendations_max()
+    report["recommendations"] = scored[:cap]
+    report["meta"] = dict(report.get("meta") or {})
+    report["meta"]["recommendations_status"] = "ok" if report["recommendations"] else "empty"
+    report["meta"]["recommendations_version"] = RECOMMENDATIONS_VERSION
+    report["meta"]["recommendations_min_verify_score"] = min_score

@@ -251,6 +251,9 @@ async def verify_job(
         )
         if include_similar_jobs:
             report["similar_jobs"] = list(report.get("recommendations") or [])
+            meta_m = dict(report.get("meta") or {})
+            meta_m["similar_jobs_requested"] = True
+            report["meta"] = meta_m
         else:
             report["similar_jobs"] = None
         log_stage(
@@ -420,6 +423,9 @@ async def verify_job(
     )
     if include_similar_jobs:
         report["similar_jobs"] = list(report.get("recommendations") or [])
+        meta_m = dict(report.get("meta") or {})
+        meta_m["similar_jobs_requested"] = True
+        report["meta"] = meta_m
     else:
         report["similar_jobs"] = None
 

@@ -380,19 +380,35 @@ function populateModal(report) {
 
   // Similar Jobs
   if ($("similarJobsSection")) {
-    if (!sanitized.hideSimilarJobs && Array.isArray(sanitized.similar_jobs)) {
+    if (!sanitized.hideSimilarJobs) {
       $("similarJobsSection").classList.remove("hidden");
-      $("similarJobsList").innerHTML = sanitized.similar_jobs
-        .map(
-          (j) => `
+      const sj = sanitized.similar_jobs;
+      if (sanitized.similarJobsEmptyMessage) {
+        $("similarJobsList").innerHTML = `<p class="muted small similar-jobs-empty">${sanitized.similarJobsEmptyMessage}</p>`;
+      } else if (Array.isArray(sj) && sj.length > 0) {
+        $("similarJobsList").innerHTML = sj
+          .map((j) => {
+            const ver = sanitizeField(j.verdict, "").toLowerCase();
+            const vClass = ["apply", "verify", "skip"].includes(ver) ? ver : "verify";
+            const pct =
+              j.confidence_score !== undefined && j.confidence_score !== null
+                ? `${j.confidence_score}%`
+                : "—";
+            return `
         <a href="${sanitizeField(j.url, "#")}" target="_blank" rel="noopener noreferrer" class="job-card">
           <span class="job-title">${sanitizeField(j.title, "Job listing")}</span>
-          <span class="job-company">${sanitizeField(j.company, "This company")}</span>
+          <span class="job-company">${sanitizeField(j.company, "Employer")}</span>
+          <div class="job-card-meta">
+            <span class="job-card-verdict ${vClass}">${sanitizeField(j.verdict, "VERIFY")}</span>
+            <span>Confidence ${pct}</span>
+          </div>
           <div class="job-platform">${sanitizeField(j.platform, "")}</div>
-        </a>
-      `,
-        )
-        .join("");
+        </a>`;
+          })
+          .join("");
+      } else {
+        $("similarJobsList").innerHTML = "";
+      }
     } else {
       $("similarJobsSection").classList.add("hidden");
     }
@@ -403,6 +419,8 @@ function populateModal(report) {
 async function runBatchFlow() {
     const urls = $("batchUrls").value.split("\n").map(u => u.trim()).filter(u => u.startsWith("http"));
     if (!urls.length) return;
+
+    const includeSimilarJobs = $("includeSimilarJobs")?.checked ?? false;
 
     $("batchResult").classList.remove("hidden");
     const list = $("batchList");
@@ -419,7 +437,7 @@ async function runBatchFlow() {
             const base = resolveApiBase();
             const res = await fetch(`${base}/v1/verify`, {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ job_url: url })
+                body: JSON.stringify({ job_url: url, include_similar_jobs: includeSimilarJobs })
             });
             const report = await res.json();
             const color = report.verdict === "APPLY" ? "#22c55e" : (report.verdict === "SKIP" ? "#ef4444" : "#f59e0b");
