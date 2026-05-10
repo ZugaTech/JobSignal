@@ -78,7 +78,7 @@ def extract_job_fields_from_image_vision(
     model = (
         _get("FIREWORKS_VISION_MODEL")
         or _get("FIREWORKS_MODEL")
-        or "accounts/fireworks/models/kimi-k2p5"
+        or "accounts/fireworks/models/kimi-k2p6"
     )
     timeout_s = int(_get("FIREWORKS_TIMEOUT_S", "45") or "45")
 
@@ -196,7 +196,7 @@ def build_llm_signals(*, job_text: str) -> LlmSignalResult:
             ],
         )
 
-    model = _get("FIREWORKS_MODEL", "accounts/fireworks/models/mixtral-8x7b-instruct") or ""
+    model = _get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2p6") or ""
     timeout_s = int(_get("FIREWORKS_TIMEOUT_S", "20") or "20")
 
     prompt = (

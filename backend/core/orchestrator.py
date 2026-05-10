@@ -576,7 +576,7 @@ async def verify_job(
             ],
             fallback=fallback_txt,
             request_id=request_id,
-            model=_get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2-instruct"),
+            model=_get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2p6"),
             temperature=0.3,
             max_tokens=150,
             timeout=8.0,

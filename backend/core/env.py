@@ -66,7 +66,7 @@ class EnvConfig:
         search_retry_count = _int("SEARCH_RETRY_COUNT", int(app_cfg.get("SEARCH_RETRY_COUNT") or 2), min_v=0, max_v=5)
         search_rate_limit = _int("SEARCH_RATE_LIMIT_PER_MINUTE", int(app_cfg.get("SEARCH_RATE_LIMIT_PER_MINUTE") or 60), min_v=1, max_v=10000)
         fw_base = str(app_cfg.get("FIREWORKS_BASE_URL") or "https://api.fireworks.ai/inference/v1")
-        fw_model = str(app_cfg.get("FIREWORKS_MODEL") or "accounts/fireworks/models/kimi-k2-instruct")
+        fw_model = str(app_cfg.get("FIREWORKS_MODEL") or "accounts/fireworks/models/kimi-k2p6")
         fw_vision_model = str(app_cfg.get("FIREWORKS_VISION_MODEL") or fw_model)
         fw_timeout_s = _int("FIREWORKS_TIMEOUT_S", int(app_cfg.get("FIREWORKS_TIMEOUT_S") or 10), min_v=1, max_v=120)
         fw_retry_count = _int("FIREWORKS_RETRY_COUNT", int(app_cfg.get("FIREWORKS_RETRY_COUNT") or 2), min_v=0, max_v=5)

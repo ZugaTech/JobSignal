@@ -153,7 +153,7 @@ def extract_fields_from_description(
     if not api_key:
         return _empty
 
-    model = _get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2-instruct") or ""
+    model = _get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2p6") or ""
     timeout_s = int(_get("FIREWORKS_TIMEOUT_S", "20") or "20")
 
     prompt = _EXTRACTION_PROMPT.format(text=text[:20_000])

@@ -73,7 +73,7 @@ def extract_company_name_hardened(url: Optional[str], text: Optional[str]) -> Op
                 c = _client()
                 prompt = f"Extract only the hiring company name from this job posting. Return only the company name, nothing else. If you cannot determine it, return null.\n\n{text[:2000]}"
                 resp = c.chat.completions.create(
-                    model=_get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2p5"),
+                    model=_get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2p6"),
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
                     max_tokens=20,

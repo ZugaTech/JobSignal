@@ -69,7 +69,7 @@ def call_llm_safe_chat_sync(
     if prose_mode and require_sentence_period and "." not in fallback:
         raise ValueError("prose fallback must include a period")
 
-    mid = model or _get("FIREWORKS_MODEL") or "accounts/fireworks/models/kimi-k2-instruct"
+    mid = model or _get("FIREWORKS_MODEL") or "accounts/fireworks/models/kimi-k2p6"
     try:
         tout = float(timeout if timeout is not None else (_get("FIREWORKS_TIMEOUT_S") or "10"))
     except ValueError:
