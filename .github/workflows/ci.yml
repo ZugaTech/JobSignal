@@ -10,6 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    - name: Install JS deps and build frontend
+      run: |
+        npm ci
+        npm run build
     - name: Set up Python
       uses: actions/setup-python@v4
       with:

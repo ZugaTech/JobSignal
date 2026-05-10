@@ -1,4 +1,8 @@
-"""Static frontend smoke checks (no Playwright required)."""
+"""Static frontend smoke checks (no Playwright required).
+
+Primary UI is the Vite/React bundle under ``dist/`` (see ``backend/api/main.py``).
+Legacy ``frontend/*.js`` may be absent when only the React app is shipped.
+"""
 
 from pathlib import Path
 
@@ -11,31 +15,39 @@ def _read(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
-def test_frontend_files_exist():
-    for rel in ("frontend/index.html", "frontend/app.js", "frontend/styles.css", "frontend/labels.js"):
-        assert (ROOT / rel).is_file(), f"missing {rel}"
+def test_dist_bundle_exists():
+    """Production UI served by FastAPI when ``dist/`` is present."""
+    idx = ROOT / "dist" / "index.html"
+    assert idx.is_file(), "missing dist/index.html — run `npm install && npm run build`"
+    assets_dir = ROOT / "dist" / "assets"
+    assert assets_dir.is_dir(), "missing dist/assets"
+    js_bundles = list(assets_dir.glob("*.js"))
+    assert js_bundles, "missing vite JS bundle under dist/assets"
+
+
+def test_dist_bootstraps_react_shell():
+    html = _read("dist/index.html")
+    assert 'id="root"' in html
+    assert "/assets/" in html
 
 
 @pytest.mark.parametrize(
     "token",
-    ("idle", "loading", "success", "warning", "error", "jobImage", "ingestionNote", "recRecommendations", "recSection"),
+    ("phase", "loading", "success", "error"),
 )
-def test_frontend_documents_ui_phases(token: str):
-    html = _read("frontend/index.html")
-    js = _read("frontend/app.js")
-    labels = _read("frontend/labels.js")
-    blob = html + js + labels
-    assert token in blob
+def test_react_source_documents_core_flow_tokens(token: str):
+    app_tsx = _read("src/App.tsx")
+    assert token in app_tsx
 
 
-def test_frontend_includes_client_validation():
-    js = _read("frontend/app.js")
-    assert "validateClientInputs" in js
+def test_api_helpers_defines_sanitize():
+    blob = _read("src/utils/api-helpers.ts")
+    assert "sanitizeApiResponse" in blob
 
 
-def test_app_contains_uncertainty_copy():
-    html = _read("frontend/index.html")
-    js = _read("frontend/app.js")
-    blob = html + js
-    assert "VERIFY" in blob
-    assert "Limited certainty" in blob or "uncertainty" in blob.lower()
+def test_verdict_strings_present_in_ui_source():
+    blob = _read("src/App.tsx")
+    for tok in ("APPLY", "SKIP"):
+        assert tok in blob
+    helpers = _read("src/utils/api-helpers.ts")
+    assert "VERIFY" in helpers

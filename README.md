@@ -46,6 +46,19 @@ Editor and agent guidance: [`.cursor/rules/JOBSIGNAL-RULES.mdc`](.cursor/rules/J
 
 Copy `.env.example` to `.env` for local development when implementation begins. Never commit secrets.
 
+## Web UI (React)
+
+FastAPI serves the Vite production bundle from **`dist/`**. Source lives under **`src/`**. After you pull the repo or change the UI, build once (or whenever you change React/Tailwind code):
+
+```bash
+npm install
+npm run build
+```
+
+Then start the API as usual (`uvicorn` on port 8080). If **`dist/`** is missing, the app falls back to the legacy static files in **`frontend/`** (older vanilla JS UI).
+
+For interactive UI development with hot reload, run `npm run dev` (Vite, default port 5173) and point `JOBSIGNAL_API_BASE` at your backend if needed.
+
 ## Chrome Extension (Sprint 7)
 
 To use the JobSignal Chrome Extension:

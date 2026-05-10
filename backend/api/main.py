@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from collections import defaultdict
@@ -23,6 +24,7 @@ from backend.core.structured_log import configure_logging
 
 APP_CFG = fail_fast_startup()
 configure_logging(str(APP_CFG.get("LOG_LEVEL") or "info"))
+logger = logging.getLogger("jobsignal")
 
 
 def create_app() -> FastAPI:
@@ -121,8 +123,18 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    _frontend = Path(__file__).resolve().parent.parent.parent / "frontend"
-    if _frontend.is_dir():
+    _root = Path(__file__).resolve().parent.parent.parent
+    _dist = _root / "dist"
+    _frontend = _root / "frontend"
+
+    if _dist.is_dir():
+        logger.info("static_ui path=%s (vite build)", _dist)
+        app.mount("/", StaticFiles(directory=str(_dist), html=True), name="frontend")
+    elif _frontend.is_dir():
+        logger.warning(
+            "static_ui path=%s — dist/ missing; run `npm install && npm run build` for the React UI",
+            _frontend,
+        )
         app.mount("/", StaticFiles(directory=str(_frontend), html=True), name="frontend")
 
     return app
