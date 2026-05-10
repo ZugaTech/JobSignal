@@ -42,6 +42,10 @@ See **`.env.example`** for the full contract (`backend/core/config.py` → `ENV_
 
 Until **`CACHE_URL`** is set, `/ready` reports **`checks.redis`: `skip`** (in-memory cache per instance). That matches **`NODE_ENV=development`** and is fine for demos; for **consistent cache across replicas**, Redis is required.
 
+### Clearing in-memory cache without Redis
+
+Each deploy starts with an empty process-local cache. To **wipe stale hits** when you are not using Redis, trigger a redeploy (for example add a dummy variable **`CACHE_BUST`** with a timestamp value such as `20250511_001`, save so Railway redeploys, verify behaviour, then **delete** `CACHE_BUST`). Alternatively call **`POST /v1/verify`** with **`force_refresh: true`** for the same inputs.
+
 Readiness always includes **`checks.serp_key`** and **`checks.llm_key`** (`pass` / `fail`) based on whether API keys are configured—no live probe required when `PROBE_PROVIDERS_ON_READY=0`.
 
 Copy the Redis URL into your **private** local [`.env`](.env) as **`CACHE_URL=`** before running [`scripts/push_env_to_railway.py`](../scripts/push_env_to_railway.py) without **`--no-delete`**, so the next sync does not clear Redis on Railway.

@@ -654,6 +654,7 @@ function stopLoadingSequence() {
   if (loadingReassuranceTimeout) clearTimeout(loadingReassuranceTimeout);
   loadingReassuranceTimeout = null;
   if ($("modalLoadingBar")) $("modalLoadingBar").classList.add("hidden");
+  if ($("btnModalReanalyse")) $("btnModalReanalyse").classList.add("hidden");
 }
 
 /* Modal Management */
@@ -874,12 +875,12 @@ function populateModal(report) {
 
   const cacheChip = $("modalCacheChip");
   if (cacheChip) {
-    if (report.cached === true && report.cache_complete === false) {
+    if (sanitized.cached === true && report.cache_complete === false) {
       cacheChip.classList.remove("hidden");
       cacheChip.textContent = "Partial cached result — reanalysing for full report...";
-    } else if (report.cached === true && report.cached_at) {
+    } else if (sanitized.cached === true && (report.cached_at || sanitized.cached_at)) {
       cacheChip.classList.remove("hidden");
-      cacheChip.textContent = `${formatCachedAgo(report.cached_at)} · Cached result`;
+      cacheChip.textContent = `${formatCachedAgo(report.cached_at || sanitized.cached_at)} · Cached result`;
     } else {
       cacheChip.classList.add("hidden");
       cacheChip.textContent = "";
@@ -995,6 +996,10 @@ function populateModal(report) {
     $("modalLlmSummary").textContent = rewriteMicrocopy(sanitizeField(sanitized.llm_summary, "No summary available for this result."));
   }
   if ($("modalRequestId")) $("modalRequestId").textContent = sanitized.request_id || "";
+  const btnRe = $("btnModalReanalyse");
+  if (btnRe) {
+    btnRe.classList.toggle("hidden", !sanitized.cached);
+  }
 
   // Similar Jobs
   if ($("similarJobsSection")) {
@@ -1171,7 +1176,12 @@ async function parseVerifyHttpError(res) {
 }
 
 /* Event Handlers */
-async function runFlow() {
+function responseIndicatesCached(report) {
+  if (!report || typeof report !== "object") return false;
+  return Boolean(report.cached) || Boolean(report.cache && report.cache.hit);
+}
+
+async function runFlow(forceRefresh = false) {
   let { url, text, file, activePane, includeSimilarJobs } = readInputs();
 
   // If in batch tab, run batch instead
@@ -1222,6 +1232,7 @@ async function runFlow() {
       if (textSend) fd.append("job_description", textSend);
       fd.append("job_image", file);
       fd.append("include_similar_jobs", includeSimilarJobs ? "true" : "false");
+      if (forceRefresh) fd.append("force_refresh", "true");
       const fr = await apiFetch(`${base}/v1/verify`, { method: "POST", body: fd });
       if (!fr.ok) throw new Error("UNAVAILABLE");
       res = fr.res;
@@ -1233,6 +1244,7 @@ async function runFlow() {
           job_url: urlSend || null,
           job_description: textSend || null,
           include_similar_jobs: includeSimilarJobs,
+          ...(forceRefresh ? { force_refresh: true } : {}),
         }),
       });
       if (!fr.ok) throw new Error("UNAVAILABLE");
@@ -1242,7 +1254,7 @@ async function runFlow() {
     if (!res.ok) throw new Error(await parseVerifyHttpError(res));
     let report = await res.json();
 
-    if (report.cached === true && report.cache_complete === false) {
+    if (!forceRefresh && responseIndicatesCached(report) && report.cache_complete === false) {
       populateModal(report);
       try {
         let res2;
@@ -1291,8 +1303,15 @@ async function runFlow() {
 }
 
 /* Initialization */
-if ($("btnRun")) $("btnRun").addEventListener("click", runFlow);
-if ($("btnRetry")) $("btnRetry").addEventListener("click", runFlow);
+if ($("btnRun")) $("btnRun").addEventListener("click", () => runFlow(false));
+if ($("btnRetry")) $("btnRetry").addEventListener("click", () => runFlow(false));
+if ($("btnModalReanalyse")) {
+  $("btnModalReanalyse").addEventListener("click", () => {
+    const { activePane } = readInputs();
+    if (activePane === "batchPane") return;
+    runFlow(true);
+  });
+}
 if ($("btnBatchReset")) {
     $("btnBatchReset").addEventListener("click", () => {
         $("batchUrls").value = "";

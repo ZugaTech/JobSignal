@@ -94,6 +94,9 @@ function resolveReputationVariant(rs: Record<string, unknown> | null): Reputatio
 export function sanitizeApiResponse(raw: unknown): SanitizedVerifyReport {
   const out = { ...(raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}) };
 
+  const cacheObj = out.cache && typeof out.cache === 'object' ? (out.cache as Record<string, unknown>) : null;
+  out.cached = Boolean(out.cached) || Boolean(cacheObj?.hit);
+
   const signals = normalizePipelineSignals(out.signals);
   out.signals = signals;
 

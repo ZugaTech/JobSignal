@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import axios, { isAxiosError } from 'axios';
 import type { SanitizedVerifyReport } from '../types/verify';
 import { sanitizeApiResponse } from '../utils/api-helpers';
@@ -35,6 +35,14 @@ function messageFromVerifyAxiosError(err: unknown): string {
   return 'Something went wrong. Please try again.';
 }
 
+export type VerifyParams = {
+  url?: string;
+  text?: string;
+  file?: File | null;
+  includeSimilarJobs?: boolean;
+  forceRefresh?: boolean;
+};
+
 export function useJobSignal() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [report, setReport] = useState<SanitizedVerifyReport | null>(null);
@@ -42,83 +50,101 @@ export function useJobSignal() {
   const [loadingStep, setLoadingStep] = useState('Checking the job listing...');
   const [elapsed, setElapsed] = useState(0);
 
-  const apiBase = useCallback(() => resolveApiBase(), []);
-
-  const verify = async (params: {
+  const lastVerifyParamsRef = useRef<{
     url?: string;
     text?: string;
     file?: File | null;
     includeSimilarJobs?: boolean;
-    forceRefresh?: boolean;
-  }) => {
-    setPhase('loading');
-    setError(null);
-    setElapsed(0);
+  } | null>(null);
 
-    const startTime = performance.now();
-    const timer = setInterval(() => {
-      setElapsed(Math.floor((performance.now() - startTime) / 1000));
-    }, 1000);
+  const apiBase = useCallback(() => resolveApiBase(), []);
 
-    const steps = [
-      'Checking the job listing...',
-      'Verifying company signals...',
-      'Scanning public sources...',
-      'Comparing cross-platform data...',
-      'Reviewing company reputation...',
-      'Building your report...',
-    ];
-    let stepIdx = 0;
-    const stepTimer = setInterval(() => {
-      stepIdx = (stepIdx + 1) % steps.length;
-      setLoadingStep(steps[stepIdx]);
-    }, 3000);
+  const verify = useCallback(
+    async (params: VerifyParams) => {
+      lastVerifyParamsRef.current = {
+        url: params.url,
+        text: params.text,
+        file: params.file ?? null,
+        includeSimilarJobs: params.includeSimilarJobs,
+      };
 
-    const base = apiBase();
+      setPhase('loading');
+      setError(null);
+      setElapsed(0);
 
-    const buildMultipart = (forceRefresh: boolean) => {
-      const fd = new FormData();
-      if (params.url) fd.append('job_url', params.url);
-      if (params.text) fd.append('job_description', params.text);
-      if (params.file) fd.append('job_image', params.file);
-      fd.append('include_similar_jobs', params.includeSimilarJobs ? 'true' : 'false');
-      if (forceRefresh || params.forceRefresh) fd.append('force_refresh', 'true');
-      return fd;
-    };
+      const startTime = performance.now();
+      const timer = setInterval(() => {
+        setElapsed(Math.floor((performance.now() - startTime) / 1000));
+      }, 1000);
 
-    const postVerify = async (forceRefresh: boolean) => {
-      if (params.file) {
-        return axios.post(`${base}/v1/verify`, buildMultipart(forceRefresh));
-      }
-      return axios.post(`${base}/v1/verify`, {
-        job_url: params.url || null,
-        job_description: params.text || null,
-        include_similar_jobs: params.includeSimilarJobs,
-        force_refresh: forceRefresh || !!params.forceRefresh,
-      });
-    };
+      const steps = [
+        'Checking the job listing...',
+        'Verifying company signals...',
+        'Scanning public sources...',
+        'Comparing cross-platform data...',
+        'Reviewing company reputation...',
+        'Building your report...',
+      ];
+      let stepIdx = 0;
+      const stepTimer = setInterval(() => {
+        stepIdx = (stepIdx + 1) % steps.length;
+        setLoadingStep(steps[stepIdx]);
+      }, 3000);
 
-    try {
-      let response = await postVerify(false);
-      let data = response.data;
+      const base = apiBase();
+      const wantsForce = !!params.forceRefresh;
 
-      if (data.cached === true && data.cache_complete === false) {
+      const buildMultipart = (forceRefresh: boolean) => {
+        const fd = new FormData();
+        if (params.url) fd.append('job_url', params.url);
+        if (params.text) fd.append('job_description', params.text);
+        if (params.file) fd.append('job_image', params.file);
+        fd.append('include_similar_jobs', params.includeSimilarJobs ? 'true' : 'false');
+        if (forceRefresh) fd.append('force_refresh', 'true');
+        return fd;
+      };
+
+      const postVerify = async (forceRefresh: boolean) => {
+        if (params.file) {
+          return axios.post(`${base}/v1/verify`, buildMultipart(forceRefresh));
+        }
+        return axios.post(`${base}/v1/verify`, {
+          job_url: params.url || null,
+          job_description: params.text || null,
+          include_similar_jobs: params.includeSimilarJobs,
+          ...(forceRefresh ? { force_refresh: true } : {}),
+        });
+      };
+
+      try {
+        let response = await postVerify(wantsForce);
+        let data = response.data;
+
+        if (!wantsForce && data.cached === true && data.cache_complete === false) {
+          setReport(sanitizeApiResponse(data));
+          const refreshResponse = await postVerify(true);
+          data = refreshResponse.data;
+        }
+
         setReport(sanitizeApiResponse(data));
-        const refreshResponse = await postVerify(true);
-        data = refreshResponse.data;
+        setPhase('success');
+      } catch (err: unknown) {
+        console.error('verify request failed', err);
+        setError(messageFromVerifyAxiosError(err));
+        setPhase('error');
+      } finally {
+        clearInterval(timer);
+        clearInterval(stepTimer);
       }
+    },
+    [apiBase],
+  );
 
-      setReport(sanitizeApiResponse(data));
-      setPhase('success');
-    } catch (err: unknown) {
-      console.error('verify request failed', err);
-      setError(messageFromVerifyAxiosError(err));
-      setPhase('error');
-    } finally {
-      clearInterval(timer);
-      clearInterval(stepTimer);
-    }
-  };
+  const reanalyseBypassCache = useCallback(async () => {
+    const p = lastVerifyParamsRef.current;
+    if (!p) return;
+    await verify({ ...p, forceRefresh: true });
+  }, [verify]);
 
   return {
     phase,
@@ -127,6 +153,7 @@ export function useJobSignal() {
     loadingStep,
     elapsed,
     verify,
+    reanalyseBypassCache,
     hydrateReport: (raw: unknown) => {
       setReport(sanitizeApiResponse(raw));
       setError(null);

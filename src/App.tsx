@@ -179,7 +179,7 @@ export default function App() {
   const [showSignals, setShowSignals] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { phase, report, error, loadingStep, elapsed, verify, hydrateReport, reset } = useJobSignal();
+  const { phase, report, error, loadingStep, elapsed, verify, reanalyseBypassCache, hydrateReport, reset } = useJobSignal();
   const {
     phase: batchPhase,
     rows: batchRows,
@@ -1103,9 +1103,20 @@ export default function App() {
                       <div className="text-[11px] text-neutral-500 font-mono truncate max-w-[min(100%,14rem)]">
                         ID: {report.request_id}
                       </div>
-                      <button type="button" className="text-xs text-brand font-semibold hover:underline shrink-0">
-                        Report issue
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        {report.cached ? (
+                          <button
+                            type="button"
+                            onClick={() => void reanalyseBypassCache()}
+                            className="text-xs font-semibold min-h-[36px] px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors border border-border/60"
+                          >
+                            Re-analyse (bypass cache)
+                          </button>
+                        ) : null}
+                        <button type="button" className="text-xs text-brand font-semibold hover:underline shrink-0">
+                          Report issue
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -131,6 +131,8 @@ function formatReasonForDisplay(entry) {
 
 function sanitizeApiResponse(raw) {
   const out = { ...(raw && typeof raw === "object" ? raw : {}) };
+  const cacheObj = out.cache && typeof out.cache === "object" ? out.cache : null;
+  out.cached = Boolean(out.cached) || Boolean(cacheObj && cacheObj.hit);
   const signals = Array.isArray(out.signals) ? out.signals.filter(Boolean) : [];
   out.signals = signals;
   out.hideSignalsSection = signals.length === 0;
