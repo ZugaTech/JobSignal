@@ -50,7 +50,7 @@
 
 | Item | Status | Notes |
 |------|--------|------|
-| Search adapter (real provider) | 🟢 | **SerpAPI** wired + hardened (User-Agent, timeouts). |
+| Search adapter (real provider) | 🟢 | **Serper.dev** wired + hardened (timeouts, bounded queries). |
 | Fetch adapter (SSRF-safe) | 🟢 | **Primary** URL GET + signals: `backend/core/fetch_job_page.py`. |
 | Deterministic fixtures for CI | 🟡 | `data_sources/fixtures/verify_fixtures.json` added; needs real hashes. |
 
@@ -86,7 +86,7 @@
 | **Last Verified** | 🟢 | 2026-05-06 — 89 tests passing (Py3.10+). |
 | **Release Tag** | 🟢 | `v1.0.0-hackathon` (see git tags). |
 | **Demo Readiness** | 🟢 | `docs/demo_script.md` + `data_sources/fixtures/` complete. |
-| **Remaining Risks** | 🟡 | Vision model costs; SerpAPI rate limits; horizontal scaling of state machine (mitigated by Redis). |
+| **Remaining Risks** | 🟡 | Vision model costs; Serper rate limits; horizontal scaling of state machine (mitigated by Redis). |
 
 ---
 

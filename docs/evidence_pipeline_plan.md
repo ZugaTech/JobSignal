@@ -17,7 +17,7 @@ The extraction phase will precede evidence collection. It will aggressively extr
 
 ### 2. Evidence Bundle Builder (`backend/core/evidence.py`)
 We will create a new evidence collection module that systematically gathers:
-- **Source 1: Official Careers Page Fetch** (Using the extracted company name to query SerpAPI or similar for the official careers page, then matching the role).
+- **Source 1: Official Careers Page Fetch** (Using the extracted company name to query Serper or similar for the official careers page, then matching the role).
 - **Source 2: Domain Search** (Site-specific search on the company domain for the role).
 - **Source 3: Open Web Role Search** (Searching the exact title to find duplicates or reposts).
 - **Source 4: Recruiter Identity** (Basic lookup or validation of the extracted recruiter name).

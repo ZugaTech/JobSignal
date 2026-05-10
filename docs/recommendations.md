@@ -20,13 +20,13 @@
 
 Search must be configured:
 
-- **`SERPAPI_API_KEY`** (or **`SEARCH_API_KEY`** for the SerpAPI adapter), and/or  
+- **`SERPER_API_KEY`** (preferred), or a legacy fallback alias (`SEARCH_API_KEY` / `SERPAPI_API_KEY`), and/or  
 - **`JOBSIGNAL_SEARCH_FIXTURE_PATH`** pointing at a JSON file (CI / offline demos).
 
 ## Providers
 
-- **`SEARCH_PROVIDER_ORDER`** — comma list, e.g. `serpapi,fixture` or `fixture`. Each provider is tried in order until enough URLs are collected (up to **`RECOMMENDATIONS_CANDIDATE_POOL`**, default 8).
-- **SerpAPI:** `https://serpapi.com/search.json`, `engine=google`, organic links only.
+- **`SEARCH_PROVIDER_ORDER`** — comma list, e.g. `serper,fixture` or `fixture`. Each provider is tried in order until enough URLs are collected (up to **`RECOMMENDATIONS_CANDIDATE_POOL`**, default 8).
+- **Serper:** `https://google.serper.dev/search`, organic links only.
 - **Fixture:** JSON with `urls` and optional `by_query_substring` map (see `data_sources/fixtures/search_stub.json`).
 
 ## Response shape (`report_schema_version` 1.2.0)

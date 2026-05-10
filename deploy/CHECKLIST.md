@@ -3,7 +3,7 @@
 1. Confirm Railway project is linked and environment is selected.
 2. Set required env vars: `NODE_ENV`, `ALLOWED_ORIGINS`, one LLM key (`FIREWORKS_API_KEY` or `LLM_API_KEY`).
 3. Required in `production`/`staging`: set `CACHE_URL` for Redis. Local development may leave it empty.
-4. Optional: set SERP key (`SERPAPI_API_KEY` or `SEARCH_API_KEY`) when recommendations are enabled.
+4. Optional: set Serper key (`SERPER_API_KEY`) when recommendations or live search-backed evidence are enabled.
 5. Verify `Procfile` uses `PORT` (`uvicorn ... --port ${PORT:-8080}`).
 6. Deploy with `railway up`.
 7. Check `/health` returns `{"status":"ok"}`.

@@ -36,7 +36,7 @@ Built deterministically from:
 - Bounded concurrent queries (e.g. max 3 packs).
 - No execution of arbitrary URLs from results (links stored as strings only).
 
-**Adapter:** real HTTP to search provider is **not** required in Sprint 2 tests — tests use fake hit lists. Candidate real providers for multi-provider fallback: **SerpAPI**, **Zenserp**, **Bing Web Search**, **Google Programmable Search**.
+**Adapter:** real HTTP to search provider is **not** required in Sprint 2 tests — tests use fake hit lists. Current provider: **Serper.dev**. Candidate future fallback providers: **SerpAPI**, **Zenserp**, **Bing Web Search**, **Google Programmable Search**.
 
 ## 4. Source trust ranking and evidence collection
 

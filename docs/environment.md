@@ -38,8 +38,8 @@ This MVP does not currently ship tenant-header auth variables in code. Older pla
 |----------|----------|---------|
 | `SERPER_API_KEY` | When search enabled | Primary Serper.dev API key used by the live evidence coordinator |
 | `SEARCH_API_KEY` | Optional | Generic fallback search key name |
-| `SEARCH_API_ENDPOINT` | When search enabled | Base URL for search provider |
-| `SERPAPI_API_KEY` | Optional | SerpAPI key for similar-job search (`recommendations`) |
+| `SEARCH_API_ENDPOINT` | When search enabled | Serper endpoint; defaults to `https://google.serper.dev/search` |
+| `SERPAPI_API_KEY` | Optional | Legacy fallback alias accepted by code; prefer `SERPER_API_KEY` |
 | `JOBSIGNAL_SEARCH_FIXTURE_PATH` | Optional | JSON fixture for offline search results (tests/demos) |
 | `RECOMMENDATIONS_ENABLED` | No | Default off; client can pass `recommendations_enabled` to override per request |
 | `RECOMMENDATIONS_MAX` | No | Hard-capped at **3** in code |

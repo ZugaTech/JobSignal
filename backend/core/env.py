@@ -1,8 +1,9 @@
 """Environment loading with optional strict (production) validation.
 
 Provider/env authority (Sprint 2 audit):
-- SERPAPI_API_KEY / SEARCH_API_KEY
-- SEARCH_API_ENDPOINT (optional override for provider endpoint)
+- SERPER_API_KEY
+- SEARCH_API_KEY / SERPAPI_API_KEY (legacy fallback aliases)
+- SEARCH_API_ENDPOINT (optional Serper endpoint override)
 - SEARCH_TIMEOUT_S / SEARCH_RETRY_COUNT / SEARCH_RATE_LIMIT_PER_MINUTE
 - FIREWORKS_API_KEY / FIREWORKS_BASE_URL / FIREWORKS_MODEL / FIREWORKS_VISION_MODEL
 - FIREWORKS_TIMEOUT_S / FIREWORKS_RETRY_COUNT
