@@ -19,3 +19,7 @@ def test_briefing_style_paragraph_not_leak() -> None:
         "Here is the summary: Deloitte is a global professional services firm."
     )
     assert not _looks_like_prompt_leak(txt)
+
+
+def test_tier_one_prose_not_flagged_as_leak() -> None:
+    assert not _looks_like_prompt_leak("Deloitte is a tier-one employer with strong audit practices.")

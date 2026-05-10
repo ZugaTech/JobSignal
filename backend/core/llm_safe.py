@@ -53,10 +53,6 @@ def _looks_like_prompt_leak(text: str) -> bool:
         return True
     if re.search(r"\b(t1|t2|t3)\b", tl):
         return True
-    if re.search(r"\b(gate|gates)\b", tl):
-        return True
-    if re.search(r"\btier\b", tl):
-        return True
     return contains_internal_verdict_jargon(text)
 
 
