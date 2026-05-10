@@ -509,7 +509,7 @@ async def verify_job(
         evidence_task = asyncio.create_task(_collect_serper_queries(coordinator, base_query, company, title))
         review_task = asyncio.create_task(get_company_reviews(coordinator, hardened_company, request_id=request_id))
         serp_results, review_summary = await asyncio.gather(evidence_task, review_task)
-        bundle = build_evidence_bundle(norm, ext_local, serp_results)
+        bundle = build_evidence_bundle(norm, ext_local, serp_results, page_fetch=fx)
         signals.extend(bundle.signals)
         warnings.extend(bundle.warnings)
         return bundle, review_summary
@@ -540,7 +540,11 @@ async def verify_job(
     verdict_val = verdict_raw.value if hasattr(verdict_raw, "value") else str(verdict_raw)
     reasons_list = decision.get("reasons") or []
     conf_band = str(decision.get("confidence") or "low").lower()
-    cs_num = _confidence_numeric(conf_band)
+    raw_cs = decision.get("confidence_score")
+    if raw_cs is not None:
+        cs_num = max(0, min(100, int(raw_cs)))
+    else:
+        cs_num = _confidence_numeric(conf_band)
     provisional_for_fallback: Dict[str, Any] = {
         "verdict": verdict_val,
         "confidence_score": cs_num,

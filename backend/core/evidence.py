@@ -13,7 +13,8 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from backend.core.extraction import ExtractionResult
-from backend.core.normalization import NormalizationResult
+from backend.core.fetch_job_page import JobPageFetchOutcome
+from backend.core.normalization import NormalizationResult, registrable_domain_naive
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,12 +35,95 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _is_official_domain(domain: str, company_hint: Optional[str]) -> bool:
-    if not company_hint or not domain:
+def _is_official_domain(netloc: str, company_hint: Optional[str]) -> bool:
+    """True when hostname / registrable domain plausibly belongs to ``company_hint``."""
+
+    if not netloc or not company_hint:
         return False
-    c_clean = re.sub(r"[^a-z0-9]", "", company_hint.lower())
-    d_clean = domain.lower().split(".")[0]
-    return c_clean in d_clean or d_clean in c_clean
+    host = netloc.lower().strip()
+    if "@" in host:
+        host = host.split("@")[-1]
+    host = host.split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    hint = re.sub(r"[^a-z0-9]", "", company_hint.lower())
+    if len(hint) < 2:
+        return False
+    reg = registrable_domain_naive(host)
+    if reg:
+        base = reg.split(".")[0]
+        base_clean = re.sub(r"[^a-z0-9]", "", base)
+        if len(base_clean) >= 3 and (hint in base_clean or base_clean in hint):
+            return True
+    for label in host.split("."):
+        lbl = re.sub(r"[^a-z0-9]", "", label)
+        if len(lbl) >= 3 and (hint in lbl or lbl in hint):
+            return True
+    return False
+
+
+def _posting_hostname(norm: NormalizationResult) -> str:
+    if not norm.canonical_url:
+        return ""
+    return (urlparse(norm.canonical_url).hostname or "").lower()
+
+
+def _registrable_domains_align(host_a: str, host_b: str) -> bool:
+    ha = host_a.lower().split(":")[0]
+    hb = host_b.lower().split(":")[0]
+    if ha.startswith("www."):
+        ha = ha[4:]
+    if hb.startswith("www."):
+        hb = hb[4:]
+    ra = registrable_domain_naive(ha)
+    rb = registrable_domain_naive(hb)
+    return bool(ra and rb and ra == rb)
+
+
+def _resolve_official_careers_url(
+    norm: NormalizationResult,
+    ext: ExtractionResult,
+    serp_official_url: Optional[str],
+    page_fetch: Optional[JobPageFetchOutcome],
+) -> tuple[Optional[str], str]:
+    """Prefer URLs extracted from the live job page, then Serp careers hits, then direct employer posting."""
+
+    posting_host = _posting_hostname(norm)
+    posting_reg = registrable_domain_naive(posting_host) if posting_host else None
+
+    tier_same_reg: List[str] = []
+    tier_company: List[str] = []
+
+    if page_fetch and page_fetch.employer_page_urls:
+        for link in page_fetch.employer_page_urls:
+            h = (urlparse(link).hostname or "").lower()
+            if not h:
+                continue
+            reg = registrable_domain_naive(h)
+            if posting_reg and reg and posting_reg == reg:
+                tier_same_reg.append(link)
+            elif ext.company_hint and _is_official_domain(h, ext.company_hint):
+                tier_company.append(link)
+
+    def _first_dedup(rows: List[str]) -> Optional[str]:
+        seen: set[str] = set()
+        for u in rows:
+            if u not in seen:
+                seen.add(u)
+                return u
+        return None
+
+    picked = _first_dedup(tier_same_reg)
+    if picked:
+        return picked, "job_page_same_registrable"
+    picked = _first_dedup(tier_company)
+    if picked:
+        return picked, "job_page_company_match"
+    if serp_official_url:
+        return serp_official_url, "search_careers"
+    if norm.canonical_url and posting_host and _is_official_domain(posting_host, ext.company_hint):
+        return norm.canonical_url.strip(), "posting_on_company_domain"
+    return None, ""
 
 
 def _extract_days_from_snippet(snippet: str) -> Optional[int]:
@@ -103,13 +187,16 @@ async def _collect_serper_queries(coordinator: Any, base_query: str, company: st
     return res
 
 
-def build_evidence_bundle(norm: NormalizationResult, ext: ExtractionResult, serp_results: Dict[str, Any]) -> EvidenceBundle:
+def build_evidence_bundle(
+    norm: NormalizationResult,
+    ext: ExtractionResult,
+    serp_results: Dict[str, Any],
+    page_fetch: Optional[JobPageFetchOutcome] = None,
+) -> EvidenceBundle:
     signals: List[Dict[str, Any]] = []
     warnings: List[Dict[str, str]] = []
     evidence_sources: List[Dict[str, str]] = []
 
-    official_found = False
-    official_url = None
     duplicate_risk = False
     recruiter_verified = False
 
@@ -117,13 +204,11 @@ def build_evidence_bundle(norm: NormalizationResult, ext: ExtractionResult, serp
     title = ext.title_hint or ""
     base_query = f"{company} {title}".strip() or (norm.canonical_url or "")
 
-    # This function expects serp_results to be passed in.
-    # serp_results is obtained by awaiting _collect_serper_queries in orchestrator.py
-    pass
-
     careers_rows, careers_status, careers_warning = serp_results.get("careers", ([], "unverified", None))
     if careers_warning:
         warnings.append(careers_warning)
+
+    serp_official_url: Optional[str] = None
     for row in careers_rows:
         link = str(row.get("link") or "").strip()
         if not link.startswith(("http://", "https://")):
@@ -131,18 +216,48 @@ def build_evidence_bundle(norm: NormalizationResult, ext: ExtractionResult, serp
         evidence_sources.append({"url": link, "type": "careers_search", "found_at": _now_iso()})
         domain = urlparse(link).netloc
         if _is_official_domain(domain, ext.company_hint):
-            official_found = True
-            official_url = link
+            serp_official_url = link
             break
-    careers_strength = "none" if careers_status == "unverified" else ("high" if official_found else "low")
+
+    official_url, official_source = _resolve_official_careers_url(norm, ext, serp_official_url, page_fetch)
+    official_found = bool(official_url)
+
+    fetch_attempted = page_fetch is not None and page_fetch.attempted
+    html_candidates = bool(page_fetch and page_fetch.employer_page_urls)
+    careers_effectively_verified = careers_status == "verified" or (fetch_attempted and html_candidates)
+
+    if official_found:
+        careers_detail_map = {
+            "job_page_same_registrable": "Employer URL from the fetched job page shares this posting's domain.",
+            "job_page_company_match": "Employer URL extracted from the fetched job page.",
+            "search_careers": official_url or "Official careers listing matched via search.",
+            "posting_on_company_domain": "Job link is hosted on an employer-aligned domain.",
+        }
+        careers_detail = careers_detail_map.get(official_source, official_url or "Official employer URL resolved.")
+    elif careers_status == "unverified" and not fetch_attempted:
+        careers_detail = "unverified"
+    else:
+        careers_detail = "No clear official careers match."
+
+    careers_strength = (
+        "none"
+        if careers_status == "unverified" and not careers_effectively_verified
+        else ("high" if official_found else "low")
+    )
+    careers_sig_status = (
+        "unknown"
+        if careers_strength == "none"
+        else ("pass" if official_found else "fail")
+    )
+
     signals.append(
         _mk_signal(
             sid="careers_page_match",
             label="careers_page_match",
             tier="T1",
             strength=careers_strength,
-            detail="unverified" if careers_status == "unverified" else (official_url or "No clear official careers match."),
-            status="unknown" if careers_status == "unverified" else ("pass" if official_found else "fail"),
+            detail=careers_detail,
+            status=careers_sig_status,
             source=official_url or "serp",
         )
     )
@@ -158,6 +273,21 @@ def build_evidence_bundle(norm: NormalizationResult, ext: ExtractionResult, serp
                 source=official_url or "serp",
             )
         )
+
+    posting_host = _posting_hostname(norm)
+    official_host = (urlparse(official_url).hostname or "").lower() if official_url else ""
+    domain_match = bool(posting_host and official_host and _registrable_domains_align(posting_host, official_host))
+    signals.append(
+        _mk_signal(
+            sid="careers_domain_match",
+            label="careers_domain_match",
+            tier="T1",
+            strength="high" if domain_match else ("none" if not posting_host or not official_host else "low"),
+            detail="Careers and posting domains align." if domain_match else ("Insufficient domain data to compare." if not posting_host or not official_host else "Posting domain does not match the employer URL registrable domain."),
+            status="pass" if domain_match else ("unknown" if not posting_host or not official_host else "fail"),
+            source=official_url or norm.canonical_url or "pattern",
+        )
+    )
 
     board_rows, board_status, board_warning = serp_results.get("board", ([], "unverified", None))
     if board_warning:
@@ -275,21 +405,6 @@ def build_evidence_bundle(norm: NormalizationResult, ext: ExtractionResult, serp
         )
     )
 
-    posting_domain = (urlparse(norm.canonical_url).hostname or "").lower() if norm.canonical_url else ""
-    careers_domain = (urlparse(official_url).hostname or "").lower() if official_url else ""
-    domain_match = bool(posting_domain and careers_domain and posting_domain.split(":")[0].endswith(".".join(careers_domain.split(".")[-2:])))
-    signals.append(
-        _mk_signal(
-            sid="careers_domain_match",
-            label="careers_domain_match",
-            tier="T1",
-            strength="high" if domain_match else ("none" if not posting_domain or not careers_domain else "low"),
-            detail="Careers and posting domains align." if domain_match else ("Insufficient domain data to compare." if not posting_domain or not careers_domain else "Careers domain differs from posting domain."),
-            status="pass" if domain_match else ("unknown" if not posting_domain or not careers_domain else "fail"),
-            source=official_url or norm.canonical_url or "pattern",
-        )
-    )
-
     dup_rows, dup_status, dup_warning = serp_results.get("duplicates", ([], "unverified", None))
     if dup_warning:
         warnings.append(dup_warning)
@@ -321,12 +436,6 @@ def build_evidence_bundle(norm: NormalizationResult, ext: ExtractionResult, serp
                 source="serp",
             )
         )
-
-    if norm.canonical_url and not official_found:
-        parsed = urlparse(norm.canonical_url)
-        if _is_official_domain(parsed.netloc, ext.company_hint):
-            official_found = True
-            official_url = norm.canonical_url
 
     return EvidenceBundle(
         official_page_found=official_found,
