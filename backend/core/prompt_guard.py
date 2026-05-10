@@ -103,15 +103,36 @@ def is_prompt_leak(text: str) -> bool:
     if not text:
         return False
 
-    leak_markers = [
-        "The user wants",
-        "Key constraints",
-        "Data provided",
-        "Wait, there's",
-        "Constraints:",
-        "Instructions:",
-    ]
-    if any(marker in text for marker in leak_markers):
+    tl = text.lower()
+    # Keep aligned with backend.core.llm_safe._LEAK_MARKERS (no bare "the user wants" — models paraphrase tasks).
+    leak_markers = (
+        "the user wants you to",
+        "the user wants me to",
+        "the user asked you to",
+        "the user requested",
+        "key constraints",
+        "data provided",
+        "wait, there's",
+        "constraints:",
+        "instructions:",
+        "system prompt",
+        "you are a",
+        "as an ai",
+        "here is the system",
+        "here is the prompt",
+        "here is the full prompt",
+        "here is the instruction",
+        "given the following",
+        "based on the following evidence",
+        "write a function",
+        "write the verdict",
+        "generate json",
+        "generate the verdict",
+        "apply gate",
+        "medium+ with",
+        "high with support",
+    )
+    if any(m in tl for m in leak_markers):
         return True
 
     if _echoes_verdict_summary_user_message(text) or _echoes_reputation_user_message(text):
