@@ -530,9 +530,15 @@ def run_job_page_fetch(
 
         if status_code >= 400:
             warnings.append({"code": "FETCH_HTTP", "message": f"HTTP status {status_code}."})
+            human = (
+                f"HTTP {status_code}; page content could not be retrieved from this URL "
+                f"(host may block automated requests). Serper-based checks still run where possible."
+                if status_code in (401, 403, 429)
+                else f"HTTP {status_code}; received {total_read} bytes."
+            )
             return JobPageFetchOutcome(
                 attempted=True,
-                signals=[_fetch_ok_signal("low", f"HTTP {status_code}; received {total_read} bytes.")],
+                signals=[_fetch_ok_signal("low", human)],
                 warnings=warnings,
             )
 
@@ -592,6 +598,13 @@ def run_job_page_fetch(
                 html_bytes,
                 body_text_max_chars=cfg.fetch_body_text_max_chars,
             )
+            if not (extracted_job_text or "").strip():
+                warnings.append(
+                    {
+                        "code": "FETCH_EMPTY_EXTRACT",
+                        "message": "Page responded but readable job text could not be extracted (anti-bot or minimal HTML). Other signals still run.",
+                    }
+                )
 
         return JobPageFetchOutcome(
             attempted=True,

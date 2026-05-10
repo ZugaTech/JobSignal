@@ -168,17 +168,15 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
             message="We could not identify the company name from this posting. Paste the company name manually to enable reputation checks."
         )
 
+    # Six parallel Serper calls (fits tight SEARCH_MAX_CALLS_REPUTATION budgets on Railway).
+    # Plain queries only — site: operators often return empty/blocked rows from datacenter egress IPs.
     queries = {
-        "glassdoor": f"{company_name} reviews Glassdoor",
-        "indeed": f"{company_name} employee reviews Indeed",
-        "linkedin": f"{company_name} LinkedIn company reviews",
-        "reddit_1": f"{company_name} reviews reddit",
-        "reddit_2": f"{company_name} workplace culture reddit",
-        "reddit_3": f"{company_name} employee experience site:reddit.com",
-        "x_1": f"{company_name} layoffs site:x.com OR site:twitter.com",
-        "x_3": f"{company_name} great place to work site:x.com OR site:twitter.com",
-        "x_2": f"{company_name} hiring scam OR fake job site:x.com OR site:twitter.com",
-        "x_4": f"{company_name} hiring culture positive site:x.com OR site:twitter.com"
+        "reviews_aggregate": f"{company_name} employee reviews ratings Glassdoor Indeed",
+        "linkedin_company": f"{company_name} LinkedIn company reviews employees",
+        "reddit_culture": f"{company_name} company culture reddit employees",
+        "x_layoffs": f"{company_name} layoffs hiring twitter employees",
+        "x_watchouts": f"{company_name} workplace toxic scam fake recruiter twitter employees",
+        "x_positive": f"{company_name} great place to work reviews twitter employees",
     }
 
     try:

@@ -28,6 +28,7 @@ def test_ready_degraded_when_no_provider_keys(monkeypatch):
     body = r.json()
     assert body["status"] == "degraded"
     assert body["checks"]["llm_key"] == "fail"
+    assert "serp_key" in body["checks"]
     assert body["live_probe"] is False
 
 

@@ -11,6 +11,7 @@ Same JSON shape from [`backend/core/health.py`](../backend/core/health.py). Comp
 | `status` | `ready` (ok) / `degraded` (missing provider key or failed live probe) / implied 503 = `unavailable` (e.g. Redis down when `CACHE_URL` set) |
 | `checks.redis` | `skip` if no `CACHE_URL`; `pass`/`fail` if Redis configured |
 | `checks.llm_key` | Fireworks/LLM key present (`pass` without live probe; live result if `PROBE_PROVIDERS_ON_READY=1`) |
+| `checks.serp_key` | Serper (or accepted fallback search key) configured — **`fail`** means verify/evidence will degrade |
 | `checks.serp_key_for_recommendations` | Only strict when recommendations default on |
 | `features.*` | Feature flags from env (`job_fetch_enabled`, `llm_signals_enabled`, etc.) |
 | `live_probe` | Matches `PROBE_PROVIDERS_ON_READY` |

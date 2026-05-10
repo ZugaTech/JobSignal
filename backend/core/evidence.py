@@ -169,7 +169,7 @@ async def _collect_serper_queries(coordinator: Any, base_query: str, company: st
         "careers": coordinator.search(f"{base_query} careers".strip(), num=8),
         "board": coordinator.search(f"\"{title}\" \"{company}\" job".strip(), num=10),
         "rep": coordinator.search(f"\"{company}\" layoffs scam \"fake recruiter\"".strip(), num=8),
-        "linkedin": coordinator.search(f"site:linkedin.com/company \"{company}\"".strip(), num=5),
+        "linkedin": coordinator.search(f"{company} LinkedIn company page official".strip(), num=8),
         "registry": coordinator.search(f"\"{company}\" (crunchbase OR \"companies house\")".strip(), num=8),
         "duplicates": coordinator.search(f"\"{title}\" \"{company}\"".strip(), num=10),
     }

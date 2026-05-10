@@ -20,15 +20,15 @@
 | `NODE_ENV` | For **production**, set to `production` only after **Redis** is attached (see below). Until then, leaving it unset uses the app default and avoids the `CACHE_URL` requirement. |
 | `CACHE_URL` | **Required** when `NODE_ENV` is `production` or `staging`. Use the Redis connection URL from a Railway **Redis** plugin (same value as `REDIS_URL` on the Redis service, or a variable reference in the dashboard). |
 | `ALLOWED_ORIGINS` | e.g. `https://jobsignal.up.railway.app` or `*` for demos. |
-| `SERPER_API_KEY` | Primary Serper.dev key for search-backed evidence and recommendations. |
+| `SERPER_API_KEY` | Primary Serper.dev key for search-backed evidence and recommendations. If unset, `/ready` reports `checks.serp_key` **fail** and the API is **degraded**. |
 | `SEARCH_API_KEY` / `SERPAPI_API_KEY` | Legacy fallback aliases accepted by code; prefer `SERPER_API_KEY` for Railway. |
 | `FIREWORKS_API_KEY` / `LLM_API_KEY` | Enable LLM features when configured. |
 | `PROBE_PROVIDERS_ON_READY` | Keep `0` in production unless you intentionally want live Fireworks/Serper checks on `/ready`. |
 | `FETCH_MAX_BYTES` | Cap on raw HTML bytes read from the posting URL. |
 | `FETCH_BODY_TEXT_MAX_CHARS` | Max characters of cleaned **main-body** text merged into fetch extraction (default `16000`). |
-| `SEARCH_MAX_CALLS_EVIDENCE` | Serper POST budget for careers / boards / registry / duplicate queries (default `12`). |
-| `SEARCH_MAX_CALLS_REPUTATION` | Separate Serper budget for employer reputation searches (default `14`). |
-| `SEARCH_MAX_CALLS_RECOMMENDATIONS` | Serper budget when **similar jobs** are requested (default `10`). |
+| `SEARCH_MAX_CALLS_EVIDENCE` | Serper POST budget for careers / boards / registry / duplicate queries. Pipeline issues **6** parallel searches — set **≥ 8** (default in repo `8`). |
+| `SEARCH_MAX_CALLS_REPUTATION` | Serper budget for employer reputation. Code runs **6** parallel plain queries — set **≥ 6** (default `8`). Lower values silently skip searches and show “0 sources”. |
+| `SEARCH_MAX_CALLS_RECOMMENDATIONS` | Serper budget when **similar jobs** are requested (default `8`). |
 | `SCORER_VERSION` | Bump when scoring rules change (invalidates client expectations / docs only; cache keys use `SOURCE_PIPELINE_VERSION` too). |
 
 See **`.env.example`** for the full contract (`backend/core/config.py` → `ENV_SPECS`).
@@ -41,6 +41,8 @@ See **`.env.example`** for the full contract (`backend/core/config.py` → `ENV_
 4. Redeploy if needed.
 
 Until **`CACHE_URL`** is set, `/ready` reports **`checks.redis`: `skip`** (in-memory cache per instance). That matches **`NODE_ENV=development`** and is fine for demos; for **consistent cache across replicas**, Redis is required.
+
+Readiness always includes **`checks.serp_key`** and **`checks.llm_key`** (`pass` / `fail`) based on whether API keys are configured—no live probe required when `PROBE_PROVIDERS_ON_READY=0`.
 
 Copy the Redis URL into your **private** local [`.env`](.env) as **`CACHE_URL=`** before running [`scripts/push_env_to_railway.py`](../scripts/push_env_to_railway.py) without **`--no-delete`**, so the next sync does not clear Redis on Railway.
 

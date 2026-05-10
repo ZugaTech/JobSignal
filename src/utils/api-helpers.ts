@@ -9,6 +9,7 @@ import type {
 import {
   buildSignalsSummaryLine,
   containsLeakMarker,
+  formatPipelineSignalDetail,
   formatReasonForDisplay,
   formatWarningForDisplay,
   sanitizeField,
@@ -60,7 +61,7 @@ function buildDisplayRows(signals: PipelineSignalRow[], trustSignals: TrustSigna
       kind: 'pipeline' as const,
       id: s.id,
       strength: String(s.strength ?? ''),
-      detail: typeof s.details === 'string' ? s.details : undefined,
+      detail: formatPipelineSignalDetail(s.id, typeof s.details === 'string' ? s.details : undefined),
     }));
   }
   return trustSignals.map((t) => ({

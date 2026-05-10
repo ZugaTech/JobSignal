@@ -36,6 +36,7 @@ def build_ready_payload(
     checks: Dict[str, str] = {
         "redis": "skip",
         "llm_key": "pass" if has_llm_key else "fail",
+        "serp_key": "pass" if has_serp_key else "fail",
         "serp_key_for_recommendations": "skip",
     }
     if has_llm_key and fireworks_reachable is not None:
@@ -49,7 +50,11 @@ def build_ready_payload(
             checks["serp_key_for_recommendations"] = "pass" if serper_reachable else "fail"
 
     hard_fail = checks["redis"] == "fail"
-    degraded = checks["llm_key"] == "fail" or checks["serp_key_for_recommendations"] == "fail"
+    degraded = (
+        checks["llm_key"] == "fail"
+        or checks["serp_key"] == "fail"
+        or checks["serp_key_for_recommendations"] == "fail"
+    )
     status = "unavailable" if hard_fail else ("degraded" if degraded else "ready")
     return {
         "status": status,

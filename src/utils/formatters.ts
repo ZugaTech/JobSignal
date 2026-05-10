@@ -1,4 +1,16 @@
-import { SIGNAL_LABEL_MAP, STATUS_LABEL_MAP, REASON_MAP, LEAK_MARKERS, COPY_REWRITE_MAP } from './constants';
+import { SIGNAL_LABEL_MAP, STATUS_LABEL_MAP, REASON_MAP, LEAK_MARKERS, COPY_REWRITE_MAP, JD_SPECIFICITY_DETAIL_MAP } from './constants';
+
+export function formatPipelineSignalDetail(signalId: string, detail: string | undefined): string | undefined {
+  if (!detail) return undefined;
+  const d = detail.trim();
+  if (signalId === 'jd_specificity') {
+    const low = d.toLowerCase();
+    for (const [k, v] of Object.entries(JD_SPECIFICITY_DETAIL_MAP)) {
+      if (low === k.toLowerCase() || low.startsWith(k.toLowerCase())) return v;
+    }
+  }
+  return d;
+}
 
 export function getSignalLabel(key: string): string {
   const k = String(key ?? "").trim();

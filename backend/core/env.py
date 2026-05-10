@@ -79,19 +79,19 @@ class EnvConfig:
         search_rate_limit = _int("SEARCH_RATE_LIMIT_PER_MINUTE", int(app_cfg.get("SEARCH_RATE_LIMIT_PER_MINUTE") or 60), min_v=1, max_v=10000)
         search_max_evidence = _int(
             "SEARCH_MAX_CALLS_EVIDENCE",
-            int(app_cfg.get("SEARCH_MAX_CALLS_EVIDENCE") or 12),
+            int(app_cfg.get("SEARCH_MAX_CALLS_EVIDENCE") or 8),
             min_v=6,
             max_v=40,
         )
         search_max_reputation = _int(
             "SEARCH_MAX_CALLS_REPUTATION",
-            int(app_cfg.get("SEARCH_MAX_CALLS_REPUTATION") or 14),
+            int(app_cfg.get("SEARCH_MAX_CALLS_REPUTATION") or 8),
             min_v=6,
             max_v=40,
         )
         search_max_rec = _int(
             "SEARCH_MAX_CALLS_RECOMMENDATIONS",
-            int(app_cfg.get("SEARCH_MAX_CALLS_RECOMMENDATIONS") or 10),
+            int(app_cfg.get("SEARCH_MAX_CALLS_RECOMMENDATIONS") or 8),
             min_v=2,
             max_v=30,
         )

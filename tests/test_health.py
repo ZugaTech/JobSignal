@@ -17,9 +17,9 @@ def _sample_env(**overrides):
         search_timeout_s=10,
         search_retry_count=2,
         search_rate_limit_per_minute=60,
-        search_max_calls_evidence=12,
-        search_max_calls_reputation=14,
-        search_max_calls_recommendations=10,
+        search_max_calls_evidence=8,
+        search_max_calls_reputation=8,
+        search_max_calls_recommendations=8,
         fireworks_base_url="https://api.fireworks.ai/inference/v1",
         fireworks_model=DEFAULT_FIREWORKS_MODEL,
         fireworks_vision_model=DEFAULT_FIREWORKS_MODEL,
@@ -59,6 +59,13 @@ def test_ready_fails_when_cache_ping_false():
     cfg = _sample_env(cache_url="redis://localhost")
     r = build_ready_payload(cfg, cache_ping_ok=False)
     assert r["status"] == "unavailable"
+
+
+def test_ready_includes_serp_key_check():
+    cfg = _sample_env(cache_url=None)
+    r = build_ready_payload(cfg)
+    assert "serp_key" in r["checks"]
+    assert r["checks"]["serp_key"] in ("pass", "fail")
 
 
 def test_ready_includes_cache_ping_when_provided():

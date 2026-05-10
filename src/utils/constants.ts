@@ -8,6 +8,9 @@ export const SIGNAL_LABEL_MAP: Record<string, string> = {
   posting_duplication_signal: "Duplicate posting check",
   staleness_flag: "Posting age check",
   company_reputation_signal: "Reputation scan",
+  jd_specificity: "Job description quality",
+  jd_red_flags: "Job description risk patterns",
+  jd_missing_fields: "Missing job details",
   live_page_fetch: "Job page accessibility",
   domain_match_after_redirect: "Website consistency check",
   posting_url: "Posting source",
@@ -15,6 +18,13 @@ export const SIGNAL_LABEL_MAP: Record<string, string> = {
   domain_align: "Website consistency check",
   url_canonical: "Posting source",
   input_text_only: "Text-only input",
+};
+
+/** Maps jd_specificity backend detail tokens to UI copy. */
+export const JD_SPECIFICITY_DETAIL_MAP: Record<string, string> = {
+  "specificity=low": "Low detail",
+  "specificity=medium": "Moderate detail",
+  "specificity=high": "High detail",
 };
 
 export const STATUS_LABEL_MAP: Record<string, string> = {
