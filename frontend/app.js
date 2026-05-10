@@ -51,10 +51,25 @@ function getActivePaneId() {
 
 function readInputs() {
   const activePane = getActivePaneId();
+  const urlVal = $("jobUrl")?.value.trim() || "";
+  const textVal = $("jobText")?.value.trim() || "";
+
+  if (activePane === "batchPane") {
+    return {
+      url: "",
+      text: "",
+      file: null,
+      activePane,
+      includeSimilarJobs: $("includeSimilarJobs").checked,
+    };
+  }
+
+  const file = activePane === "imagePane" ? $("jobImage")?.files?.[0] ?? null : null;
+
   return {
-    url: activePane === "urlPane" || activePane === "imagePane" ? $("jobUrl")?.value.trim() || "" : "",
-    text: activePane === "textPane" || activePane === "imagePane" ? $("jobText")?.value.trim() || "" : "",
-    file: activePane === "imagePane" ? $("jobImage")?.files?.[0] ?? null : null,
+    url: urlVal,
+    text: textVal,
+    file,
     activePane,
     includeSimilarJobs: $("includeSimilarJobs").checked,
   };
@@ -95,6 +110,392 @@ function validateClientInputs(urlRaw, textRaw, file) {
     return { ok: false, message: "Image too large. Please use an image under 5MB." };
   return { ok: true };
 }
+
+/* --- Clipboard detection & extension query params --- */
+const JOB_URL_PATTERN =
+  /^https?:\/\/.*(linkedin\.com\/jobs|indeed\.com|glassdoor\.com\/job|greenhouse\.io|lever\.co|workday|wellfound\.com|jobvite|smartrecruiters|ashbyhq|bamboohr)/i;
+const JOB_DESCRIPTION_KEYWORDS = [
+  "responsibilities",
+  "requirements",
+  "qualifications",
+  "experience",
+  "salary",
+  "compensation",
+  "apply",
+  "hiring",
+  "position",
+  "role",
+  "full-time",
+  "part-time",
+  "remote",
+  "on-site",
+  "hybrid",
+  "benefits",
+];
+
+let pendingClipboard = { content: "", type: "" };
+let fabHideTimer = null;
+
+function countJobKeywords(text) {
+  const lower = String(text || "").toLowerCase();
+  return JOB_DESCRIPTION_KEYWORDS.filter((k) => lower.includes(k)).length;
+}
+
+function classifyClipboardContent(text) {
+  if (/^https?:\/\//i.test(text)) {
+    if (JOB_URL_PATTERN.test(text)) return "JOB_URL";
+    return "OTHER_URL";
+  }
+  if (text.length > 100) {
+    const matches = countJobKeywords(text);
+    if (matches >= 3) return "JOB_DESCRIPTION";
+  }
+  return "UNKNOWN";
+}
+
+function shouldShowClipboardFab(type, text) {
+  if (type === "JOB_URL") return true;
+  if (type === "JOB_DESCRIPTION" && countJobKeywords(text) >= 5) return true;
+  return false;
+}
+
+function switchTab(name) {
+  const map = { url: "urlPane", description: "textPane", batch: "batchPane", image: "imagePane" };
+  const paneId = map[name] || "urlPane";
+  document.querySelectorAll(".input-pane").forEach((p) => p.classList.add("hidden"));
+  const pane = $(paneId);
+  if (pane) pane.classList.remove("hidden");
+  document.querySelectorAll(".tab-chip").forEach((t) => {
+    const active = t.dataset.tabTarget === paneId;
+    t.classList.toggle("is-active", active);
+    if (t.hasAttribute("aria-pressed")) t.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function readDismissedClipboardSet() {
+  try {
+    const raw = sessionStorage.getItem("clipboard_dismissed_list");
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeDismissedClipboardSet(arr) {
+  try {
+    sessionStorage.setItem("clipboard_dismissed_list", JSON.stringify(arr.slice(-50)));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function isClipboardDismissed(trimmed) {
+  return readDismissedClipboardSet().includes(trimmed);
+}
+
+function hideClipboardToast() {
+  const toast = $("clipboardToast");
+  if (toast) toast.classList.add("hidden");
+}
+
+function hideClipboardFabAndTimers() {
+  if (fabHideTimer) {
+    clearTimeout(fabHideTimer);
+    fabHideTimer = null;
+  }
+  const fab = $("quickAnalyzeFab");
+  if (fab) fab.classList.add("hidden");
+}
+
+function showClipboardFabForPending() {
+  const fab = $("quickAnalyzeFab");
+  if (!fab || !shouldShowClipboardFab(pendingClipboard.type, pendingClipboard.content)) return;
+  fab.classList.remove("hidden");
+  if (fabHideTimer) clearTimeout(fabHideTimer);
+  fabHideTimer = setTimeout(() => {
+    fab.classList.add("hidden");
+    fabHideTimer = null;
+  }, 30000);
+}
+
+function showClipboardToast(content, type) {
+  pendingClipboard = { content, type };
+  const toast = $("clipboardToast");
+  const msg = $("clipboardToastText");
+  if (!toast || !msg) return;
+  msg.textContent =
+    type === "url"
+      ? "Job link detected in clipboard — analyze it?"
+      : "Job description detected in clipboard — analyze it?";
+  toast.classList.remove("hidden");
+  showClipboardFabForPending();
+}
+
+function showUrlClipboardBadge() {
+  const b = $("urlClipboardBadge");
+  const w = document.querySelector("#urlPane .input-wrapper");
+  if (b) b.classList.remove("hidden");
+  if (w) w.classList.add("from-clipboard");
+}
+
+function showTextClipboardBadge() {
+  const b = $("textClipboardBadge");
+  const w = document.querySelector("#textPane .input-wrapper");
+  if (b) b.classList.remove("hidden");
+  if (w) w.classList.add("from-clipboard");
+}
+
+function showManualClipboardButton() {
+  const hint = $("clipboardHint");
+  if (hint) hint.classList.remove("hidden");
+}
+
+function clipboardHttpsOk() {
+  if (location.protocol === "https:") return true;
+  const h = location.hostname;
+  return h === "localhost" || h === "127.0.0.1";
+}
+
+async function detectClipboard() {
+  if (!clipboardHttpsOk()) {
+    showManualClipboardButton();
+    return;
+  }
+  try {
+    let permissionState = "prompt";
+    try {
+      const permission = await navigator.permissions.query({ name: "clipboard-read" });
+      permissionState = permission.state;
+    } catch {
+      /* Permissions API unsupported — still try readText */
+    }
+    if (permissionState === "denied") {
+      showManualClipboardButton();
+      return;
+    }
+
+    const text = await navigator.clipboard.readText();
+    if (!text || text.trim().length === 0) return;
+
+    const trimmed = text.trim();
+    if (isClipboardDismissed(trimmed)) return;
+    if (trimmed === sessionStorage.getItem("last_seen_clipboard")) return;
+    if (trimmed === sessionStorage.getItem("clipboard_analyzed")) return;
+
+    sessionStorage.setItem("last_seen_clipboard", trimmed);
+
+    const type = classifyClipboardContent(trimmed);
+    if (type === "JOB_URL") {
+      showClipboardToast(trimmed, "url");
+    } else if (type === "JOB_DESCRIPTION") {
+      showClipboardToast(trimmed, "description");
+    }
+  } catch {
+    showManualClipboardButton();
+  }
+}
+
+function decodeJobDescriptionParam(b64) {
+  if (!b64) return null;
+  try {
+    return decodeURIComponent(atob(b64));
+  } catch {
+    try {
+      return decodeURIComponent(escape(atob(b64)));
+    } catch {
+      return null;
+    }
+  }
+}
+
+function handleQueryParams() {
+  const params = new URLSearchParams(window.location.search);
+  const jobUrl = params.get("url");
+  const jobDescriptionB64 = params.get("job_description");
+  const batchUrlsParam = params.get("batch_urls");
+
+  if (jobUrl) {
+    const urlInput = $("jobUrl");
+    if (urlInput) urlInput.value = jobUrl;
+    switchTab("url");
+    showUrlClipboardBadge();
+  }
+
+  if (jobDescriptionB64) {
+    try {
+      const decoded = decodeJobDescriptionParam(jobDescriptionB64);
+      const descInput = $("jobText");
+      if (decoded != null && decoded !== "" && descInput) {
+        descInput.value = decoded;
+        const wrap = document.querySelector("#textPane .input-wrapper");
+        if (wrap) wrap.classList.add("from-clipboard");
+        showTextClipboardBadge();
+      }
+      if (!jobUrl) switchTab("description");
+    } catch (e) {
+      console.warn("Failed to decode job_description param", e);
+    }
+  }
+
+  if (batchUrlsParam) {
+    try {
+      const raw = decodeURIComponent(atob(batchUrlsParam));
+      const urls = JSON.parse(raw);
+      if (Array.isArray(urls) && urls.length > 0) {
+        const batchInput = $("batchUrls");
+        if (batchInput) batchInput.value = urls.join("\n");
+        switchTab("batch");
+      }
+    } catch (e) {
+      console.warn("Failed to decode batch_urls param", e);
+    }
+  }
+
+  if (jobUrl || jobDescriptionB64) {
+    runFlow();
+  }
+}
+
+function wireClipboardUi() {
+  const analyzeBtn = $("clipboardAnalyzeNow");
+  const dismissBtn = $("clipboardDismiss");
+  const fab = $("quickAnalyzeFab");
+  const pasteBtn = $("btnClipboardPaste");
+  const jobUrlEl = $("jobUrl");
+  const jobTextEl = $("jobText");
+
+  if (analyzeBtn) {
+    analyzeBtn.addEventListener("click", () => {
+      const { content, type } = pendingClipboard;
+      const trimmed = (content || "").trim();
+      sessionStorage.setItem("clipboard_analyzed", trimmed);
+      hideClipboardToast();
+      hideClipboardFabAndTimers();
+
+      if (type === "url") {
+        if (jobUrlEl) jobUrlEl.value = content;
+        switchTab("url");
+        showUrlClipboardBadge();
+      } else if (type === "description") {
+        if (jobTextEl) jobTextEl.value = content;
+        switchTab("description");
+        showTextClipboardBadge();
+      }
+      runFlow();
+    });
+  }
+
+  if (dismissBtn) {
+    dismissBtn.addEventListener("click", () => {
+      const trimmed = (pendingClipboard.content || "").trim();
+      if (trimmed) {
+        const list = readDismissedClipboardSet();
+        if (!list.includes(trimmed)) list.push(trimmed);
+        writeDismissedClipboardSet(list);
+      }
+      hideClipboardToast();
+      hideClipboardFabAndTimers();
+    });
+  }
+
+  if (fab) {
+    fab.addEventListener("click", () => {
+      const { content, type } = pendingClipboard;
+      const trimmed = (content || "").trim();
+      sessionStorage.setItem("clipboard_analyzed", trimmed);
+      hideClipboardToast();
+      hideClipboardFabAndTimers();
+
+      if (type === "url") {
+        if (jobUrlEl) jobUrlEl.value = content;
+        switchTab("url");
+        showUrlClipboardBadge();
+      } else if (type === "description") {
+        if (jobTextEl) jobTextEl.value = content;
+        switchTab("description");
+        showTextClipboardBadge();
+      }
+      runFlow();
+    });
+  }
+
+  if (pasteBtn) {
+    pasteBtn.addEventListener("click", async () => {
+      const hint = $("clipboardHint");
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text || !text.trim()) {
+          if (hint) {
+            hint.textContent = "Please paste your job link or description directly into the field below.";
+            hint.classList.remove("hidden");
+          }
+          return;
+        }
+        const trimmed = text.trim();
+        const type = classifyClipboardContent(trimmed);
+        if (type === "JOB_URL") {
+          if (jobUrlEl) jobUrlEl.value = trimmed;
+          switchTab("url");
+          showUrlClipboardBadge();
+        } else if (type === "JOB_DESCRIPTION") {
+          if (jobTextEl) jobTextEl.value = trimmed;
+          switchTab("description");
+          showTextClipboardBadge();
+        } else if (looksLikeJobUrl(trimmed)) {
+          if (jobUrlEl) jobUrlEl.value = normalizeJobUrlInput(trimmed);
+          switchTab("url");
+          showUrlClipboardBadge();
+        } else {
+          if (jobTextEl) jobTextEl.value = trimmed;
+          switchTab("description");
+          showTextClipboardBadge();
+        }
+        if (hint) hint.classList.add("hidden");
+      } catch {
+        if (hint) {
+          hint.textContent = "Please paste your job link or description directly into the field below.";
+          hint.classList.remove("hidden");
+        }
+      }
+    });
+  }
+
+  if (jobUrlEl)
+    jobUrlEl.addEventListener("input", () => {
+      $("urlClipboardBadge")?.classList.add("hidden");
+      document.querySelector("#urlPane .input-wrapper")?.classList.remove("from-clipboard");
+    });
+  if (jobTextEl)
+    jobTextEl.addEventListener("input", () => {
+      $("textClipboardBadge")?.classList.add("hidden");
+      document.querySelector("#textPane .input-wrapper")?.classList.remove("from-clipboard");
+    });
+
+  const du = $("dismissUrlBadge");
+  const dt = $("dismissTextBadge");
+  if (du)
+    du.addEventListener("click", () => {
+      $("urlClipboardBadge")?.classList.add("hidden");
+      document.querySelector("#urlPane .input-wrapper")?.classList.remove("from-clipboard");
+    });
+  if (dt)
+    dt.addEventListener("click", () => {
+      $("textClipboardBadge")?.classList.add("hidden");
+      document.querySelector("#textPane .input-wrapper")?.classList.remove("from-clipboard");
+    });
+}
+
+function initClipboardAndDeepLink() {
+  wireClipboardUi();
+  handleQueryParams();
+  detectClipboard();
+}
+
+document.addEventListener("DOMContentLoaded", initClipboardAndDeepLink);
+window.addEventListener("focus", () => {
+  detectClipboard();
+});
 
 function setPhase(phase) {
   const root = document.querySelector(".shell");
@@ -762,7 +1163,7 @@ async function runFlow() {
   if (activePane === "textPane" && text && !url && looksLikeJobUrl(text)) {
     const normalized = normalizeJobUrlInput(text);
     document.querySelectorAll(".tab-chip").forEach((t) => {
-      if (t.dataset.tabTarget === "#urlPane") t.click();
+      if (t.dataset.tabTarget === "urlPane") t.click();
     });
     if ($("jobUrl")) $("jobUrl").value = normalized;
     if ($("jobText")) $("jobText").value = "";
@@ -788,6 +1189,7 @@ async function runFlow() {
 
   $("errorPanel").classList.add("hidden");
   setPhase(PHASE.LOADING);
+  hideClipboardFabAndTimers();
   openModal();
 
   try {
@@ -981,11 +1383,4 @@ if ($("btnModalCopyJson")) {
       alert("Could not copy to clipboard.");
     }
   });
-}
-
-// Auto-run if URL param exists
-const params = new URLSearchParams(window.location.search);
-if (params.get("url")) {
-  if ($("jobUrl")) $("jobUrl").value = params.get("url");
-  runFlow();
 }

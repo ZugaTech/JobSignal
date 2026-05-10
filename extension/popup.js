@@ -1,5 +1,7 @@
 /** Default to deployed Railway-style host; users can override in settings for local dev. */
 let backendUrl = "https://jobsignal.up.railway.app";
+/** Optional full web app URL (settings); otherwise same origin as backendUrl is used. */
+let webAppUrlOverride = null;
 let currentJobData = null;
 let currentTabUrl = "";
 
@@ -17,13 +19,16 @@ function showState(stateEl) {
   if (stateEl) stateEl.classList.remove("hidden");
 }
 
-chrome.storage.local.get(["backendUrl"], (res) => {
+chrome.storage.local.get(["backendUrl", "webAppUrl"], (res) => {
   const input = document.getElementById("backendUrlInput");
   if (res.backendUrl) {
     backendUrl = res.backendUrl;
     if (input) input.value = backendUrl;
   } else if (input && !input.value) {
     input.placeholder = "https://your-app.up.railway.app";
+  }
+  if (res.webAppUrl) {
+    webAppUrlOverride = res.webAppUrl;
   }
 });
 
@@ -42,17 +47,25 @@ document.getElementById("btnClearCache").addEventListener("click", () => {
   alert("Cache cleared");
 });
 
-function openWebApp(url, text) {
+function openWebApp(jobUrl, jobDescription) {
+  let baseForOrigin = webAppUrlOverride || backendUrl;
   let origin = "https://jobsignal.up.railway.app";
   try {
-    origin = new URL(backendUrl).origin;
+    origin = new URL(baseForOrigin).origin;
   } catch {
     /* keep default */
   }
-  const appUrl = new URL(origin);
-  if (url) appUrl.searchParams.set("url", url);
-  if (text) appUrl.searchParams.set("job_description", btoa(unescape(encodeURIComponent(text))));
-  chrome.tabs.create({ url: appUrl.toString() });
+
+  const params = new URLSearchParams();
+  if (jobUrl) params.set("url", jobUrl);
+
+  if (jobDescription && jobDescription.trim().length > 0) {
+    const encoded = btoa(encodeURIComponent(jobDescription));
+    params.set("job_description", encoded);
+  }
+
+  const qs = params.toString();
+  chrome.tabs.create({ url: qs ? `${origin}/?${qs}` : `${origin}/` });
 }
 
 document.getElementById("btnSeeFull").addEventListener("click", () => openWebApp(currentJobData?.url, currentJobData?.description));

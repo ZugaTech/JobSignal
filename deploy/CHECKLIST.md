@@ -15,5 +15,5 @@
 Notes:
 - Frontend can be served separately as static files, or proxied by your web tier to this API.
 - In degraded mode, core verify still works; optional sources are limited.
-- Clipboard auto-detect needs HTTPS in production (Clipboard API); localhost works for dev.
+- Clipboard detection requires HTTPS (Clipboard API). Confirm Railway deployment uses HTTPS before demo; localhost and `127.0.0.1` work for dev.
 - Leave `PROBE_PROVIDERS_ON_READY=0` in production unless you explicitly want `/ready` to spend provider quota on live Fireworks/Serper checks.
