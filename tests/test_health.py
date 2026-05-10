@@ -1,4 +1,5 @@
 from backend.core.env import EnvConfig
+from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
 from backend.core.health import build_health_payload, build_ready_payload
 
 
@@ -31,8 +32,8 @@ def test_ready_staging_without_cache_not_ready():
         search_retry_count=2,
         search_rate_limit_per_minute=60,
         fireworks_base_url="https://api.fireworks.ai/inference/v1",
-        fireworks_model="accounts/fireworks/models/kimi-k2p6",
-        fireworks_vision_model="accounts/fireworks/models/kimi-k2p6",
+        fireworks_model=DEFAULT_FIREWORKS_MODEL,
+        fireworks_vision_model=DEFAULT_FIREWORKS_MODEL,
         fireworks_timeout_s=10,
         fireworks_retry_count=2,
         log_level="info",
@@ -58,8 +59,8 @@ def test_ready_fails_when_cache_ping_false():
         search_retry_count=2,
         search_rate_limit_per_minute=60,
         fireworks_base_url="https://api.fireworks.ai/inference/v1",
-        fireworks_model="accounts/fireworks/models/kimi-k2p6",
-        fireworks_vision_model="accounts/fireworks/models/kimi-k2p6",
+        fireworks_model=DEFAULT_FIREWORKS_MODEL,
+        fireworks_vision_model=DEFAULT_FIREWORKS_MODEL,
         fireworks_timeout_s=10,
         fireworks_retry_count=2,
         log_level="info",
@@ -84,8 +85,8 @@ def test_ready_includes_cache_ping_when_provided():
         search_retry_count=2,
         search_rate_limit_per_minute=60,
         fireworks_base_url="https://api.fireworks.ai/inference/v1",
-        fireworks_model="accounts/fireworks/models/kimi-k2p6",
-        fireworks_vision_model="accounts/fireworks/models/kimi-k2p6",
+        fireworks_model=DEFAULT_FIREWORKS_MODEL,
+        fireworks_vision_model=DEFAULT_FIREWORKS_MODEL,
         fireworks_timeout_s=10,
         fireworks_retry_count=2,
         log_level="info",
@@ -110,8 +111,8 @@ def test_ready_payload_reports_live_probe_flag():
         search_retry_count=2,
         search_rate_limit_per_minute=60,
         fireworks_base_url="https://api.fireworks.ai/inference/v1",
-        fireworks_model="accounts/fireworks/models/kimi-k2p6",
-        fireworks_vision_model="accounts/fireworks/models/kimi-k2p6",
+        fireworks_model=DEFAULT_FIREWORKS_MODEL,
+        fireworks_vision_model=DEFAULT_FIREWORKS_MODEL,
         fireworks_timeout_s=10,
         fireworks_retry_count=2,
         log_level="info",

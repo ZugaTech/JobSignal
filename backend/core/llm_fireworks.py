@@ -11,6 +11,8 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
+
 
 @dataclass(frozen=True, slots=True)
 class LlmSignalResult:
@@ -78,7 +80,7 @@ def extract_job_fields_from_image_vision(
     model = (
         _get("FIREWORKS_VISION_MODEL")
         or _get("FIREWORKS_MODEL")
-        or "accounts/fireworks/models/kimi-k2p6"
+        or DEFAULT_FIREWORKS_MODEL
     )
     timeout_s = int(_get("FIREWORKS_TIMEOUT_S", "45") or "45")
 
@@ -196,7 +198,7 @@ def build_llm_signals(*, job_text: str) -> LlmSignalResult:
             ],
         )
 
-    model = _get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2p6") or ""
+    model = _get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL) or ""
     timeout_s = int(_get("FIREWORKS_TIMEOUT_S", "20") or "20")
 
     prompt = (

@@ -22,6 +22,7 @@ from backend.core.cache_store import CacheStore, InMemoryCache, RedisCache
 from backend.core.coordinator import EvidenceCoordinator
 from backend.core.decision_schema import DecisionResponse, ReasonItem, Verdict, WarningItem
 from backend.core.env import EnvConfig
+from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
 from backend.core.evidence import build_evidence_bundle, _collect_serper_queries
 from backend.core.extraction import extract_entities
 from backend.core.fetch_job_page import JobPageFetchOutcome, job_fetch_enabled, run_job_page_fetch
@@ -576,7 +577,7 @@ async def verify_job(
             ],
             fallback=fallback_txt,
             request_id=request_id,
-            model=_get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2p6"),
+            model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
             temperature=0.3,
             max_tokens=150,
             timeout=8.0,

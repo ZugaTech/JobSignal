@@ -8,6 +8,8 @@ import re
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
+
+from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
 from backend.core.structured_log import logger
 
 @dataclass(frozen=True, slots=True)
@@ -103,7 +105,7 @@ def extract_company_name_hardened(url: Optional[str], text: Optional[str], *, re
                     messages=[{"role": "user", "content": prompt}],
                     fallback="null.",
                     request_id=request_id,
-                    model=_get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2p6"),
+                    model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
                     temperature=0.1,
                     max_tokens=24,
                     timeout=4.0,
@@ -547,7 +549,7 @@ async def _generate_llm_summary(
         ],
         fallback=fallback_txt,
         request_id=request_id,
-        model=_get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2p6"),
+        model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
         temperature=0.3,
         max_tokens=150,
         timeout=8.0,

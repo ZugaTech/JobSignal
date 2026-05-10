@@ -8,6 +8,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
+from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
 from backend.core.llm_fireworks import _client, _get
 from backend.core.prompt_guard import extract_chat_completion_message_text
 from backend.core.user_copy import contains_internal_verdict_jargon
@@ -69,7 +70,7 @@ def call_llm_safe_chat_sync(
     if prose_mode and require_sentence_period and "." not in fallback:
         raise ValueError("prose fallback must include a period")
 
-    mid = model or _get("FIREWORKS_MODEL") or "accounts/fireworks/models/kimi-k2p6"
+    mid = model or _get("FIREWORKS_MODEL") or DEFAULT_FIREWORKS_MODEL
     try:
         tout = float(timeout if timeout is not None else (_get("FIREWORKS_TIMEOUT_S") or "10"))
     except ValueError:

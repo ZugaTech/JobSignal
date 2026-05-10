@@ -47,7 +47,7 @@ This MVP does not currently ship tenant-header auth variables in code. Older pla
 | `ENABLE_LLM_SIGNALS` | Optional | `1` enables LLM-derived *text-only* signals from job description |
 | `FIREWORKS_API_KEY` | When LLM enabled | Fireworks API key for runtime inference |
 | `FIREWORKS_BASE_URL` | No | Defaults to Fireworks OpenAI-compatible base URL |
-| `FIREWORKS_MODEL` | No | Fireworks model id for chat completions (default in repo: **Kimi K2.6** `accounts/fireworks/models/kimi-k2p6`) |
+| `FIREWORKS_MODEL` | No | Fireworks model id for chat completions (default: **Kimi K2.6** — canonical id in `backend/core/fireworks_defaults.py`) |
 | `FIREWORKS_TIMEOUT_S` | No | LLM request timeout in seconds |
 | `LLM_API_KEY` | Optional | Fallback key name (if not using Fireworks var names) |
 | `LLM_MODEL_VERSION` | Optional | Model id for audit trail (if used elsewhere) |

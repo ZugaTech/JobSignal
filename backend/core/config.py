@@ -7,6 +7,8 @@ import os
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
+
 
 @dataclass(frozen=True, slots=True)
 class EnvVarSpec:
@@ -73,8 +75,8 @@ ENV_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("FIREWORKS_API_KEY", str, None, "Primary Fireworks API key"),
     EnvVarSpec("LLM_API_KEY", str, None, "Fallback LLM provider key"),
     EnvVarSpec("FIREWORKS_BASE_URL", str, "https://api.fireworks.ai/inference/v1", "Fireworks OpenAI-compatible base URL"),
-    EnvVarSpec("FIREWORKS_MODEL", str, "accounts/fireworks/models/kimi-k2p6", "Text model id"),
-    EnvVarSpec("FIREWORKS_VISION_MODEL", str, "accounts/fireworks/models/kimi-k2p6", "Vision model id"),
+    EnvVarSpec("FIREWORKS_MODEL", str, DEFAULT_FIREWORKS_MODEL, "Text model id"),
+    EnvVarSpec("FIREWORKS_VISION_MODEL", str, DEFAULT_FIREWORKS_MODEL, "Vision model id"),
     EnvVarSpec("FIREWORKS_TIMEOUT_S", _as_int, 8, "LLM call timeout in seconds"),
     EnvVarSpec("FIREWORKS_RETRY_COUNT", _as_int, 2, "LLM retry attempts"),
     EnvVarSpec("PIPELINE_DEADLINE_S", _as_int, 18, "Hard cap for parallel evidence phase (seconds)"),

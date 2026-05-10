@@ -28,7 +28,7 @@ Allow an optional **screenshot** of a job posting to seed verification when text
 
 - **Feature flag:** `ENABLE_IMAGE_VERIFY=1`
 - **Auth:** `FIREWORKS_API_KEY` (or `LLM_API_KEY`)
-- **Model:** `FIREWORKS_VISION_MODEL` (fallback: `FIREWORKS_MODEL`, then `accounts/fireworks/models/kimi-k2p6` per [Fireworks vision guide](https://docs.fireworks.ai/guides/querying-vision-language-models))
+- **Model:** `FIREWORKS_VISION_MODEL` (fallback: `FIREWORKS_MODEL`, then the repo default in `backend/core/fireworks_defaults.py` per [Fireworks vision guide](https://docs.fireworks.ai/guides/querying-vision-language-models))
 - **Timeout:** `FIREWORKS_TIMEOUT_S` (default 45s for vision calls)
 
 When disabled or misconfigured, screenshot-only requests return **`ingestion.status: insufficient`** and a clear ask for URL/text (no fabricated job facts).

@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
+
 logger = logging.getLogger("jobsignal")
 
 # ---------------------------------------------------------------------------
@@ -153,7 +155,7 @@ def extract_fields_from_description(
     if not api_key:
         return _empty
 
-    model = _get("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2p6") or ""
+    model = _get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL) or ""
     timeout_s = int(_get("FIREWORKS_TIMEOUT_S", "20") or "20")
 
     prompt = _EXTRACTION_PROMPT.format(text=text[:20_000])
