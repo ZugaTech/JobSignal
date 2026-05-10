@@ -376,9 +376,9 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               className="fixed inset-0 z-[100] overflow-y-auto bg-background/95 backdrop-blur-md p-4 md:p-8"
             >
-              <div className="max-w-5xl mx-auto space-y-6 pb-20">
-                <div className="flex items-center justify-between glass p-4 rounded-2xl sticky top-0 z-10">
-                  <div className="flex items-center gap-4">
+              <div className="max-w-7xl mx-auto space-y-6 pb-20">
+                <div className="flex items-center justify-between gap-4 glass px-4 py-3 md:px-6 rounded-2xl sticky top-2 z-10 border border-border/80 shadow-lg shadow-black/20">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className={cn(
                       "px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider",
                       report.verdict === 'APPLY' ? "bg-green-500/20 text-green-400 border border-green-500/30" :
@@ -394,20 +394,26 @@ export default function App() {
                       </span>
                     )}
                   </div>
-                  <button onClick={reset} className="p-2 hover:bg-neutral-800 rounded-full transition-colors">
-                    <X className="w-6 h-6" />
+                  <button
+                    type="button"
+                    onClick={reset}
+                    className="shrink-0 p-2.5 hover:bg-neutral-800 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand/40"
+                    aria-label="Close results"
+                  >
+                    <X className="w-5 h-5" />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* ~58% analysis / ~42% company & extras — wider reputation column than 2:1 */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 lg:items-start">
                   {/* Left Column: Verdict & Signals */}
-                  <div className="lg:col-span-2 space-y-6">
-                    <div className="glass rounded-3xl p-8 space-y-8">
+                  <div className="lg:col-span-7 space-y-6 min-w-0">
+                    <div className="glass rounded-3xl p-6 md:p-8 space-y-8 border border-border/60">
                       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-                        <div>
+                        <div className="min-w-0">
                           <h2 className="text-sm font-medium text-neutral-500 uppercase tracking-widest mb-2">Final Verdict</h2>
                           <div className={cn(
-                            "text-6xl font-display font-black tracking-tighter",
+                            "text-4xl sm:text-5xl md:text-6xl font-display font-black tracking-tighter break-words",
                             report.verdict === 'APPLY' ? "text-green-400" :
                             report.verdict === 'SKIP' ? "text-red-400" :
                             "text-amber-400"
@@ -443,7 +449,7 @@ export default function App() {
                           <Info className="w-5 h-5 text-brand" />
                           Analysis Summary
                         </h3>
-                        <p className="text-neutral-300 leading-relaxed text-lg">
+                        <p className="text-neutral-300 leading-relaxed text-base md:text-lg">
                           {rewriteMicrocopy(report.llm_summary)}
                         </p>
                       </div>
@@ -452,8 +458,8 @@ export default function App() {
                         <h3 className="text-lg font-bold">Why this verdict?</h3>
                         <ul className="space-y-3">
                           {report.reasons.map((reason: string, i: number) => (
-                            <li key={i} className="flex gap-3 text-neutral-400">
-                              <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-brand shrink-0" />
+                            <li key={i} className="flex gap-3 text-neutral-400 leading-relaxed">
+                              <div className="mt-2 w-1.5 h-1.5 rounded-full bg-brand shrink-0" />
                               <span>{rewriteMicrocopy(reason)}</span>
                             </li>
                           ))}
@@ -479,8 +485,9 @@ export default function App() {
                     </div>
 
                     {/* Signals Detailed List */}
-                    <div className="glass rounded-3xl p-8">
+                    <div className="glass rounded-3xl p-6 md:p-8 border border-border/60">
                       <button 
+                        type="button"
                         onClick={() => setShowSignals(!showSignals)}
                         className="flex items-center justify-between w-full group"
                       >
@@ -521,29 +528,34 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Right Column: Reputation & Similar */}
-                  <div className="space-y-6">
+                  {/* Right Column: Reputation & Similar — wider column for readable employer review */}
+                  <div className="lg:col-span-5 space-y-6 min-w-0">
                     {/* Reputation Card */}
                     {!report.hideReputationPanel && report.review_summary && (
-                      <div className="glass rounded-3xl p-8 space-y-6">
-                        <h3 className="text-lg font-bold flex items-center gap-2">
-                          <Building2 className="w-5 h-5 text-brand" />
-                          Company Trust
-                        </h3>
+                      <div className="glass rounded-3xl p-6 md:p-8 space-y-6 border border-border/60 ring-1 ring-white/[0.04]">
+                        <div>
+                          <h3 className="text-lg md:text-xl font-bold flex items-center gap-2">
+                            <Building2 className="w-5 h-5 text-brand shrink-0" />
+                            Company trust
+                          </h3>
+                          <p className="text-xs text-neutral-500 mt-1.5 leading-snug">
+                            Public employer signals — separate from this posting’s job confidence.
+                          </p>
+                        </div>
                         
-                        <div className="flex items-center gap-6">
+                        <div className="flex flex-wrap items-center gap-5 sm:gap-6">
                           <div className={cn(
-                            "w-20 h-20 rounded-2xl flex flex-col items-center justify-center border-2",
+                            "w-[5.5rem] h-[5.5rem] sm:w-24 sm:h-24 rounded-2xl flex flex-col items-center justify-center border-2 shrink-0",
                             report.review_summary.review_confidence_score > 70 ? "border-green-500/50 text-green-400 bg-green-500/5" :
                             report.review_summary.review_confidence_score > 40 ? "border-amber-500/50 text-amber-400 bg-amber-500/5" :
                             "border-red-500/50 text-red-400 bg-red-500/5"
                           )}>
-                            <span className="text-2xl font-black">{report.review_summary.review_confidence_score}</span>
-                            <span className="text-[10px] uppercase font-bold opacity-60">Score</span>
+                            <span className="text-3xl font-black tabular-nums">{report.review_summary.review_confidence_score}</span>
+                            <span className="text-[11px] uppercase font-semibold tracking-wide opacity-70">Score</span>
                           </div>
-                          <div>
-                            <p className="text-xs text-neutral-500 uppercase font-bold mb-1">Sentiment</p>
-                            <p className="text-xl font-display font-bold text-white capitalize">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs text-neutral-500 uppercase tracking-wide font-semibold mb-1">Sentiment</p>
+                            <p className="text-xl sm:text-2xl font-display font-bold text-white capitalize">
                               {report.review_summary.overall_sentiment?.replace('_', ' ')}
                             </p>
                           </div>
@@ -551,27 +563,31 @@ export default function App() {
 
                         <div className="flex flex-wrap gap-2">
                           {report.review_summary.green_flags?.map((f: string, i: number) => (
-                            <span key={i} className="px-3 py-1 bg-green-500/10 text-green-400 text-[10px] font-bold rounded-full border border-green-500/20 uppercase">
-                              ✓ {f}
+                            <span key={i} className="px-3 py-1.5 bg-green-500/10 text-green-400 text-xs font-medium rounded-xl border border-green-500/25 leading-snug">
+                              <span className="mr-1 opacity-90">✓</span>
+                              {f}
                             </span>
                           ))}
                           {report.review_summary.red_flags?.map((f: string, i: number) => (
-                            <span key={i} className="px-3 py-1 bg-red-500/10 text-red-400 text-[10px] font-bold rounded-full border border-red-500/20 uppercase">
-                              ⚠ {f}
+                            <span key={i} className="px-3 py-1.5 bg-red-500/10 text-red-400 text-xs font-medium rounded-xl border border-red-500/25 leading-snug">
+                              <span className="mr-1 opacity-90">⚠</span>
+                              {f}
                             </span>
                           ))}
                         </div>
 
-                        <p className="text-sm text-neutral-400 leading-relaxed italic">
-                          "{rewriteMicrocopy(report.review_summary.plain_summary)}"
-                        </p>
+                        <div className="rounded-2xl bg-neutral-900/40 border border-border/80 p-4 md:p-5">
+                          <p className="text-[13px] sm:text-sm text-neutral-300 leading-[1.65]">
+                            {rewriteMicrocopy(report.review_summary.plain_summary)}
+                          </p>
+                        </div>
                       </div>
                     )}
 
                     {/* Similar Jobs */}
                     {!report.hideSimilarJobs && report.similar_jobs && report.similar_jobs.length > 0 && (
-                      <div className="glass rounded-3xl p-8 space-y-6">
-                        <h3 className="text-lg font-bold">Similar Verified Roles</h3>
+                      <div className="glass rounded-3xl p-6 md:p-8 space-y-6 border border-border/60">
+                        <h3 className="text-lg font-bold">Similar verified roles</h3>
                         <div className="space-y-4">
                           {report.similar_jobs.map((job: any, i: number) => (
                             <a 
@@ -603,12 +619,12 @@ export default function App() {
                       </div>
                     )}
 
-                    <div className="glass rounded-3xl p-6 flex items-center justify-between">
-                      <div className="text-[10px] text-neutral-600 font-mono">
+                    <div className="glass rounded-2xl px-4 py-3 md:px-5 flex flex-wrap items-center justify-between gap-3 border border-border/60">
+                      <div className="text-[11px] text-neutral-500 font-mono truncate max-w-[min(100%,14rem)]">
                         ID: {report.request_id}
                       </div>
-                      <button className="text-[10px] text-brand font-bold uppercase hover:underline">
-                        Report Issue
+                      <button type="button" className="text-xs text-brand font-semibold hover:underline shrink-0">
+                        Report issue
                       </button>
                     </div>
                   </div>
