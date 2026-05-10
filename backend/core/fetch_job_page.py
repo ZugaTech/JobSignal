@@ -7,6 +7,7 @@ Redirects are followed manually so each hop is re-validated.
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 import re
 import socket
@@ -20,7 +21,7 @@ from backend.core.env import EnvConfig
 from backend.core.job_url_shortcuts import is_job_board_brand_label
 from backend.core.normalization import registrable_domain_naive
 
-FETCH_ADAPTER_VERSION = "1.1.0"
+FETCH_ADAPTER_VERSION = "1.2.0"
 
 _FETCH_HTML_SAMPLE_CAP = 400_000
 
@@ -248,7 +249,117 @@ def _first_meta_content(html: str, *names: str) -> Optional[str]:
     return None
 
 
-def extract_job_text_hints_from_html(html_bytes: bytes) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+def _main_content_html_fragment(html: str) -> str:
+    """Prefer main/article regions; fall back to full document."""
+
+    for rx in (
+        r"<main\b[^>]*>(.*?)</main>",
+        r"<article\b[^>]*>(.*?)</article>",
+    ):
+        m = re.search(rx, html, re.I | re.S)
+        if m and len(m.group(1).strip()) > 80:
+            return m.group(1)
+    return html
+
+
+_JOB_ID_REGEXES = (
+    re.compile(r"\b(?:job|position)\s*(?:id|number)\s*[:\s#]+(\d{4,})\b", re.I),
+    re.compile(r"\brequisition\s*(?:code|id|number)?\s*[:\s#]+(\d{4,})\b", re.I),
+    re.compile(r"\bjobId\s*=\s*(\d+)\b", re.I),
+    re.compile(r"\brequisition\s+code\s*[:\s#]+(\d{4,})\b", re.I),
+)
+
+
+def _extract_jobposting_ld_hints(html: str, *, max_hints: int = 14) -> List[str]:
+    hints: List[str] = []
+    for m in re.finditer(
+        r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+        html,
+        re.I | re.S,
+    ):
+        raw = m.group(1).strip()
+        if "JobPosting" not in raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        objs: List[Any] = []
+        if isinstance(data, dict):
+            graph = data.get("@graph")
+            if isinstance(graph, list):
+                objs.extend(graph)
+            else:
+                objs.append(data)
+        elif isinstance(data, list):
+            objs.extend(data)
+        for obj in objs:
+            if not isinstance(obj, dict) or len(hints) >= max_hints:
+                break
+            types_raw = obj.get("@type")
+            types_list = types_raw if isinstance(types_raw, list) else ([types_raw] if types_raw else [])
+            type_names = {str(t) for t in types_list if t}
+            if "JobPosting" not in type_names:
+                continue
+            jt = obj.get("title")
+            if isinstance(jt, str) and jt.strip():
+                hints.append(f"JSON-LD JobPosting title: {jt.strip()[:220]}")
+            org = obj.get("hiringOrganization") or obj.get("hiringorganization")
+            if isinstance(org, dict):
+                name = org.get("name")
+                if isinstance(name, str) and name.strip():
+                    hints.append(f"JSON-LD hiringOrganization: {name.strip()[:180]}")
+            ident = obj.get("identifier")
+            if isinstance(ident, str) and ident.strip():
+                hints.append(f"JSON-LD identifier: {ident.strip()[:80]}")
+            elif isinstance(ident, dict):
+                iv = ident.get("value") or ident.get("name")
+                if isinstance(iv, str) and iv.strip():
+                    hints.append(f"JSON-LD identifier: {iv.strip()[:80]}")
+            loc = obj.get("jobLocation")
+            if isinstance(loc, dict):
+                addr = loc.get("address")
+                if isinstance(addr, dict):
+                    pieces = [addr.get(k) for k in ("addressLocality", "addressRegion", "addressCountry")]
+                    loc_s = ", ".join(str(p) for p in pieces if isinstance(p, str) and p.strip())
+                    if loc_s:
+                        hints.append(f"JSON-LD location: {loc_s[:160]}")
+    return hints[:max_hints]
+
+
+def _collect_job_id_snippets(text: str, *, max_ids: int = 8) -> List[str]:
+    seen: set[str] = set()
+    out: List[str] = []
+    for rx in _JOB_ID_REGEXES:
+        for m in rx.finditer(text):
+            key = m.group(1)
+            if key not in seen:
+                seen.add(key)
+                out.append(key)
+            if len(out) >= max_ids:
+                return out
+    return out
+
+
+def _scam_caution_snippets(text: str) -> List[str]:
+    low = text.lower()
+    needles = (
+        "fraudulent job",
+        "scam alert",
+        "fake job offer",
+        "do not pay",
+        "unauthorized or fraudulent",
+        "fictitious job",
+    )
+    return [n for n in needles if n in low]
+
+
+def extract_job_text_hints_from_html(
+    html_bytes: bytes,
+    *,
+    body_text_max_chars: int = 16_000,
+    extracted_max_chars: int = 48_000,
+) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
     """Extract conservative page hints for search/recommendation discovery.
 
     This is not treated as trusted evidence by itself; it only improves query
@@ -274,19 +385,44 @@ def extract_job_text_hints_from_html(html_bytes: bytes) -> Tuple[Optional[str], 
     site_name = _first_meta_content(html, "og:site_name", "application-name")
     description = _first_meta_content(html, "description", "og:description", "twitter:description")
 
-    body_sample = _clean_html_text(html)[:1600]
+    ld_hints = _extract_jobposting_ld_hints(html)
+    main_html = _main_content_html_fragment(html)
+    body_plain = _clean_html_text(main_html)
+    cap = max(2_000, min(int(body_text_max_chars), 80_000))
+    if len(body_plain) > cap:
+        body_plain = body_plain[:cap] + " …"
+
+    id_snippets = _collect_job_id_snippets(body_plain) + _collect_job_id_snippets(title or "")
+    id_snippets = list(dict.fromkeys(id_snippets))[:10]
+
+    caution_hits = _scam_caution_snippets(body_plain)
+    if title:
+        caution_hits.extend(_scam_caution_snippets(title))
+        caution_hits = list(dict.fromkeys(caution_hits))
+
     parts: List[str] = []
     if title:
         parts.append(f"Title: {title}")
-    # og:site_name is often the job board (e.g. "LinkedIn") — do not label that as the employer.
     if site_name and not is_job_board_brand_label(site_name):
         parts.append(f"Company: {site_name}")
+    if ld_hints:
+        parts.append("Structured data:\n" + "\n".join(ld_hints))
+    if id_snippets:
+        parts.append("Detected posting identifiers: " + ", ".join(id_snippets))
+    if caution_hits:
+        parts.append(
+            "Official caution language on page (read full posting): "
+            + ", ".join(caution_hits[:6])
+        )
     if description:
-        parts.append(f"Description: {description}")
-    elif body_sample:
-        parts.append(f"Description: {body_sample}")
+        parts.append(f"Meta description: {description}")
+    if body_plain:
+        parts.append(f"Page content excerpt:\n{body_plain}")
 
-    extracted = "\n".join(parts).strip() or None
+    extracted = "\n\n".join(parts).strip() or None
+    if extracted and len(extracted) > extracted_max_chars:
+        extracted = extracted[:extracted_max_chars] + "\n…"
+
     return title, description, site_name, extracted
 
 
@@ -452,7 +588,10 @@ def run_job_page_fetch(
         if html_like and total_read > 0:
             html_bytes = bytes(buf)
             employer_urls = extract_employer_urls_from_html(html_bytes, final_url)
-            page_title, page_description, site_name, extracted_job_text = extract_job_text_hints_from_html(html_bytes)
+            page_title, page_description, site_name, extracted_job_text = extract_job_text_hints_from_html(
+                html_bytes,
+                body_text_max_chars=cfg.fetch_body_text_max_chars,
+            )
 
         return JobPageFetchOutcome(
             attempted=True,

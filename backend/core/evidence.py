@@ -410,15 +410,38 @@ def build_evidence_bundle(
         warnings.append(dup_warning)
     dup_hosts = {(urlparse(str(r.get("link") or "")).hostname or "").lower() for r in dup_rows if str(r.get("link") or "").startswith(("http://", "https://"))}
     dup_hosts = {h for h in dup_hosts if h}
-    duplicate_risk = dup_status == "verified" and len(dup_hosts) >= 3
+    dup_n = len(dup_hosts)
+    duplicate_risk = dup_status == "verified" and dup_n >= 8
+
+    if dup_status != "verified":
+        dup_strength = "none"
+        dup_detail = "unverified"
+        dup_sig_status = "unknown"
+    elif dup_n == 0:
+        dup_strength = "low"
+        dup_detail = "Search did not surface multiple posting domains; duplicate visibility is limited."
+        dup_sig_status = "unknown"
+    elif dup_n <= 2:
+        dup_strength = "medium"
+        dup_detail = f"Posting visibility spans about {dup_n} distinct domain(s) in search results."
+        dup_sig_status = "pass"
+    elif dup_n < 8:
+        dup_strength = "low"
+        dup_detail = f"Posting appears across {dup_n} domains; duplication signal is ambiguous without manual review."
+        dup_sig_status = "unknown"
+    else:
+        dup_strength = "low"
+        dup_detail = f"Posting appears across {dup_n} domains (possible recycled listing)."
+        dup_sig_status = "fail"
+
     signals.append(
         _mk_signal(
             sid="posting_duplication_signal",
             label="posting_duplication_signal",
             tier="T2",
-            strength="none" if dup_status == "unverified" else ("low" if duplicate_risk else "high"),
-            detail="unverified" if dup_status == "unverified" else f"Posting appears across {len(dup_hosts)} domains.",
-            status="unknown" if dup_status == "unverified" else ("fail" if duplicate_risk else "pass"),
+            strength=dup_strength,
+            detail=dup_detail,
+            status=dup_sig_status,
             source="serp",
         )
     )

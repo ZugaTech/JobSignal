@@ -67,3 +67,14 @@ def test_extract_employer_urls_canonical_relative():
     html = b'<html><head><link rel="canonical" href="/careers/software-engineer"/></head></html>'
     urls = extract_employer_urls_from_html(html, "https://jobs.bigco.com/job/99")
     assert "https://jobs.bigco.com/careers/software-engineer" in urls
+
+
+def test_posting_duplication_signal_unknown_when_search_returns_no_domains():
+    norm = _norm("https://apply.example.com/job/1")
+    ext = ExtractionResult("Example", "Engineer", None, None, None, None)
+    serp = _empty_serp()
+    serp["duplicates"] = ([], "verified", None)
+    bundle = build_evidence_bundle(norm, ext, serp)
+    dup = next(s for s in bundle.signals if s["id"] == "posting_duplication_signal")
+    assert dup["status"] == "unknown"
+    assert dup["strength"] == "low"

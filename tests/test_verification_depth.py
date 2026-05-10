@@ -24,7 +24,7 @@ def test_posting_authenticity_layer_scored_and_exposed():
         _sig("salary_range_plausibility", "T3", "high", "Salary plausible", "pass"),
         _sig("role_title_consistency", "T3", "medium", "Title matches body", "pass"),
         _sig("contact_legitimacy", "T3", "high", "Corporate domain email", "pass"),
-        _sig("posting_duplication_signal", "T2", "high", "Not widely duplicated", "pass"),
+        _sig("posting_duplication_signal", "T2", "medium", "Posting visibility spans about 2 distinct domain(s) in search results.", "pass"),
     ]
     d = decide_from_signals(signals, url_provided=False)
     assert d["posting_authenticity_score"] >= 70
@@ -65,7 +65,8 @@ def test_recalibrated_scoring_requires_three_layer_pass_for_high_apply_confidenc
         _sig("salary_range_plausibility", "T3", "high", status="pass"),
         _sig("role_title_consistency", "T3", "high", status="pass"),
         _sig("contact_legitimacy", "T3", "high", status="pass"),
-        _sig("posting_duplication_signal", "T2", "high", status="pass"),
+        _sig("careers_page_match", "T1", "high", status="pass"),
+        _sig("posting_duplication_signal", "T2", "medium", status="pass"),
         _sig("cross_platform_freshness", "T2", "high", status="pass"),
         _sig("staleness_flag", "T2", "high", status="pass"),
         _sig("first_seen_estimate", "T2", "medium", "2026-05-01", "pass"),

@@ -76,7 +76,7 @@ async def test_full_verify_returns_200_on_review_timeout(monkeypatch):
         
     monkeypatch.setattr(
         "backend.core.orchestrator.EvidenceCoordinator",
-        lambda api_key, search_timeout_s=5.0: TimeoutCoordinator(),
+        lambda *args, **kwargs: TimeoutCoordinator(),
     )
     
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:

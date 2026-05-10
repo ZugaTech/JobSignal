@@ -13,7 +13,7 @@ from typing import Any, List, Mapping, Optional, Tuple, cast
 from backend.core.decision_schema import DecisionResponse, ReasonItem, SignalEvidence, Verdict, WarningItem
 from backend.core.source_evidence import _strength_rank, sort_evidence_by_trust
 
-SCORER_VERSION = "3.2.2"
+SCORER_VERSION = "3.3.0"
 
 _SEVERE_SCAM_TOKENS = (
     "training_fee",
@@ -146,6 +146,26 @@ def _t3_only_loudest(signals: List[Mapping[str, Any]]) -> bool:
     if t1 not in ("none", "low"):
         return False
     if t2 not in ("none", "low"):
+        return False
+    return True
+
+
+def _apply_requires_url_corroboration(signals: List[Mapping[str, Any]], url_provided: bool) -> bool:
+    """High-confidence APPLY with a URL requires a credible fetch plus careers alignment."""
+
+    if not url_provided:
+        return True
+    fetch = _get_signal(signals, "fetch_ok")
+    if not fetch or _signal_status(fetch) != "pass":
+        return False
+    official = _get_signal(signals, "official_careers_page")
+    if official and _signal_status(official) != "pass":
+        return False
+    careers_dom = _get_signal(signals, "careers_domain_match")
+    if careers_dom and _signal_status(careers_dom) != "pass":
+        return False
+    careers_page = _get_signal(signals, "careers_page_match")
+    if careers_page and _signal_status(careers_page) == "fail":
         return False
     return True
 
@@ -407,7 +427,7 @@ def decide_from_signals(
         verdict = Verdict.VERIFY
         reasons.append(ReasonItem(code="T3_ONLY", message="We found general web mentions, but couldn't confirm this role directly with the employer's official channels or trusted job boards."))
         warnings.append(WarningItem(code="SOURCES", message="Evidence relies mostly on unverified secondary sources."))
-    elif apply_ok and (
+    elif apply_ok and _apply_requires_url_corroboration(sorted_rows, url_provided) and (
         (confidence_score >= 75 and company_pass and posting_pass and freshness_pass)
         or (company_score == 0 and posting_score == 0 and freshness_score == 0)
     ):

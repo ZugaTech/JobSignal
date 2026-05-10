@@ -24,6 +24,12 @@
 | `SEARCH_API_KEY` / `SERPAPI_API_KEY` | Legacy fallback aliases accepted by code; prefer `SERPER_API_KEY` for Railway. |
 | `FIREWORKS_API_KEY` / `LLM_API_KEY` | Enable LLM features when configured. |
 | `PROBE_PROVIDERS_ON_READY` | Keep `0` in production unless you intentionally want live Fireworks/Serper checks on `/ready`. |
+| `FETCH_MAX_BYTES` | Cap on raw HTML bytes read from the posting URL. |
+| `FETCH_BODY_TEXT_MAX_CHARS` | Max characters of cleaned **main-body** text merged into fetch extraction (default `16000`). |
+| `SEARCH_MAX_CALLS_EVIDENCE` | Serper POST budget for careers / boards / registry / duplicate queries (default `12`). |
+| `SEARCH_MAX_CALLS_REPUTATION` | Separate Serper budget for employer reputation searches (default `14`). |
+| `SEARCH_MAX_CALLS_RECOMMENDATIONS` | Serper budget when **similar jobs** are requested (default `10`). |
+| `SCORER_VERSION` | Bump when scoring rules change (invalidates client expectations / docs only; cache keys use `SOURCE_PIPELINE_VERSION` too). |
 
 See **`.env.example`** for the full contract (`backend/core/config.py` → `ENV_SPECS`).
 

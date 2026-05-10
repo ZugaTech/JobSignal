@@ -61,9 +61,14 @@ from backend.core.url_result_cache import (
     parse_stored_payload,
 )
 from backend.core.user_copy import build_fallback_llm_summary
+from backend.evidence.company_reviews import ReviewSummary, extract_company_name_hardened, get_company_reviews
 
 logger = logging.getLogger("jobsignal")
-from backend.evidence.company_reviews import ReviewSummary, extract_company_name_hardened, get_company_reviews
+
+
+async def _shutdown_serp_coords(*coords: EvidenceCoordinator) -> None:
+    await asyncio.gather(*(c.close() for c in coords), return_exceptions=True)
+
 
 _MEM_CACHE = InMemoryCache()
 _REDIS_CACHE: CacheStore | None = None
@@ -342,9 +347,26 @@ async def verify_job(
     steps: List[Dict[str, Any]] = [{"id": "normalize", "label": "Normalized input"}]
 
     api_key = os.environ.get("SERPER_API_KEY") or os.environ.get("SEARCH_API_KEY") or ""
-    coordinator = EvidenceCoordinator(api_key=api_key, search_timeout_s=float(cfg.search_timeout_s))
-    if include_similar_jobs:
-        coordinator.set_max_calls(6)
+    endpoint = (cfg.search_api_endpoint or "").strip() or "https://google.serper.dev/search"
+    timeout_s = float(cfg.search_timeout_s)
+    coord_evidence = EvidenceCoordinator(
+        api_key=api_key,
+        search_timeout_s=timeout_s,
+        max_calls=cfg.search_max_calls_evidence,
+        search_endpoint=endpoint,
+    )
+    coord_reputation = EvidenceCoordinator(
+        api_key=api_key,
+        search_timeout_s=timeout_s,
+        max_calls=cfg.search_max_calls_reputation,
+        search_endpoint=endpoint,
+    )
+    coord_rec = EvidenceCoordinator(
+        api_key=api_key,
+        search_timeout_s=timeout_s,
+        max_calls=cfg.search_max_calls_recommendations,
+        search_endpoint=endpoint,
+    )
 
     cache = _get_cache(cfg)
 
@@ -380,7 +402,6 @@ async def verify_job(
                 # Cached payload may omit similar jobs or reflect an older request flag.
                 # Honor the current request: attach fresh recommendations when asked; strip when not.
                 if include_similar_jobs:
-                    coordinator.set_max_calls(8)
                     rec_norm = await _fetch_hints_for_recommendations(norm, cfg)
                     await _maybe_attach_recommendations(
                         out,
@@ -388,7 +409,7 @@ async def verify_job(
                         merged_fields=merged_fields,
                         skip_recommendations=skip_recommendations,
                         include_similar_jobs=True,
-                        coordinator=coordinator,
+                        coordinator=coord_rec,
                     )
                     out["similar_jobs"] = list(out.get("recommendations") or [])
                     meta_m = dict(out.get("meta") or {})
@@ -399,7 +420,7 @@ async def verify_job(
                     meta_m = dict(out.get("meta") or {})
                     meta_m.pop("similar_jobs_requested", None)
                     out["meta"] = meta_m
-                await coordinator.close()
+                await _shutdown_serp_coords(coord_evidence, coord_reputation, coord_rec)
                 log_stage(
                     request_id=request_id,
                     stage="report_returned",
@@ -445,7 +466,7 @@ async def verify_job(
                 merged_fields=merged_fields,
                 skip_recommendations=skip_recommendations,
                 include_similar_jobs=include_similar_jobs,
-                coordinator=coordinator,
+                coordinator=coord_rec,
             )
             if include_similar_jobs:
                 report["similar_jobs"] = list(report.get("recommendations") or [])
@@ -460,7 +481,7 @@ async def verify_job(
                 duration_ms=(time.perf_counter() - t0) * 1000,
                 verdict=str(report.get("verdict", "")),
             )
-            await coordinator.close()
+            await _shutdown_serp_coords(coord_evidence, coord_reputation, coord_rec)
             return report
 
     steps.append({"id": "cache", "label": "Cache miss", "status": "miss"})
@@ -551,9 +572,9 @@ async def verify_job(
                     }
                 )
 
-        evidence_task = asyncio.create_task(_collect_serper_queries(coordinator, base_query, company, title))
+        evidence_task = asyncio.create_task(_collect_serper_queries(coord_evidence, base_query, company, title))
         review_task = asyncio.create_task(
-            get_company_reviews(coordinator, employer_for_queries, request_id=request_id)
+            get_company_reviews(coord_reputation, employer_for_queries, request_id=request_id)
         )
         serp_results, review_summary = await asyncio.gather(evidence_task, review_task)
         bundle = build_evidence_bundle(norm, ext_local, serp_results, page_fetch=fx)
@@ -567,12 +588,15 @@ async def verify_job(
 
     log_stage(request_id=request_id, stage="evidence_gathered", duration_ms=(time.perf_counter() - t0) * 1000)
 
-    if include_similar_jobs:
-        coordinator.set_max_calls(8)
-
     steps.append({"id": "evidence", "label": "Evidence collection"})
     steps.append({"id": "llm", "label": "AI-assisted signals"})
-    llm = build_llm_signals(job_text=norm.description_text or "")
+    llm_text_parts: List[str] = []
+    if (norm.description_text or "").strip():
+        llm_text_parts.append(norm.description_text.strip())
+    if page_fetch_outcome and (page_fetch_outcome.extracted_job_text or "").strip():
+        llm_text_parts.append(page_fetch_outcome.extracted_job_text.strip())
+    merged_llm_job_text = "\n\n".join(llm_text_parts)
+    llm = build_llm_signals(job_text=merged_llm_job_text)
     if llm.signals:
         signals.extend(llm.signals)
     if llm.warnings:
@@ -668,7 +692,7 @@ async def verify_job(
         merged_fields=merged_fields,
         skip_recommendations=skip_recommendations,
         include_similar_jobs=include_similar_jobs,
-        coordinator=coordinator,
+        coordinator=coord_rec,
     )
     if include_similar_jobs:
         report["similar_jobs"] = list(report.get("recommendations") or [])
@@ -757,5 +781,5 @@ async def verify_job(
         duration_ms=(time.perf_counter() - t0) * 1000,
         verdict=str(report.get("verdict", "")),
     )
-    await coordinator.close()
+    await _shutdown_serp_coords(coord_evidence, coord_reputation, coord_rec)
     return report

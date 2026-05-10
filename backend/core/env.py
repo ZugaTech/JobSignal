@@ -33,12 +33,16 @@ class EnvConfig:
     source_pipeline_version: str
     scorer_version: str
     fetch_max_bytes: int
+    fetch_body_text_max_chars: int
     fetch_max_redirects: int
     cache_url: Optional[str]
     search_api_endpoint: Optional[str]
     search_timeout_s: int
     search_retry_count: int
     search_rate_limit_per_minute: int
+    search_max_calls_evidence: int
+    search_max_calls_reputation: int
+    search_max_calls_recommendations: int
     fireworks_base_url: str
     fireworks_model: str
     fireworks_vision_model: str
@@ -60,6 +64,12 @@ class EnvConfig:
         node_env = str(app_cfg.get("NODE_ENV") or "development").lower()
         ttl = _int("CACHE_DEFAULT_TTL_DAYS", int(app_cfg.get("CACHE_DEFAULT_TTL_DAYS") or 14), min_v=10, max_v=30)
         fetch_bytes = _int("FETCH_MAX_BYTES", int(app_cfg.get("FETCH_MAX_BYTES") or 2_097_152), min_v=64_000, max_v=20_000_000)
+        fetch_body_chars = _int(
+            "FETCH_BODY_TEXT_MAX_CHARS",
+            int(app_cfg.get("FETCH_BODY_TEXT_MAX_CHARS") or 16_000),
+            min_v=2_000,
+            max_v=80_000,
+        )
         fetch_redirs = _int("FETCH_MAX_REDIRECTS", int(app_cfg.get("FETCH_MAX_REDIRECTS") or 5), min_v=0, max_v=20)
 
         cache_url = str(app_cfg.get("CACHE_URL")).strip() if app_cfg.get("CACHE_URL") else None
@@ -67,6 +77,24 @@ class EnvConfig:
         search_timeout_s = _int("SEARCH_TIMEOUT_S", int(app_cfg.get("SEARCH_TIMEOUT_S") or 10), min_v=1, max_v=60)
         search_retry_count = _int("SEARCH_RETRY_COUNT", int(app_cfg.get("SEARCH_RETRY_COUNT") or 2), min_v=0, max_v=5)
         search_rate_limit = _int("SEARCH_RATE_LIMIT_PER_MINUTE", int(app_cfg.get("SEARCH_RATE_LIMIT_PER_MINUTE") or 60), min_v=1, max_v=10000)
+        search_max_evidence = _int(
+            "SEARCH_MAX_CALLS_EVIDENCE",
+            int(app_cfg.get("SEARCH_MAX_CALLS_EVIDENCE") or 12),
+            min_v=6,
+            max_v=40,
+        )
+        search_max_reputation = _int(
+            "SEARCH_MAX_CALLS_REPUTATION",
+            int(app_cfg.get("SEARCH_MAX_CALLS_REPUTATION") or 14),
+            min_v=6,
+            max_v=40,
+        )
+        search_max_rec = _int(
+            "SEARCH_MAX_CALLS_RECOMMENDATIONS",
+            int(app_cfg.get("SEARCH_MAX_CALLS_RECOMMENDATIONS") or 10),
+            min_v=2,
+            max_v=30,
+        )
         fw_base = str(app_cfg.get("FIREWORKS_BASE_URL") or "https://api.fireworks.ai/inference/v1")
         fw_model = str(app_cfg.get("FIREWORKS_MODEL") or DEFAULT_FIREWORKS_MODEL)
         fw_vision_model = str(app_cfg.get("FIREWORKS_VISION_MODEL") or fw_model)
@@ -90,12 +118,16 @@ class EnvConfig:
             source_pipeline_version=str(app_cfg.get("SOURCE_PIPELINE_VERSION") or "1"),
             scorer_version=str(app_cfg.get("SCORER_VERSION") or "1"),
             fetch_max_bytes=fetch_bytes,
+            fetch_body_text_max_chars=fetch_body_chars,
             fetch_max_redirects=fetch_redirs,
             cache_url=cache_url,
             search_api_endpoint=search_api_endpoint,
             search_timeout_s=search_timeout_s,
             search_retry_count=search_retry_count,
             search_rate_limit_per_minute=search_rate_limit,
+            search_max_calls_evidence=search_max_evidence,
+            search_max_calls_reputation=search_max_reputation,
+            search_max_calls_recommendations=search_max_rec,
             fireworks_base_url=fw_base,
             fireworks_model=fw_model,
             fireworks_vision_model=fw_vision_model,

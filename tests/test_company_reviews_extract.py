@@ -62,7 +62,15 @@ def test_pick_employer_prefers_non_board():
     assert pick_employer_display_name("LinkedIn", None) is None
 
 
-def test_extract_entities_ignores_company_line_when_board_brand():
-    norm = normalize_job_input(None, "Company: Glassdoor\nSome job text")
-    ext = extract_entities(norm)
-    assert ext.company_hint is None
+def test_json_ld_jobposting_surfaces_in_extracted_text():
+    html = b"""<html><head>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"JobPosting","title":"GenAI Engineer","identifier":"340395",
+"hiringOrganization":{"@type":"Organization","name":"Deloitte Consulting LLP"},
+"jobLocation":{"@type":"Place","address":{"addressRegion":"VA","addressCountry":"US"}}}
+</script></head><body><p>Extra body text for minimum length requirements here.</p></body></html>"""
+    title, desc, site, extracted = extract_job_text_hints_from_html(html, body_text_max_chars=4000)
+    assert extracted
+    assert "340395" in extracted
+    assert "GenAI" in extracted or "GenAI Engineer" in extracted
+    assert "Deloitte" in extracted
