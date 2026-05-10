@@ -1,3 +1,5 @@
 {
-    "python.terminal.useEnvFile": true
+    "python.terminal.useEnvFile": true,
+    "cursor.agent.commitAttribution": false,
+    "cursor.agent.prAttribution": false
 }
