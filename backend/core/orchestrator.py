@@ -345,6 +345,27 @@ async def verify_job(
                     out.get("cache_complete"),
                 )
                 log_stage(request_id=request_id, stage="url_result_cache_hit", duration_ms=(time.perf_counter() - t0) * 1000)
+                # Cached payload may omit similar jobs or reflect an older request flag.
+                # Honor the current request: attach fresh recommendations when asked; strip when not.
+                if include_similar_jobs:
+                    coordinator.set_max_calls(8)
+                    await _maybe_attach_recommendations(
+                        out,
+                        norm=norm,
+                        merged_fields=merged_fields,
+                        skip_recommendations=skip_recommendations,
+                        include_similar_jobs=True,
+                        coordinator=coordinator,
+                    )
+                    out["similar_jobs"] = list(out.get("recommendations") or [])
+                    meta_m = dict(out.get("meta") or {})
+                    meta_m["similar_jobs_requested"] = True
+                    out["meta"] = meta_m
+                else:
+                    out["similar_jobs"] = None
+                    meta_m = dict(out.get("meta") or {})
+                    meta_m.pop("similar_jobs_requested", None)
+                    out["meta"] = meta_m
                 await coordinator.close()
                 log_stage(
                     request_id=request_id,
