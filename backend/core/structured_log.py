@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -10,7 +11,15 @@ logger = logging.getLogger("jobsignal")
 
 
 def configure_logging(level: str = "info") -> None:
-    logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO), format="%(message)s")
+    """Attach a single stdout handler to ``jobsignal`` so hosted platforms (e.g. Railway) do not tag INFO JSON as stderr/error."""
+    lvl = getattr(logging, level.upper(), logging.INFO)
+    log = logging.getLogger("jobsignal")
+    log.handlers.clear()
+    log.setLevel(lvl)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    log.addHandler(handler)
+    log.propagate = False
 
 
 def log_stage(

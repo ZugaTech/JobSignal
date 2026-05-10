@@ -1,0 +1,13 @@
+"""Regression: prompt-leak heuristics must not reject benign reputation prose."""
+
+from backend.core.llm_safe import _looks_like_prompt_leak
+
+
+def test_task_paraphrase_opening_not_treated_as_leak() -> None:
+    assert not _looks_like_prompt_leak(
+        "The user wants a 2-3 sentence employer reputation briefing for Deloitte."
+    )
+
+
+def test_explicit_instruction_echo_still_flagged() -> None:
+    assert _looks_like_prompt_leak("The user wants you to return only APPLY or VERIFY.")

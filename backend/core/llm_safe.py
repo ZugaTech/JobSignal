@@ -16,7 +16,11 @@ from backend.core.user_copy import contains_internal_verdict_jargon
 logger = logging.getLogger("jobsignal")
 
 _LEAK_MARKERS = [
-    "the user wants",
+    # Avoid bare "the user wants" — models sometimes open with a task paraphrase that is not a leak.
+    "the user wants you to",
+    "the user wants me to",
+    "the user asked you to",
+    "the user requested",
     "key constraints",
     "data provided",
     "wait, there's",
