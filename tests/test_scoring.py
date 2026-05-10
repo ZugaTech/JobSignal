@@ -79,6 +79,14 @@ def test_reasons_minimum_length():
     assert len(d["reasons"]) >= 2
 
 
+def test_verify_description_only_leads_with_prefer_posting_url():
+    """Ensure pasted-text VERIFY does not read like URL-based corroboration alone."""
+    d = decide_from_signals([_sig("search_corroboration", "T3", "low")], url_provided=False)
+    assert d["verdict"].value == "VERIFY"
+    assert d["reasons"][0]["code"] == "PREFER_POSTING_URL"
+    assert "URL" in (d["reasons"][0].get("message") or "") or "url" in (d["reasons"][0].get("message") or "").lower()
+
+
 def test_decision_to_jsonable_roundtrip_keys():
     d = decide_from_signals(
         [_sig("fetch_ok", "T1", "high"), _sig("domain_align", "T1", "medium"), _sig("board_corroboration", "T2", "medium")],
@@ -87,6 +95,62 @@ def test_decision_to_jsonable_roundtrip_keys():
     j = decision_to_jsonable(d)
     assert j["verdict"] in {"APPLY", "VERIFY", "SKIP"}
     assert isinstance(j["signals"], list)
+    assert "confidence_score" in j
+    assert isinstance(j["confidence_score"], int)
+    assert 0 <= j["confidence_score"] <= 100
+
+
+def test_decision_to_jsonable_missing_score_uses_zero_not_band_default():
+    d = decide_from_signals([_sig("search_corroboration", "T3", "low")], url_provided=False)
+    d["confidence"] = "medium"
+    d["confidence_score"] = None
+    assert decision_to_jsonable(d)["confidence_score"] == 0
+
+
+def test_confidence_score_varies_with_signals_not_always_band_default():
+    """Regression: UI must not map every medium verdict to a flat 60 via band-only scores."""
+    weak = decide_from_signals([_sig("search_corroboration", "T3", "low")], url_provided=False)
+    strongish = decide_from_signals(
+        [
+            _sig("company_linkedin_presence", "T2", "high"),
+            _sig("careers_domain_match", "T1", "high"),
+            _sig("salary_range_plausibility", "T3", "medium"),
+            _sig("role_title_consistency", "T3", "high"),
+            _sig("jd_specificity", "T3", "high"),
+            _sig("jd_recruiter_intent_score", "T3", "medium"),
+            _sig("jd_employer_identifiability", "T3", "high"),
+        ],
+        url_provided=True,
+    )
+    w = decision_to_jsonable(weak)["confidence_score"]
+    s = decision_to_jsonable(strongish)["confidence_score"]
+    assert w != s, "composite confidence_score should reflect signal mix, not a constant band mapping"
+
+
+def test_url_signal_mix_scores_higher_than_description_only_same_role():
+    url_backed = decide_from_signals(
+        [
+            _sig("company_linkedin_presence", "T1", "high"),
+            _sig("careers_domain_match", "T1", "high"),
+            _sig("company_registry_presence", "T2", "medium"),
+            _sig("cross_platform_freshness", "T2", "high"),
+            _sig("posting_duplication_signal", "T2", "high"),
+            _sig("jd_specificity", "T3", "high"),
+        ],
+        url_provided=True,
+    )
+    description_only = decide_from_signals(
+        [
+            _sig("jd_specificity", "T3", "high"),
+            _sig("jd_recruiter_intent_score", "T3", "medium"),
+            _sig("jd_employer_identifiability", "T3", "medium"),
+        ],
+        url_provided=False,
+    )
+    url_score = decision_to_jsonable(url_backed)["confidence_score"]
+    text_score = decision_to_jsonable(description_only)["confidence_score"]
+    assert url_score != text_score
+    assert url_score > text_score
 
 
 def test_public_report_includes_schema_version():
@@ -193,5 +257,5 @@ def test_text_only_mid_red_flags_yield_strong_verify_copy():
     assert "TEXT_RED_FLAGS" in codes
 
 
-def test_scorer_version_bumped_to_3_1_0():
-    assert SCORER_VERSION == "3.2.0"
+def test_scorer_version_is_current():
+    assert SCORER_VERSION == "3.2.2"

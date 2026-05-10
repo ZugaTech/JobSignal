@@ -172,8 +172,39 @@ async def _maybe_attach_recommendations(
     )
 
 
+def _norm_with_fetch_hints(norm: NormalizationResult, fx: Optional[JobPageFetchOutcome]) -> NormalizationResult:
+    """Use fetched page title/description as recommendation discovery text.
+
+    The canonical URL remains unchanged. The fetched text is only used to build
+    better similar-role search queries when the user did not paste a
+    description; it is not stored as user-provided private text.
+    """
+
+    if norm.description_text or not fx or not fx.extracted_job_text:
+        return norm
+    return NormalizationResult(
+        normalization_version=norm.normalization_version,
+        canonical_url=norm.canonical_url,
+        canonical_url_sha256=norm.canonical_url_sha256,
+        description_text=fx.extracted_job_text,
+        description_full_sha256=norm.description_full_sha256,
+        registrable_domain=norm.registrable_domain,
+    )
+
+
+async def _fetch_hints_for_recommendations(norm: NormalizationResult, cfg: EnvConfig) -> NormalizationResult:
+    if norm.description_text or not norm.canonical_url or not job_fetch_enabled():
+        return norm
+    try:
+        fx = await asyncio.to_thread(run_job_page_fetch, norm.canonical_url, cfg)
+    except Exception:  # noqa: BLE001 - recommendations are best-effort
+        return norm
+    return _norm_with_fetch_hints(norm, fx)
+
+
 def _confidence_numeric(band: str) -> int:
-    return {"high": 85, "medium": 60, "low": 35}.get(str(band or "").lower(), 35)
+    # Numeric confidence must come from scoring; missing scores are unavailable, not a band-derived default.
+    return 0
 
 
 async def verify_job(
@@ -350,9 +381,10 @@ async def verify_job(
                 # Honor the current request: attach fresh recommendations when asked; strip when not.
                 if include_similar_jobs:
                     coordinator.set_max_calls(8)
+                    rec_norm = await _fetch_hints_for_recommendations(norm, cfg)
                     await _maybe_attach_recommendations(
                         out,
-                        norm=norm,
+                        norm=rec_norm,
                         merged_fields=merged_fields,
                         skip_recommendations=skip_recommendations,
                         include_similar_jobs=True,
@@ -409,7 +441,7 @@ async def verify_job(
             log_stage(request_id=request_id, stage="cache_hit", duration_ms=(time.perf_counter() - t0) * 1000)
             await _maybe_attach_recommendations(
                 report,
-                norm=norm,
+                norm=await _fetch_hints_for_recommendations(norm, cfg) if include_similar_jobs else norm,
                 merged_fields=merged_fields,
                 skip_recommendations=skip_recommendations,
                 include_similar_jobs=include_similar_jobs,
@@ -461,7 +493,10 @@ async def verify_job(
             }
         )
 
+    page_fetch_outcome: Optional[JobPageFetchOutcome] = None
+
     async def _evidence_phase() -> tuple[Any, ReviewSummary]:
+        nonlocal page_fetch_outcome
         ext_local = extract_entities(norm)
         fetch_task: Optional[asyncio.Task] = None
         if norm.canonical_url and job_fetch_enabled():
@@ -480,12 +515,15 @@ async def verify_job(
         else:
             fx = JobPageFetchOutcome(attempted=False)
             hardened_company = await name_task
+        page_fetch_outcome = fx
 
         signals.extend(fx.signals)
         warnings.extend(fx.warnings)
 
-        company = ext_local.company_hint or hardened_company or ""
-        title = ext_local.title_hint or ""
+        fetch_norm = _norm_with_fetch_hints(norm, fx)
+        ext_for_search = extract_entities(fetch_norm) if fetch_norm is not norm else ext_local
+        company = ext_for_search.company_hint or hardened_company or ""
+        title = ext_for_search.title_hint or ""
         base_query = f"{company} {title}".strip() or (norm.canonical_url or "")
 
         if merged_fields and merged_fields.company_name and ext_local.company_hint:
@@ -617,7 +655,7 @@ async def verify_job(
 
     await _maybe_attach_recommendations(
         report,
-        norm=norm,
+        norm=_norm_with_fetch_hints(norm, page_fetch_outcome),
         merged_fields=merged_fields,
         skip_recommendations=skip_recommendations,
         include_similar_jobs=include_similar_jobs,

@@ -13,7 +13,7 @@ from typing import Any, List, Mapping, Optional, Tuple, cast
 from backend.core.decision_schema import DecisionResponse, ReasonItem, SignalEvidence, Verdict, WarningItem
 from backend.core.source_evidence import _strength_rank, sort_evidence_by_trust
 
-SCORER_VERSION = "3.2.0"
+SCORER_VERSION = "3.2.2"
 
 _SEVERE_SCAM_TOKENS = (
     "training_fee",
@@ -277,6 +277,7 @@ def decide_from_signals(
     legacy_score = _internal_score(sorted_rows, url_provided)
     coverage_cap = min(100, int(30 + (coverage_ratio * 100)))
     confidence_score = min(max(weighted_score, legacy_score), coverage_cap)
+    confidence_score_int = max(0, min(100, int(confidence_score)))
 
     staleness_flag = _sig_strength(sorted_rows, "staleness_flag") == "low"
     first_seen_estimate = _sig_details(sorted_rows, "first_seen_estimate") or None
@@ -304,6 +305,7 @@ def decide_from_signals(
             verified_signal_count=verified_signal_count,
             total_signal_count=total_signal_count,
             coverage_ratio=coverage_ratio,
+            confidence_score=confidence_score_int,
             disclaimer="Some checks were blocked by policy controls, so this result may be incomplete.",
         )
 
@@ -333,6 +335,7 @@ def decide_from_signals(
             verified_signal_count=verified_signal_count,
             total_signal_count=total_signal_count,
             coverage_ratio=coverage_ratio,
+            confidence_score=confidence_score_int,
             disclaimer="This is a pattern-based warning from limited evidence; verify using official sources.",
         )
 
@@ -359,6 +362,7 @@ def decide_from_signals(
             verified_signal_count=verified_signal_count,
             total_signal_count=total_signal_count,
             coverage_ratio=coverage_ratio,
+            confidence_score=confidence_score_int,
             disclaimer="No URL corroboration was available, so this outcome remains partially uncertain.",
         )
 
@@ -422,6 +426,19 @@ def decide_from_signals(
     if final_conf in ("medium", "low"):
         warnings.append(WarningItem(code=f"CONFIDENCE_{final_conf.upper()}", message="Treat this output as advisory; verify on official channels when unsure."))
 
+    # Description-only VERIFY: lead with an explicit CTA to add the listing URL (stronger than generic corroboration copy).
+    if verdict == Verdict.VERIFY and not url_provided:
+        reasons.insert(
+            0,
+            ReasonItem(
+                code="PREFER_POSTING_URL",
+                message=(
+                    "Paste the job posting URL when you can—we could not run listing-page checks without it. "
+                    "A direct link from the job board or employer careers site is recommended over pasted description text alone."
+                ),
+            ),
+        )
+
     return DecisionResponse(
         verdict=verdict,
         confidence=cast(Any, final_conf),
@@ -438,14 +455,21 @@ def decide_from_signals(
         verified_signal_count=verified_signal_count,
         total_signal_count=total_signal_count,
         coverage_ratio=round(coverage_ratio, 3),
+        confidence_score=confidence_score_int,
         disclaimer="This assessment uses available evidence only. Some checks may be unknown or unavailable.",
     )
 
 
 def decision_to_jsonable(decision: DecisionResponse) -> dict[str, Any]:
+    raw_cs = decision.get("confidence_score")
+    if raw_cs is None:
+        cs_out = 0
+    else:
+        cs_out = max(0, min(100, int(raw_cs)))
     return {
         "verdict": decision["verdict"].value,
         "confidence": decision["confidence"],
+        "confidence_score": cs_out,
         "reasons": list(decision["reasons"]),
         "warnings": list(decision["warnings"]),
         "signals": list(decision["signals"]),

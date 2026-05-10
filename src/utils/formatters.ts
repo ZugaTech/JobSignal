@@ -62,6 +62,9 @@ export function formatReasonForDisplay(entry: any): string {
   return "Not enough verified information was available.";
 }
 
+/** Warnings use the same { code, message } contract as reasons. */
+export const formatWarningForDisplay = formatReasonForDisplay;
+
 export function rewriteMicrocopy(text: string): string {
   if (!text) return "";
   let out = text;
@@ -82,4 +85,47 @@ export function formatCachedAgo(iso: string): string {
   } catch {
     return "Verified earlier";
   }
+}
+
+/** Map pipeline strength or API trust `status` text to a dot color bucket. */
+export function signalStrengthDotClass(raw: string | undefined | null): 'green' | 'amber' | 'red' | 'neutral' {
+  const s = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  if (!s) return "neutral";
+  if (s === "high" || s === "pass" || s.includes("strong") || s === "verified") return "green";
+  if (s === "medium" || s.includes("partial")) return "amber";
+  if (s === "fail" || s === "danger" || s.includes("flag")) return "red";
+  if (s === "low" || s.includes("weak")) return "amber";
+  return "neutral";
+}
+
+export function isSafeHttpUrl(href: string | undefined | null): boolean {
+  if (!href || typeof href !== "string") return false;
+  try {
+    const u = new URL(href.trim());
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export function buildSignalsSummaryLine(
+  rows: Array<{ kind: 'pipeline'; strength: string } | { kind: 'trust'; status: string }>,
+): string {
+  if (!rows.length) return 'No verification rows were returned for this check.';
+  let strong = 0;
+  let flagged = 0;
+  let inconclusive = 0;
+  for (const row of rows) {
+    const bucket = signalStrengthDotClass(row.kind === 'pipeline' ? row.strength : row.status);
+    if (bucket === 'green') strong += 1;
+    else if (bucket === 'red') flagged += 1;
+    else inconclusive += 1;
+  }
+  const parts: string[] = [];
+  if (strong) parts.push(`${strong} supportive`);
+  if (flagged) parts.push(`${flagged} flagged`);
+  if (inconclusive) parts.push(`${inconclusive} inconclusive or not checked`);
+  return `Signal overview: ${parts.join(', ')}.`;
 }

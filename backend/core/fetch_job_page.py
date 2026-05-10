@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 import socket
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -18,7 +19,66 @@ import httpx
 from backend.core.env import EnvConfig
 from backend.core.normalization import registrable_domain_naive
 
-FETCH_ADAPTER_VERSION = "1.0.0"
+FETCH_ADAPTER_VERSION = "1.1.0"
+
+_FETCH_HTML_SAMPLE_CAP = 400_000
+
+
+def extract_employer_urls_from_html(html_bytes: bytes, base_url: str, *, max_urls: int = 48) -> Tuple[str, ...]:
+    """Extract employer / careers URLs from fetched HTML (single GET; used for domain alignment).
+
+    Conservative patterns only — canonical, ``og:url``, JSON-LD Organization URL, career-like anchors.
+    """
+
+    if not html_bytes or not base_url.startswith(("http://", "https://")):
+        return ()
+    text = html_bytes[:_FETCH_HTML_SAMPLE_CAP].decode("utf-8", errors="ignore")
+    found: List[str] = []
+    seen: set[str] = set()
+
+    def add(raw: str) -> None:
+        u = raw.strip().strip(",").rstrip(".,);)]}\"'")
+        if not u.startswith(("http://", "https://")):
+            return
+        low = u.lower()
+        if low.startswith(("javascript:", "mailto:", "tel:", "data:")):
+            return
+        if u not in seen:
+            seen.add(u)
+            found.append(u)
+
+    for rx in (
+        r'<link[^>]+href=["\']([^"\']+)["\'][^>]*rel=["\']canonical["\']',
+        r'<link[^>]+rel=["\']canonical["\'][^>]+href=["\']([^"\']+)["\']',
+    ):
+        for m in re.finditer(rx, text, re.I):
+            add(urljoin(base_url, m.group(1)))
+
+    for m in re.finditer(
+        r'<meta[^>]+property=["\']og:url["\'][^>]+content=["\']([^"\']+)["\']',
+        text,
+        re.I,
+    ):
+        add(urljoin(base_url, m.group(1)))
+
+    for m in re.finditer(
+        r'\{[^{}]*"@type"\s*:\s*"Organization"[^{}]*"url"\s*:\s*"([^"]+)"[^{}]*\}',
+        text,
+        re.I | re.DOTALL,
+    ):
+        add(urljoin(base_url, m.group(1)))
+
+    for m in re.finditer(r'"sameAs"\s*:\s*"([^"]+)"', text, re.I):
+        add(urljoin(base_url, m.group(1)))
+
+    career_kw = ("career", "job", "employment", "join-", "hiring", "work-at", "vacanc", "opening")
+    for m in re.finditer(r'<a[^>]+href=["\']([^"\']+)["\']', text, re.I):
+        href = m.group(1).strip()
+        low = href.lower()
+        if any(k in low for k in career_kw):
+            add(urljoin(base_url, href))
+
+    return tuple(found[:max_urls])
 
 
 def job_fetch_enabled() -> bool:
@@ -33,6 +93,12 @@ class JobPageFetchOutcome:
     attempted: bool
     signals: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[Dict[str, str]] = field(default_factory=list)
+    final_url: Optional[str] = None
+    employer_page_urls: Tuple[str, ...] = ()
+    page_title: Optional[str] = None
+    page_description: Optional[str] = None
+    site_name: Optional[str] = None
+    extracted_job_text: Optional[str] = None
 
 
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
@@ -149,6 +215,77 @@ def _domain_align_signal(strength: str, details: str) -> Dict[str, Any]:
         "strength": strength,
         "details": details[:512],
     }
+
+
+def _clean_html_text(raw: str) -> str:
+    text = re.sub(r"<script\b[^>]*>.*?</script>", " ", raw, flags=re.I | re.S)
+    text = re.sub(r"<style\b[^>]*>.*?</style>", " ", text, flags=re.I | re.S)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = (
+        text.replace("&amp;", "&")
+        .replace("&quot;", '"')
+        .replace("&#39;", "'")
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+    )
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _first_meta_content(html: str, *names: str) -> Optional[str]:
+    for name in names:
+        rx = (
+            r'<meta[^>]+(?:name|property)=["\']'
+            + re.escape(name)
+            + r'["\'][^>]+content=["\']([^"\']+)["\']'
+        )
+        m = re.search(rx, html, re.I)
+        if m:
+            cleaned = _clean_html_text(m.group(1))
+            if cleaned:
+                return cleaned[:500]
+    return None
+
+
+def extract_job_text_hints_from_html(html_bytes: bytes) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """Extract conservative page hints for search/recommendation discovery.
+
+    This is not treated as trusted evidence by itself; it only improves query
+    construction when the user supplied a URL but no pasted job description.
+    """
+
+    if not html_bytes:
+        return None, None, None, None
+    html = html_bytes[:_FETCH_HTML_SAMPLE_CAP].decode("utf-8", errors="ignore")
+
+    title: Optional[str] = None
+    for rx in (
+        r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
+        r"<title[^>]*>(.*?)</title>",
+        r"<h1[^>]*>(.*?)</h1>",
+    ):
+        m = re.search(rx, html, re.I | re.S)
+        if m:
+            title = _clean_html_text(m.group(1))[:160]
+            if title:
+                break
+
+    site_name = _first_meta_content(html, "og:site_name", "application-name")
+    description = _first_meta_content(html, "description", "og:description", "twitter:description")
+
+    body_sample = _clean_html_text(html)[:1600]
+    parts: List[str] = []
+    if title:
+        parts.append(f"Title: {title}")
+    if site_name:
+        parts.append(f"Company: {site_name}")
+    if description:
+        parts.append(f"Description: {description}")
+    elif body_sample:
+        parts.append(f"Description: {body_sample}")
+
+    extracted = "\n".join(parts).strip() or None
+    return title, description, site_name, extracted
 
 
 def run_job_page_fetch(
@@ -305,7 +442,27 @@ def run_job_page_fetch(
         else:
             signals.append(_domain_align_signal("none", "Could not compare registrable domains."))
 
-        return JobPageFetchOutcome(attempted=True, signals=signals, warnings=warnings)
+        employer_urls: Tuple[str, ...] = ()
+        page_title: Optional[str] = None
+        page_description: Optional[str] = None
+        site_name: Optional[str] = None
+        extracted_job_text: Optional[str] = None
+        if html_like and total_read > 0:
+            html_bytes = bytes(buf)
+            employer_urls = extract_employer_urls_from_html(html_bytes, final_url)
+            page_title, page_description, site_name, extracted_job_text = extract_job_text_hints_from_html(html_bytes)
+
+        return JobPageFetchOutcome(
+            attempted=True,
+            signals=signals,
+            warnings=warnings,
+            final_url=final_url,
+            employer_page_urls=employer_urls,
+            page_title=page_title,
+            page_description=page_description,
+            site_name=site_name,
+            extracted_job_text=extracted_job_text,
+        )
     finally:
         if own_client:
             hc.close()

@@ -7,7 +7,11 @@ const JOB_DESCRIPTION_KEYWORDS = [
   "remote", "on-site", "hybrid", "benefits",
 ];
 
-export function useClipboardAndHandoff(onDetect: (data: { url?: string; text?: string; batch?: string[] }) => void) {
+function decodeBase64JsonParam(value: string): unknown {
+  return JSON.parse(decodeURIComponent(escape(atob(value))));
+}
+
+export function useClipboardAndHandoff(onDetect: (data: { url?: string; text?: string; batch?: string[]; cachedResult?: unknown }) => void) {
   const [pendingClipboard, setPendingClipboard] = useState<{ content: string; type: 'url' | 'description' | 'unknown' } | null>(null);
 
   const classifyContent = (text: string) => {
@@ -24,6 +28,11 @@ export function useClipboardAndHandoff(onDetect: (data: { url?: string; text?: s
 
   const detectClipboard = useCallback(async () => {
     try {
+      const hostOk =
+        typeof window !== 'undefined' &&
+        (window.isSecureContext || ['localhost', '127.0.0.1'].includes(window.location.hostname));
+      if (!hostOk || !navigator.clipboard?.readText) return;
+
       const text = await navigator.clipboard.readText();
       if (!text || !text.trim()) return;
       
@@ -38,23 +47,33 @@ export function useClipboardAndHandoff(onDetect: (data: { url?: string; text?: s
         setPendingClipboard({ content: trimmed, type });
       }
     } catch (e) {
-      // Clipboard access denied or unsupported
+      console.warn('clipboard read unavailable', e);
     }
   }, []);
 
   useEffect(() => {
     // Handle query params for extension handoff
     const params = new URLSearchParams(window.location.search);
+    const cached_result = params.get("cached_result");
     const url = params.get("url");
     const job_description = params.get("job_description");
     const batch_urls = params.get("batch_urls");
 
     let detected = false;
-    const result: { url?: string; text?: string; batch?: string[] } = {};
+    const result: { url?: string; text?: string; batch?: string[]; cachedResult?: unknown } = {};
 
     if (url) {
-      result.url = url;
+      result.url = decodeURIComponent(url);
       detected = true;
+    }
+
+    if (cached_result) {
+      try {
+        result.cachedResult = decodeBase64JsonParam(cached_result);
+        detected = true;
+      } catch (e) {
+        console.warn('failed to decode cached_result handoff', e);
+      }
     }
 
     if (job_description) {

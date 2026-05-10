@@ -10,7 +10,7 @@ from backend.core.prompt_guard import is_prompt_leak
 from backend.core.user_copy import (
     build_fallback_llm_summary,
     contains_internal_verdict_jargon,
-    plain_reason_for_code,
+    human_reason_warning_line,
     scrub_internal_jargon,
 )
 
@@ -119,8 +119,7 @@ def validate_and_repair_response(report: Dict[str, Any], *, request_id: str) -> 
     except (TypeError, ValueError):
         cs = None
     if cs is None:
-        cmap = {"high": 85, "medium": 60, "low": 35}
-        cs = cmap.get(str(out.get("confidence") or "").lower(), 35)
+        cs = 0
     cs = max(0, min(100, cs))
     out["confidence_score"] = cs
     # Label is always derived from the numeric score so UI cannot drift from the bar.
@@ -135,12 +134,12 @@ def validate_and_repair_response(report: Dict[str, Any], *, request_id: str) -> 
                     scrub_internal_jargon(item.strip(), replacement="Some checks were inconclusive.")
                 )
             elif isinstance(item, dict):
-                code = str(item.get("code") or "").strip()
-                msg = str(item.get("message") or "").strip()
-                if code:
-                    reasons_out.append(plain_reason_for_code(code))
-                elif msg:
-                    reasons_out.append(scrub_internal_jargon(msg, replacement="Some checks were inconclusive."))
+                reasons_out.append(
+                    human_reason_warning_line(
+                        code=str(item.get("code") or ""),
+                        message=str(item.get("message") or ""),
+                    )
+                )
     if not reasons_out:
         reasons_out.append("Not enough verified information was available to complete this check.")
     out["reasons"] = reasons_out

@@ -65,6 +65,7 @@ REASON_PLAIN_BY_CODE: Dict[str, str] = {
     "CONFIDENCE_LOW": "Evidence was too limited for a confident verdict.",
     "CONFIDENCE_MEDIUM": "Some signals were unclear; treat this result as a guide.",
     "INSUFFICIENT_CORROBORATION": "Not enough signals passed to confidently recommend applying. Some checks came back unclear.",
+    "PREFER_POSTING_URL": "Add the job posting URL from the board or employer site when you can—checks are much stronger with the original listing link than with pasted text alone.",
     "GATES_PASSED": "We found strong corroborating evidence from official employer channels or verified job boards.",
     "T3_ONLY": "We found general web mentions, but could not confirm this role directly with the employer's official channels or trusted job boards.",
     "CONTRADICTION": "The posting page looked reachable, but employer-domain alignment was unclear.",
@@ -96,6 +97,17 @@ def plain_reason_for_code(code: str) -> str:
         if k.lower() == lk:
             return v
     return key.replace("_", " ").title().strip() + "."
+
+
+def human_reason_warning_line(*, code: str, message: str) -> str:
+    """Prefer the scorer/API message when jargon-safe; else catalog copy by code."""
+
+    c = (code or "").strip()
+    m = (message or "").strip()
+    fallback = plain_reason_for_code(c) if c else plain_reason_for_code("")
+    if m:
+        return scrub_internal_jargon(m, replacement=fallback)
+    return fallback
 
 
 def signal_pass_fail_counts(report: Mapping[str, Any]) -> tuple[int, int]:

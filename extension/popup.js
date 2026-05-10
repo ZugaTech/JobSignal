@@ -4,6 +4,21 @@ let backendUrl = "https://jobsignal.up.railway.app";
 let webAppUrlOverride = null;
 let currentJobData = null;
 let currentTabUrl = "";
+let lastVerifyResult = null;
+
+const STANDALONE_HANDOFF_KEY = "standaloneHandoff";
+const isStandalone =
+  new URLSearchParams(window.location.search).get("standalone") === "true";
+
+const btnOpenInWindow = document.getElementById("btnOpenInWindow");
+const btnCloseStandalone = document.getElementById("btnCloseStandalone");
+if (isStandalone) {
+  btnOpenInWindow.classList.add("hidden");
+  btnCloseStandalone.classList.remove("hidden");
+} else {
+  btnOpenInWindow.classList.remove("hidden");
+  btnCloseStandalone.classList.add("hidden");
+}
 
 const stateIdle = document.getElementById("stateIdle");
 const stateLoading = document.getElementById("stateLoading");
@@ -11,6 +26,10 @@ const stateResult = document.getElementById("stateResult");
 const stateError = document.getElementById("stateError");
 const stateNotJob = document.getElementById("stateNotJob");
 const settingsPanel = document.getElementById("settingsPanel");
+
+function normalizeApiOrigin(value) {
+  return (value || "").trim().replace(/\/+$/, "");
+}
 
 function showState(stateEl) {
   [stateIdle, stateLoading, stateResult, stateError, stateNotJob].forEach((el) => {
@@ -22,7 +41,7 @@ function showState(stateEl) {
 chrome.storage.local.get(["backendUrl", "webAppUrl"], (res) => {
   const input = document.getElementById("backendUrlInput");
   if (res.backendUrl) {
-    backendUrl = res.backendUrl;
+    backendUrl = normalizeApiOrigin(res.backendUrl);
     if (input) input.value = backendUrl;
   } else if (input && !input.value) {
     input.placeholder = "https://your-app.up.railway.app";
@@ -32,12 +51,34 @@ chrome.storage.local.get(["backendUrl", "webAppUrl"], (res) => {
   }
 });
 
+btnOpenInWindow.addEventListener("click", () => {
+  chrome.storage.session.set(
+    {
+      [STANDALONE_HANDOFF_KEY]: {
+        tabUrl: currentTabUrl,
+        jobData: currentJobData,
+      },
+    },
+    () => {
+      chrome.windows.create({
+        url: chrome.runtime.getURL("popup.html?standalone=true"),
+        type: "popup",
+        width: 420,
+        height: 600,
+      });
+    }
+  );
+});
+
+btnCloseStandalone.addEventListener("click", () => window.close());
+
 document.getElementById("btnSettings").addEventListener("click", () => {
   settingsPanel.classList.toggle("hidden");
 });
 
 document.getElementById("btnSaveSettings").addEventListener("click", () => {
-  backendUrl = document.getElementById("backendUrlInput").value;
+  backendUrl = normalizeApiOrigin(document.getElementById("backendUrlInput").value);
+  document.getElementById("backendUrlInput").value = backendUrl;
   chrome.storage.local.set({ backendUrl });
   settingsPanel.classList.add("hidden");
 });
@@ -47,28 +88,45 @@ document.getElementById("btnClearCache").addEventListener("click", () => {
   alert("Cache cleared");
 });
 
-function openWebApp(jobUrl, jobDescription) {
+function encodeUtf8Base64(value) {
+  return btoa(unescape(encodeURIComponent(value)));
+}
+
+function openWebApp(jobUrl, jobDescription, existingResult) {
   let baseForOrigin = webAppUrlOverride || backendUrl;
   let origin = "https://jobsignal.up.railway.app";
   try {
-    origin = new URL(baseForOrigin).origin;
+    origin = new URL(baseForOrigin.replace(/\/v1.*$/, "").replace(/\/api.*$/, "")).origin;
   } catch {
     /* keep default */
   }
 
   const params = new URLSearchParams();
-  if (jobUrl) params.set("url", jobUrl);
+  if (jobUrl) params.set("url", encodeURIComponent(jobUrl));
 
-  if (jobDescription && jobDescription.trim().length > 0) {
-    const encoded = btoa(encodeURIComponent(jobDescription));
-    params.set("job_description", encoded);
+  if (existingResult) {
+    try {
+      const encoded = encodeUtf8Base64(JSON.stringify(existingResult));
+      if (encoded.length <= 50 * 1024) {
+        params.set("cached_result", encoded);
+      } else {
+        console.warn("Result handoff too large; opening web app with URL only");
+      }
+    } catch (e) {
+      console.warn("Could not encode result for handoff", e);
+    }
+  } else if (jobDescription && jobDescription.trim().length > 0) {
+    const encoded = encodeUtf8Base64(jobDescription);
+    if (encoded.length <= 50 * 1024) {
+      params.set("job_description", encoded);
+    }
   }
 
   const qs = params.toString();
   chrome.tabs.create({ url: qs ? `${origin}/?${qs}` : `${origin}/` });
 }
 
-document.getElementById("btnSeeFull").addEventListener("click", () => openWebApp(currentJobData?.url, currentJobData?.description));
+document.getElementById("btnSeeFull").addEventListener("click", () => openWebApp(currentJobData?.url, currentJobData?.description, lastVerifyResult));
 document.getElementById("btnOpenApp").addEventListener("click", () => openWebApp(currentTabUrl, null));
 document.getElementById("btnOpenAppFallback").addEventListener("click", () => openWebApp(currentTabUrl, null));
 
@@ -82,6 +140,7 @@ document.getElementById("btnVerify").addEventListener("click", () => {
 });
 
 function applyResult(report) {
+  lastVerifyResult = report;
   showState(stateResult);
   
   const vBand = document.getElementById("verdictBand");
@@ -99,7 +158,9 @@ function applyResult(report) {
   vChip.style.color = color;
   vChip.style.borderColor = color;
 
-  let conf = report.confidence === "high" ? 90 : (report.confidence === "medium" ? 60 : 30);
+  let conf = Number.isFinite(Number(report.confidence_score))
+    ? Math.max(0, Math.min(100, Number(report.confidence_score)))
+    : 0;
   document.getElementById("confidencePct").textContent = conf + "%";
   document.getElementById("confidenceFill").style.width = conf + "%";
   document.getElementById("confidenceFill").style.backgroundColor = color;
@@ -134,7 +195,7 @@ async function verifyJob(data) {
   }
 
   try {
-    const res = await fetch(`${backendUrl}/v1/verify`, {
+    const res = await fetch(`${normalizeApiOrigin(backendUrl)}/v1/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -159,39 +220,94 @@ async function verifyJob(data) {
   }
 }
 
-chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-  if (!tabs[0]) return;
-  const tab = tabs[0];
-  currentTabUrl = tab.url;
+function applyJobPageContext(tabUrl, response) {
+  currentTabUrl = tabUrl;
 
-  if (!tab.url.startsWith("http")) {
+  if (!tabUrl.startsWith("http")) {
     showState(stateNotJob);
     return;
   }
 
-  chrome.tabs.sendMessage(tab.id, { action: "GET_JOB_DATA" }, (response) => {
-    if (chrome.runtime.lastError) {
+  if (!response) {
+    showState(stateNotJob);
+    return;
+  }
+
+  currentJobData = response;
+  if (response.low_confidence) {
+    showState(stateNotJob);
+    return;
+  }
+
+  document.getElementById("previewTitle").textContent =
+    response.title || "Unknown Title";
+  document.getElementById("previewCompany").textContent =
+    response.company || "Unknown Company";
+  document.getElementById("jobPreview").classList.remove("hidden");
+
+  if (response.url && response.description) {
+    verifyJob(response);
+  } else {
+    showState(stateIdle);
+  }
+}
+
+function loadFromActiveTab() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs[0]) return;
+    const tab = tabs[0];
+
+    if (!tab.url.startsWith("http")) {
+      currentTabUrl = tab.url;
       showState(stateNotJob);
       return;
     }
 
-    if (response) {
-      currentJobData = response;
-      if (response.low_confidence) {
-        showState(stateNotJob);
-      } else {
-        document.getElementById("previewTitle").textContent = response.title || "Unknown Title";
-        document.getElementById("previewCompany").textContent = response.company || "Unknown Company";
-        document.getElementById("jobPreview").classList.remove("hidden");
-        
-        if (response.url && response.description) {
-          verifyJob(response);
-        } else {
-          showState(stateIdle);
-        }
+    chrome.tabs.sendMessage(tab.id, { action: "GET_JOB_DATA" }, (response) => {
+      if (chrome.runtime.lastError) {
+        chrome.scripting.executeScript(
+          {
+            target: { tabId: tab.id },
+            files: ["content.js"],
+          },
+          () => {
+            if (chrome.runtime.lastError) {
+              currentTabUrl = tab.url;
+              showState(stateNotJob);
+              return;
+            }
+
+            chrome.tabs.sendMessage(
+              tab.id,
+              { action: "GET_JOB_DATA" },
+              (retryResponse) => {
+                if (chrome.runtime.lastError) {
+                  currentTabUrl = tab.url;
+                  showState(stateNotJob);
+                  return;
+                }
+                applyJobPageContext(tab.url, retryResponse);
+              }
+            );
+          }
+        );
+        return;
       }
+      applyJobPageContext(tab.url, response);
+    });
+  });
+}
+
+if (isStandalone) {
+  chrome.storage.session.get(STANDALONE_HANDOFF_KEY, (res) => {
+    const handoff = res[STANDALONE_HANDOFF_KEY];
+    if (handoff && typeof handoff.tabUrl === "string") {
+      chrome.storage.session.remove(STANDALONE_HANDOFF_KEY);
+      applyJobPageContext(handoff.tabUrl, handoff.jobData ?? null);
     } else {
-      showState(stateNotJob);
+      loadFromActiveTab();
     }
   });
-});
+} else {
+  loadFromActiveTab();
+}

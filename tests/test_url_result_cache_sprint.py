@@ -20,6 +20,22 @@ def test_materialize_cache_key_ignores_tracking_params():
     assert materialize_url_result_cache_key(a) == materialize_url_result_cache_key(b)
 
 
+def test_materialize_cache_key_differs_for_distinct_urls():
+    a = "https://www.linkedin.com/jobs/view/111"
+    b = "https://www.linkedin.com/jobs/view/222"
+    assert materialize_url_result_cache_key(a) != materialize_url_result_cache_key(b)
+
+
+def test_in_memory_cache_uses_exact_keys_only():
+    from backend.core.cache_store import InMemoryCache
+
+    mem = InMemoryCache()
+    mem.set(RESULT_CACHE_KEY_PREFIX + "abc", "payload-a", ttl_seconds=60)
+    assert mem.get(RESULT_CACHE_KEY_PREFIX + "abc") == "payload-a"
+    assert mem.get(RESULT_CACHE_KEY_PREFIX + "ab") is None
+    assert mem.get(RESULT_CACHE_KEY_PREFIX + "abcd") is None
+
+
 def test_should_not_cache_low_confidence_verify():
     r = {
         "verdict": "VERIFY",

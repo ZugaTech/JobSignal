@@ -1,53 +1,72 @@
-import { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import { useState, useCallback } from 'react';
+import axios, { isAxiosError } from 'axios';
+import type { SanitizedVerifyReport } from '../types/verify';
 import { sanitizeApiResponse } from '../utils/api-helpers';
+import { resolveApiBase } from '../utils/apiBase';
 
 export type Phase = 'idle' | 'loading' | 'error' | 'success';
 
+function messageFromVerifyAxiosError(err: unknown): string {
+  if (!isAxiosError(err)) {
+    return 'Something went wrong. Please try again.';
+  }
+  const status = err.response?.status;
+  const data = err.response?.data as { detail?: unknown; message?: string } | undefined;
+
+  if (status === 422) {
+    return 'We could not validate this request. Check the URL or description and try again.';
+  }
+  if (status === 429) {
+    return 'Too many checks in a short time. Please wait a minute and try again.';
+  }
+  if (status === 400 && typeof data?.detail === 'string') {
+    return data.detail;
+  }
+  if (status != null && status >= 500) {
+    return 'Our verification service had a problem. Please try again in a moment.';
+  }
+  if (typeof data?.message === 'string' && data.message.trim()) {
+    return data.message.trim();
+  }
+  if (Array.isArray(data?.detail)) {
+    const first = data.detail[0] as { msg?: string } | undefined;
+    if (first && typeof first.msg === 'string') return first.msg;
+  }
+  return 'Something went wrong. Please try again.';
+}
+
 export function useJobSignal() {
   const [phase, setPhase] = useState<Phase>('idle');
-  const [report, setReport] = useState<any>(null);
+  const [report, setReport] = useState<SanitizedVerifyReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingStep, setLoadingStep] = useState('Checking the job listing...');
   const [elapsed, setElapsed] = useState(0);
 
-  const apiBase = useCallback(() => {
-    if (typeof (window as any).JOBSIGNAL_API_BASE === "string" && (window as any).JOBSIGNAL_API_BASE.trim()) {
-      return (window as any).JOBSIGNAL_API_BASE.replace(/\/$/, "");
-    }
-    const h = window.location.hostname;
-    const protocol = window.location.protocol;
-    const port = window.location.port;
+  const apiBase = useCallback(() => resolveApiBase(), []);
 
-    if (protocol === "file:" || h === "") {
-      return "http://127.0.0.1:8080";
-    }
-    if ((h === "localhost" || h === "127.0.0.1") && port === "8080") {
-      return "";
-    }
-    if (h === "localhost" || h === "127.0.0.1") {
-      return "http://127.0.0.1:8080";
-    }
-    return "";
-  }, []);
-
-  const verify = async (params: { url?: string; text?: string; file?: File | null; includeSimilarJobs?: boolean; forceRefresh?: boolean }) => {
+  const verify = async (params: {
+    url?: string;
+    text?: string;
+    file?: File | null;
+    includeSimilarJobs?: boolean;
+    forceRefresh?: boolean;
+  }) => {
     setPhase('loading');
     setError(null);
     setElapsed(0);
-    
+
     const startTime = performance.now();
     const timer = setInterval(() => {
       setElapsed(Math.floor((performance.now() - startTime) / 1000));
     }, 1000);
 
     const steps = [
-      "Checking the job listing...",
-      "Verifying company signals...",
-      "Scanning public sources...",
-      "Comparing cross-platform data...",
-      "Reviewing company reputation...",
-      "Building your report...",
+      'Checking the job listing...',
+      'Verifying company signals...',
+      'Scanning public sources...',
+      'Comparing cross-platform data...',
+      'Reviewing company reputation...',
+      'Building your report...',
     ];
     let stepIdx = 0;
     const stepTimer = setInterval(() => {
@@ -55,51 +74,45 @@ export function useJobSignal() {
       setLoadingStep(steps[stepIdx]);
     }, 3000);
 
-    try {
-      const base = apiBase();
-      let response;
+    const base = apiBase();
 
+    const buildMultipart = (forceRefresh: boolean) => {
+      const fd = new FormData();
+      if (params.url) fd.append('job_url', params.url);
+      if (params.text) fd.append('job_description', params.text);
+      if (params.file) fd.append('job_image', params.file);
+      fd.append('include_similar_jobs', params.includeSimilarJobs ? 'true' : 'false');
+      if (forceRefresh || params.forceRefresh) fd.append('force_refresh', 'true');
+      return fd;
+    };
+
+    const postVerify = async (forceRefresh: boolean) => {
       if (params.file) {
-        const fd = new FormData();
-        if (params.url) fd.append("job_url", params.url);
-        if (params.text) fd.append("job_description", params.text);
-        fd.append("job_image", params.file);
-        fd.append("include_similar_jobs", params.includeSimilarJobs ? "true" : "false");
-        if (params.forceRefresh) fd.append("force_refresh", "true");
-        
-        response = await axios.post(`${base}/v1/verify`, fd);
-      } else {
-        response = await axios.post(`${base}/v1/verify`, {
-          job_url: params.url || null,
-          job_description: params.text || null,
-          include_similar_jobs: params.includeSimilarJobs,
-          force_refresh: params.forceRefresh,
-        });
+        return axios.post(`${base}/v1/verify`, buildMultipart(forceRefresh));
       }
+      return axios.post(`${base}/v1/verify`, {
+        job_url: params.url || null,
+        job_description: params.text || null,
+        include_similar_jobs: params.includeSimilarJobs,
+        force_refresh: forceRefresh || !!params.forceRefresh,
+      });
+    };
 
+    try {
+      let response = await postVerify(false);
       let data = response.data;
 
-      // Handle partial cache hit
       if (data.cached === true && data.cache_complete === false) {
         setReport(sanitizeApiResponse(data));
-        // Continue loading for full report
-        const refreshResponse = await axios.post(`${base}/v1/verify`, params.file ? {
-          // FormData needs to be recreated if we were to support file refresh here, 
-          // but usually URL cache hits don't have files.
-        } : {
-          job_url: params.url || null,
-          job_description: params.text || null,
-          include_similar_jobs: params.includeSimilarJobs,
-          force_refresh: true,
-        });
+        const refreshResponse = await postVerify(true);
         data = refreshResponse.data;
       }
 
       setReport(sanitizeApiResponse(data));
       setPhase('success');
-    } catch (err: any) {
-      console.error(err);
-      setError(err.response?.data?.message || "Something went wrong. Please try again.");
+    } catch (err: unknown) {
+      console.error('verify request failed', err);
+      setError(messageFromVerifyAxiosError(err));
       setPhase('error');
     } finally {
       clearInterval(timer);
@@ -114,10 +127,16 @@ export function useJobSignal() {
     loadingStep,
     elapsed,
     verify,
+    hydrateReport: (raw: unknown) => {
+      setReport(sanitizeApiResponse(raw));
+      setError(null);
+      setElapsed(0);
+      setPhase('success');
+    },
     reset: () => {
       setPhase('idle');
       setReport(null);
       setError(null);
-    }
+    },
   };
 }

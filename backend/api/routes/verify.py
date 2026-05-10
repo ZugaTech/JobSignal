@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import re
-from typing import Any, Optional
+import uuid
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field, ValidationError
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from backend.core.env import EnvConfig
 from backend.core.metrics import METRICS
@@ -24,6 +28,9 @@ from backend.core.url_result_cache import (
 )
 
 router = APIRouter()
+logger = logging.getLogger("jobsignal")
+
+_BATCH_VERIFY_CONCURRENCY = 4
 
 
 _JOB_URL_PATTERNS = {
@@ -52,6 +59,44 @@ class VerifyRequest(BaseModel):
 
 class ValidateUrlsRequest(BaseModel):
     urls: list[str] = Field(default_factory=list, max_length=40)
+
+
+class VerifyBatchOptions(BaseModel):
+    """Options applied to every URL in the batch (same semantics as single /v1/verify JSON body)."""
+
+    include_similar_jobs: Optional[bool] = Field(
+        default=None,
+        description="If set, request similar-job recommendations where supported.",
+    )
+    force_refresh: bool = Field(default=False, description="Skip cache reads for each URL.")
+
+
+class VerifyBatchRequest(BaseModel):
+    urls: Annotated[list[str], Field(max_length=40)] = Field(
+        default_factory=list,
+        description="HTTP(S) job posting URLs, max 40 after deduplicating whitespace-only repeats.",
+    )
+    options: VerifyBatchOptions = Field(default_factory=VerifyBatchOptions)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_and_dedupe_urls(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("urls")
+        if not isinstance(raw, list):
+            return data
+        seen: set[str] = set()
+        unique: list[str] = []
+        for item in raw:
+            if isinstance(item, str):
+                s = item.strip()
+                if s and s not in seen:
+                    seen.add(s)
+                    unique.append(s)
+        out = dict(data)
+        out["urls"] = unique
+        return out
 
 
 def _coerce_optional_bool(raw: Any) -> Optional[bool]:
@@ -225,6 +270,58 @@ async def verify(request: Request) -> dict:
     public_rep = await _finalize_verify_response(report)
     METRICS.record_verification(str(public_rep.get("verdict", "VERIFY")), cache_hit=_cache_hit_metric(public_rep))
     return public_rep
+
+
+@router.post("/v1/verify/batch")
+async def verify_batch(body: VerifyBatchRequest) -> StreamingResponse:
+    """Verify many URLs; stream **NDJSON** lines as each job completes (order not guaranteed).
+
+    Each line is a JSON object::
+
+        {\"url\": \"...\", \"ok\": true, \"report\": { ... trimmed verify payload ... }}
+        {\"url\": \"...\", \"ok\": false, \"error\": \"plain message\"}
+
+    Use ``Accept: application/x-ndjson`` on the client; body is JSON
+    ``{\"urls\": [...], \"options\": {\"include_similar_jobs\": bool?, \"force_refresh\": bool}}``.
+    """
+
+    urls = body.urls
+    if not urls:
+        raise HTTPException(status_code=400, detail="Provide at least one job URL.")
+    opts = body.options
+    sem = asyncio.Semaphore(_BATCH_VERIFY_CONCURRENCY)
+
+    async def run_one(url: str) -> dict[str, Any]:
+        rid = str(uuid.uuid4())
+        async with sem:
+            try:
+                raw = await verify_job(
+                    job_url=url,
+                    job_description=None,
+                    include_similar_jobs=opts.include_similar_jobs,
+                    force_refresh=opts.force_refresh,
+                    request_id=rid,
+                )
+                repaired = validate_and_repair_response(raw, request_id=str(raw.get("request_id") or rid))
+                public = await _finalize_verify_response(repaired)
+                METRICS.record_verification(
+                    str(public.get("verdict", "VERIFY")),
+                    cache_hit=_cache_hit_metric(public),
+                )
+                return {"url": url, "ok": True, "report": public}
+            except ValueError as e:
+                return {"url": url, "ok": False, "error": str(e)}
+            except Exception as e:  # noqa: BLE001
+                logger.exception("batch_verify_failed url=%s request_id=%s", url, rid)
+                return {"url": url, "ok": False, "error": "Verification failed for this URL."}
+
+    async def ndjson_lines() -> Any:
+        tasks = [asyncio.create_task(run_one(u)) for u in urls]
+        for fut in asyncio.as_completed(tasks):
+            item = await fut
+            yield (json.dumps(item, default=str) + "\n").encode("utf-8")
+
+    return StreamingResponse(ndjson_lines(), media_type="application/x-ndjson")
 
 
 @router.get("/v1/report/{request_id}")

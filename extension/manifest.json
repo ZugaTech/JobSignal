@@ -6,7 +6,8 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "windows"
   ],
   "host_permissions": [
     "https://*.linkedin.com/*",
@@ -20,9 +21,7 @@
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
-  "action": {
-    "default_popup": "popup.html"
-  },
+  "action": {},
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

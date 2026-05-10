@@ -1,6 +1,7 @@
 import pytest
 
 from backend.core.coordinator import EvidenceCoordinator
+from backend.core.fetch_job_page import extract_job_text_hints_from_html
 from backend.core.normalization import normalize_job_input
 from backend.core import recommendations as rec_mod
 from backend.core.recommendations import (
@@ -20,7 +21,7 @@ def test_effective_max_hard_caps_at_three(monkeypatch):
 
 def test_recommendations_min_verify_score_default(monkeypatch):
     monkeypatch.delenv("RECOMMENDATIONS_MIN_VERIFY_SCORE", raising=False)
-    assert recommendations_min_verify_score() == 70
+    assert recommendations_min_verify_score() == 55
 
 
 def test_recommendations_min_verify_score_env(monkeypatch):
@@ -34,6 +35,24 @@ def test_any_search_configured_requires_key(monkeypatch):
     assert any_search_configured() is False
     monkeypatch.setenv("SERPER_API_KEY", "x")
     assert any_search_configured() is True
+
+
+def test_extract_job_text_hints_from_html_for_recommendations():
+    html = b"""
+    <html>
+      <head>
+        <title>Senior Data Engineer - Acme Careers</title>
+        <meta property="og:site_name" content="Acme Robotics">
+        <meta name="description" content="Build Python data pipelines for robotics telemetry.">
+      </head>
+      <body><h1>Senior Data Engineer</h1></body>
+    </html>
+    """
+    title, desc, site, extracted = extract_job_text_hints_from_html(html)
+    assert title and "Senior Data Engineer" in title
+    assert desc and "Python data pipelines" in desc
+    assert site == "Acme Robotics"
+    assert extracted and "Company: Acme Robotics" in extracted
 
 
 @pytest.mark.asyncio
@@ -99,6 +118,34 @@ async def test_build_recommendations_url_only_emits_discovery_query(monkeypatch)
     q = captured[0].lower()
     assert "example" in q or "jobs" in q or "careers" in q
     assert len(out) == 1
+
+
+@pytest.mark.asyncio
+async def test_build_recommendations_uses_page_hints_as_keywords(monkeypatch):
+    monkeypatch.setenv("SERPER_API_KEY", "k")
+    captured: list[str] = []
+
+    class Coord:
+        async def search(self, query: str, num: int = 5):
+            captured.append(query)
+            return [
+                {
+                    "title": "Backend Engineer",
+                    "link": "https://jobs.example.com/backend-engineer",
+                    "snippet": "",
+                    "source": "example",
+                }
+            ]
+
+    norm = normalize_job_input(
+        "https://company.example/jobs/123",
+        "Title: Backend Engineer\nCompany: Acme Robotics\nDescription: Python API role",
+    )
+    out = await build_recommendations(Coord(), norm, max_collect=5)  # type: ignore[arg-type]
+    assert len(out) == 1
+    q = captured[0]
+    assert "Backend Engineer" in q
+    assert "Acme Robotics" in q
 
 
 @pytest.mark.asyncio

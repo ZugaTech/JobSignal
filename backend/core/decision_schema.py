@@ -60,6 +60,8 @@ class DecisionResponse(TypedDict):
     total_signal_count: int
     coverage_ratio: float
     disclaimer: str
+    # 0–100 composite from scorer layers + legacy signals (optional for legacy callers).
+    confidence_score: NotRequired[int]
 
 
 class CacheMeta(TypedDict):

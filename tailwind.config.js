@@ -12,7 +12,7 @@ export default {
           dark: '#4f46e5',    // Indigo 600
           light: '#818cf8',   // Indigo 400
         },
-        background: '#0a0a0a',
+        background: '#080808',
         panel: '#171717',
         border: '#262626',
       },

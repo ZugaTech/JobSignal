@@ -7,7 +7,7 @@ from typing import Any, Optional, TypedDict, cast
 
 from backend.core.decision_schema import CacheMeta, DecisionResponse, ResponseMeta
 from backend.core.scoring import decision_to_jsonable
-from backend.core.user_copy import plain_reason_for_code
+from backend.core.user_copy import human_reason_warning_line, plain_reason_for_code
 
 _INTERNAL_SIGNAL_IDS = frozenset({
     "url_canonical", "input_text_only",
@@ -125,7 +125,11 @@ def build_public_report(
         "VERIFY": "We couldn't fully confirm this listing. Check the company's official careers page before applying.",
         "SKIP": "We found signals that suggest this listing may not be trustworthy. Proceed with caution.",
     }
-    confidence_score_map = {"high": 85, "medium": 60, "low": 35}
+    try:
+        numeric_confidence = int(payload["confidence_score"]) if payload.get("confidence_score") is not None else 0
+    except (TypeError, ValueError):
+        numeric_confidence = 0
+    numeric_confidence = max(0, min(100, numeric_confidence))
 
     trust_signals = [
         {
@@ -137,11 +141,17 @@ def build_public_report(
     ]
 
     human_reasons = [
-        {"code": r.get("code", ""), "message": plain_reason_for_code(str(r.get("code", "")))}
+        {
+            "code": str(r.get("code", "") or ""),
+            "message": human_reason_warning_line(code=str(r.get("code", "") or ""), message=str(r.get("message", "") or "")),
+        }
         for r in payload.get("reasons", [])
     ]
     human_warnings = [
-        {"code": w.get("code", ""), "message": plain_reason_for_code(str(w.get("code", "")))}
+        {
+            "code": str(w.get("code", "") or ""),
+            "message": human_reason_warning_line(code=str(w.get("code", "") or ""), message=str(w.get("message", "") or "")),
+        }
         for w in payload.get("warnings", [])
     ]
 
@@ -154,7 +164,7 @@ def build_public_report(
         "what_did_not_match": what_did_not_match,
         "red_flags": red_flags,
         "sources": sources,
-        "confidence_score": confidence_score_map.get(str(payload["confidence"]).lower(), 35),
+        "confidence_score": numeric_confidence,
         "company_legitimacy_score": int(payload.get("company_legitimacy_score", 0)),
         "company_signals": list(payload.get("company_signals", [])),
         "posting_authenticity_score": int(payload.get("posting_authenticity_score", 0)),

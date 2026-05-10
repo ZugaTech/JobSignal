@@ -30,6 +30,7 @@ _LOCATIONISH = re.compile(
 )
 _DATE_REGEX = re.compile(r"\b(posted|published)\s+on\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|[A-Z][a-z]+\s+\d{1,2},?\s+\d{4})\b", re.I)
 _RECRUITER_REGEX = re.compile(r"(?:recruiter|hiring manager)\s*:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})", re.I)
+_COMPANY_LINE = re.compile(r"\b(company|employer|organization)\s*:\s*([^\n\r|•]{2,120})", re.I)
 
 
 def _company_from_domain(domain: Optional[str]) -> Optional[str]:
@@ -65,6 +66,12 @@ def extract_entities(norm: NormalizationResult) -> ExtractionResult:
     rec_hint = None
     
     if norm.description_text:
+        m_company = _COMPANY_LINE.search(norm.description_text)
+        if m_company:
+            maybe_company = m_company.group(2).strip(" -–—:\t")
+            if maybe_company:
+                company = maybe_company[:120]
+
         m_loc = _LOCATIONISH.search(norm.description_text)
         if m_loc:
             loc = m_loc.group(1)

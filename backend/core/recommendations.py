@@ -11,7 +11,7 @@ from backend.core.extraction import ExtractionResult, extract_entities
 from backend.core.image_ingest import ExtractedVisionFields
 from backend.core.normalization import NormalizationResult, normalize_job_url
 
-RECOMMENDATIONS_VERSION = "1.2.0"
+RECOMMENDATIONS_VERSION = "1.3.0"
 _HARD_MAX_RECOMMENDATIONS = 3
 
 _LINKEDIN_VIEW_ID = re.compile(r"linkedin\.com/jobs/view/(\d+)", re.I)
@@ -51,7 +51,7 @@ def candidate_pool_limit() -> int:
 def recommendations_min_verify_score() -> int:
     """Minimum nested verify confidence_score (0–100) for a similar job to be shown."""
     try:
-        n = int(_get("RECOMMENDATIONS_MIN_VERIFY_SCORE", "70") or "70")
+        n = int(_get("RECOMMENDATIONS_MIN_VERIFY_SCORE", "55") or "55")
     except ValueError:
         n = 70
     return max(0, min(100, n))
@@ -97,21 +97,20 @@ def _build_discovery_query(
     if job_title:
         clean_title = re.sub(r"\(.*?\)|\[.*?\]", "", job_title).strip()
         if clean_title:
-            q = f'"{clean_title}" jobs'
+            q = f'"{clean_title}" (jobs OR careers OR hiring)'
             if company_name:
                 q += f' "{company_name}"'
-            q += " site:linkedin.com OR site:indeed.com OR site:greenhouse.io OR site:lever.co"
+            q += " (site:linkedin.com/jobs OR site:indeed.com OR site:greenhouse.io OR site:lever.co OR site:workdayjobs.com)"
             return q
 
     domain = (normalized.registrable_domain or "").strip()
     if company_name:
-        q = f'"{company_name}" jobs OR careers'
-        q += " site:linkedin.com OR site:indeed.com OR site:greenhouse.io OR site:lever.co"
+        q = f'"{company_name}" (jobs OR careers OR hiring)'
+        q += " (site:linkedin.com/jobs OR site:indeed.com OR site:greenhouse.io OR site:lever.co OR site:workdayjobs.com)"
         return q
 
     if domain:
-        q = f"site:{domain} jobs OR careers"
-        q += " site:linkedin.com OR site:indeed.com OR site:greenhouse.io OR site:lever.co"
+        q = f"site:{domain} (jobs OR careers OR hiring)"
         return q
 
     canonical = normalized.canonical_url or ""
@@ -119,14 +118,14 @@ def _build_discovery_query(
     if li_id:
         return (
             f'"{li_id}" jobs site:linkedin.com OR site:indeed.com '
-            "OR site:greenhouse.io OR site:lever.co"
+            "OR site:greenhouse.io OR site:lever.co OR site:workdayjobs.com"
         )
 
     host = (urlparse(canonical).hostname or "").lower()
     if host:
         return (
             f'"{host}" jobs hiring '
-            "site:linkedin.com OR site:indeed.com OR site:greenhouse.io OR site:lever.co"
+            "site:linkedin.com/jobs OR site:indeed.com OR site:greenhouse.io OR site:lever.co OR site:workdayjobs.com"
         )
 
     return None

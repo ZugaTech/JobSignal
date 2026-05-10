@@ -8,7 +8,11 @@
 <body>
   <div class="header">
     <div class="brand"><span>Job</span><span class="brand-accent">Signal</span></div>
-    <button id="btnSettings" class="icon-btn" title="Settings">⚙️</button>
+    <div class="header-actions">
+      <button id="btnOpenInWindow" type="button" class="header-text-btn" title="Open in separate window (for screen capture)">Open in window</button>
+      <button id="btnCloseStandalone" type="button" class="icon-btn hidden" title="Close">✕</button>
+      <button id="btnSettings" type="button" class="icon-btn" title="Settings">⚙️</button>
+    </div>
   </div>
   
   <div id="settingsPanel" class="hidden">
