@@ -208,6 +208,15 @@ def _confidence_band(
     return "medium"
 
 
+def _cap_score_to_confidence_band(score: int, band: str) -> int:
+    n = max(0, min(100, int(score)))
+    if band == "low":
+        return min(n, 33)
+    if band == "medium":
+        return min(n, 66)
+    return n
+
+
 def _normalize_signal_row(row: Mapping[str, Any]) -> SignalEvidence:
     return cast(
         SignalEvidence,
@@ -371,7 +380,10 @@ def decide_from_signals(
     t3_only = _t3_only_loudest(sorted_rows)
     apply_ok = _apply_path(sorted_rows)
 
-    hard_red_flag_ids = {"careers_domain_match", "contact_email_free_domain", "posting_duplication_signal"}
+    # Only explicit severe-negative signals should force SKIP here.
+    # Board duplication / weak domain alignment are enough to block APPLY, but they
+    # should not override otherwise strong evidence into an automatic hard-fail.
+    hard_red_flag_ids = {"contact_email_free_domain"}
     hard_red_flag = any(str(s.get("id")) in hard_red_flag_ids and _signal_status(s) == "fail" for s in sorted_rows)
     insufficient_data = verified_signal_count < 3
     broad_coverage = total_signal_count >= 5 and coverage_ratio >= 0.6
@@ -422,6 +434,7 @@ def decide_from_signals(
     layer_data_present = (company_score > 0) or (posting_score > 0) or (freshness_score > 0)
     if layer_data_present and confidence_score >= 80 and not (company_pass and posting_pass and freshness_pass):
         final_conf = "medium"
+    confidence_score_int = _cap_score_to_confidence_band(confidence_score_int, final_conf)
 
     if final_conf in ("medium", "low"):
         warnings.append(WarningItem(code=f"CONFIDENCE_{final_conf.upper()}", message="Treat this output as advisory; verify on official channels when unsure."))

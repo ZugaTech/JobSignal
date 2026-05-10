@@ -259,3 +259,39 @@ def test_text_only_mid_red_flags_yield_strong_verify_copy():
 
 def test_scorer_version_is_current():
     assert SCORER_VERSION == "3.2.2"
+
+
+def test_url_duplication_signal_does_not_force_hard_skip():
+    rows = [
+        _sig("careers_domain_match", "T1", "high", "Domains align"),
+        _sig("careers_page_match", "T1", "high", "https://www.indeed.com/careers"),
+        _sig("company_linkedin_presence", "T1", "high", "Verified LinkedIn company profile found."),
+        _sig("official_careers_page", "T1", "high", "https://www.indeed.com/careers"),
+        _sig("fetch_ok", "T1", "low", "HTTP 403"),
+        _sig("company_registry_presence", "T2", "high", "Company registry trail found."),
+        _sig("staleness_flag", "T2", "high", "Observed listing age up to 0 days."),
+        _sig("first_seen_estimate", "T2", "medium", "No first-seen estimate found."),
+        _sig("cross_platform_freshness", "T2", "low", "Found on 1 platforms (indeed.com)."),
+        _sig("posting_duplication_signal", "T2", "low", "Posting appears across 7 domains."),
+        _sig("company_reputation_signal", "T3", "low", "Potential negative keyword hits: 8."),
+    ]
+    d = decide_from_signals(rows, url_provided=True)
+    assert d["verdict"].value == "VERIFY"
+    assert all(r["code"] != "HARD_RED_FLAG" for r in d["reasons"])
+
+
+def test_medium_confidence_band_caps_numeric_score():
+    rows = [
+        _sig("official_careers_page", "T1", "high"),
+        _sig("careers_domain_match", "T1", "high"),
+        _sig("company_linkedin_presence", "T1", "high"),
+        _sig("company_registry_presence", "T2", "high"),
+        _sig("staleness_flag", "T2", "high"),
+        _sig("first_seen_estimate", "T2", "medium"),
+        _sig("cross_platform_freshness", "T2", "low"),
+        _sig("posting_duplication_signal", "T2", "low"),
+        _sig("fetch_ok", "T1", "low"),
+    ]
+    d = decide_from_signals(rows, url_provided=True)
+    assert d["confidence"] == "medium"
+    assert d["confidence_score"] <= 66

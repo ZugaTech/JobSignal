@@ -16,6 +16,40 @@ _SCAM_REGISTRABLE_DOMAINS = frozenset(
     }
 )
 
+# Registrable domains (host → naive registrable) that must never be treated as the hiring employer.
+_JOB_BOARD_REGISTRABLE_DOMAINS = frozenset(
+    {
+        "indeed.com",
+        "linkedin.com",
+        "glassdoor.com",
+        "greenhouse.io",
+        "lever.co",
+        "myworkdayjobs.com",
+        "workday.com",
+        "ziprecruiter.com",
+        "monster.com",
+        "careerbuilder.com",
+        "simplyhired.com",
+        "dice.com",
+        "wellfound.com",
+        "angel.co",
+        "jobvite.com",
+        "smartrecruiters.com",
+        "ashbyhq.com",
+        "recruitee.com",
+        "bamboohr.com",
+        "icims.com",
+        "taleo.net",
+        "successfactors.com",
+        "hired.com",
+        "remoteok.com",
+        "weworkremotely.com",
+        "ycombinator.com",
+        "seek.com.au",
+        "reed.co.uk",
+    }
+)
+
 _KNOWN_JOB_BOARD_NETLOCS = tuple(
     re.compile(p, re.I)
     for p in (
@@ -45,6 +79,82 @@ def is_known_job_platform_url(url: str) -> bool:
     if not host:
         return False
     return any(p.search(host) for p in _KNOWN_JOB_BOARD_NETLOCS)
+
+
+def is_job_board_registrable_domain(domain: Optional[str]) -> bool:
+    """True when naive registrable domain is a major job board / ATS aggregate (not an employer)."""
+
+    if not domain:
+        return False
+    return domain.lower().strip(".") in _JOB_BOARD_REGISTRABLE_DOMAINS
+
+
+# Display names from og:site_name / UI that must never be treated as the hiring employer.
+_JOB_BOARD_BRAND_LABELS = frozenset(
+    {
+        "linkedin",
+        "linkedin corporation",
+        "indeed",
+        "glassdoor",
+        "greenhouse",
+        "lever",
+        "workday",
+        "ziprecruiter",
+        "monster",
+        "careerbuilder",
+        "simplyhired",
+        "dice",
+        "wellfound",
+        "angel list",
+        "angellist",
+        "remote ok",
+        "remoteok",
+        "y combinator",
+        "seek",
+        "reed",
+        "icims",
+        "bamboohr",
+        "smartrecruiters",
+        "ashby",
+        "recruitee",
+        "jobvite",
+        "taleo",
+        "successfactors",
+        "hired",
+        "monster worldwide",
+        "myworkdayjobs",
+    }
+)
+
+
+def is_job_board_brand_label(label: Optional[str]) -> bool:
+    """True when text is a job-board / ATS brand, not an employer (e.g. og:site_name \"LinkedIn\")."""
+
+    if not label:
+        return False
+    s = re.sub(r"[^\w\s]+", " ", label.strip().lower())
+    s = re.sub(r"\s+", " ", s).strip()
+    if not s:
+        return False
+    if s in _JOB_BOARD_BRAND_LABELS:
+        return True
+    first = s.split()[0] if s.split() else ""
+    if first in _JOB_BOARD_BRAND_LABELS:
+        return True
+    return False
+
+
+def pick_employer_display_name(*candidates: Optional[str]) -> Optional[str]:
+    """First candidate that looks like a real employer name (skips job-board brands)."""
+
+    for c in candidates:
+        if not c:
+            continue
+        t = c.strip()
+        if not t or is_job_board_brand_label(t):
+            continue
+        return t
+    return None
 
 
 def is_scam_domain_url(url: str) -> bool:

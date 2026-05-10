@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlparse
 
-from backend.core.normalization import NormalizationResult
+from backend.core.job_url_shortcuts import is_job_board_brand_label, is_job_board_registrable_domain
+from backend.core.normalization import NormalizationResult, registrable_domain_naive
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,10 +56,14 @@ def _first_meaningful_line(text: Optional[str]) -> Optional[str]:
 
 
 def extract_entities(norm: NormalizationResult) -> ExtractionResult:
-    company = _company_from_domain(norm.registrable_domain)
+    company = None
+    if norm.registrable_domain and not is_job_board_registrable_domain(norm.registrable_domain):
+        company = _company_from_domain(norm.registrable_domain)
     if not company and norm.canonical_url:
         host = urlparse(norm.canonical_url).hostname or ""
-        company = _company_from_domain(host)
+        reg = registrable_domain_naive(host) if host else None
+        if reg and not is_job_board_registrable_domain(reg):
+            company = _company_from_domain(host)
 
     title = _first_meaningful_line(norm.description_text)
     loc = None
@@ -69,7 +74,7 @@ def extract_entities(norm: NormalizationResult) -> ExtractionResult:
         m_company = _COMPANY_LINE.search(norm.description_text)
         if m_company:
             maybe_company = m_company.group(2).strip(" -–—:\t")
-            if maybe_company:
+            if maybe_company and not is_job_board_brand_label(maybe_company):
                 company = maybe_company[:120]
 
         m_loc = _LOCATIONISH.search(norm.description_text)

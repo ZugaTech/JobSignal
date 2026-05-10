@@ -17,6 +17,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from backend.core.env import EnvConfig
+from backend.core.job_url_shortcuts import is_job_board_brand_label
 from backend.core.normalization import registrable_domain_naive
 
 FETCH_ADAPTER_VERSION = "1.1.0"
@@ -277,7 +278,8 @@ def extract_job_text_hints_from_html(html_bytes: bytes) -> Tuple[Optional[str], 
     parts: List[str] = []
     if title:
         parts.append(f"Title: {title}")
-    if site_name:
+    # og:site_name is often the job board (e.g. "LinkedIn") — do not label that as the employer.
+    if site_name and not is_job_board_brand_label(site_name):
         parts.append(f"Company: {site_name}")
     if description:
         parts.append(f"Description: {description}")

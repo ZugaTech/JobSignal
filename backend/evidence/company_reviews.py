@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
+from backend.core.job_url_shortcuts import is_job_board_brand_label, is_known_job_platform_url
 from backend.core.structured_log import logger
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +76,10 @@ def _get_env(name: str, default: str = "") -> str:
 
 
 def extract_company_name_hardened(url: Optional[str], text: Optional[str], *, request_id: str = "company_name_extract") -> Optional[str]:
+    # Never derive "company" from the job-board hostname (e.g. ng.indeed.com → "Indeed").
+    if url and is_known_job_platform_url(url):
+        url = None
+
     if url:
         try:
             host = urlparse(url).hostname or ""
@@ -116,15 +121,22 @@ def extract_company_name_hardened(url: Optional[str], text: Optional[str], *, re
                 )
                 res_clean = res.strip()
                 if res_clean and res_clean.lower().rstrip(".") != "null":
-                    return res_clean
+                    if not is_job_board_brand_label(res_clean):
+                        return res_clean
             except Exception:
                 pass
 
     if text:
-        m = re.search(r"(?:About\s+([A-Z][A-Za-z0-9&.\- ]+)|Company:\s*([A-Z][A-Za-z0-9&.\- ]+))", text)
-        if m:
-            return (m.group(1) or m.group(2)).strip()
-            
+        for m in re.finditer(
+            r"(?:About\s+([A-Za-z][A-Za-z0-9&.\- ]+)|Company:\s*([A-Za-z][A-Za-z0-9&.\- ]+))",
+            text,
+        ):
+            for g in (m.group(1), m.group(2)):
+                if g:
+                    cand = g.strip()
+                    if cand and not is_job_board_brand_label(cand):
+                        return cand
+
     return None
 
 def _dedup_flags(flags: List[str], max_flags: int = 4) -> List[str]:
@@ -146,7 +158,11 @@ def _dedup_flags(flags: List[str], max_flags: int = 4) -> List[str]:
     return res
 
 async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, request_id: str = "unknown") -> ReviewSummary:
-    if not company_name or company_name.lower() in ("unknown", "n/a", "none", "null"):
+    if (
+        not company_name
+        or company_name.lower() in ("unknown", "n/a", "none", "null")
+        or is_job_board_brand_label(company_name)
+    ):
         return ReviewSummary(
             status="company_not_identified",
             message="We could not identify the company name from this posting. Paste the company name manually to enable reputation checks."

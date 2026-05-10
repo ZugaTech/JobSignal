@@ -42,7 +42,7 @@ from backend.core.image_ingest import (
     merge_description_with_extraction,
 )
 from backend.core.inputs import InputValidationError, validate_verify_inputs
-from backend.core.job_url_shortcuts import is_known_job_platform_url, is_scam_domain_url
+from backend.core.job_url_shortcuts import is_known_job_platform_url, pick_employer_display_name, is_scam_domain_url
 from backend.core.llm_fireworks import build_llm_signals, llm_enabled
 from backend.core.llm_safe import call_llm_safe
 from backend.core.normalization import NormalizationResult, normalize_job_input, materialize_url_result_cache_key
@@ -498,31 +498,38 @@ async def verify_job(
     async def _evidence_phase() -> tuple[Any, ReviewSummary]:
         nonlocal page_fetch_outcome
         ext_local = extract_entities(norm)
-        fetch_task: Optional[asyncio.Task] = None
+
         if norm.canonical_url and job_fetch_enabled():
-            fetch_task = asyncio.create_task(asyncio.to_thread(run_job_page_fetch, norm.canonical_url, cfg))
-
-        name_callable = partial(
-            extract_company_name_hardened,
-            norm.canonical_url,
-            norm.description_text,
-            request_id=request_id,
-        )
-        name_task = asyncio.create_task(asyncio.to_thread(name_callable))
-
-        if fetch_task:
-            fx, hardened_company = await asyncio.gather(fetch_task, name_task)
+            fx = await asyncio.to_thread(run_job_page_fetch, norm.canonical_url, cfg)
         else:
             fx = JobPageFetchOutcome(attempted=False)
-            hardened_company = await name_task
         page_fetch_outcome = fx
+
+        parts_txt: list[str] = []
+        if (norm.description_text or "").strip():
+            parts_txt.append(norm.description_text.strip())
+        if (fx.extracted_job_text or "").strip():
+            parts_txt.append(fx.extracted_job_text.strip())
+        combined_text = "\n\n".join(parts_txt) if parts_txt else None
+
+        url_for_company = norm.canonical_url
+        if url_for_company and is_known_job_platform_url(url_for_company):
+            url_for_company = None
+
+        hardened_company = await asyncio.to_thread(
+            partial(extract_company_name_hardened, url_for_company, combined_text, request_id=request_id),
+        )
 
         signals.extend(fx.signals)
         warnings.extend(fx.warnings)
 
         fetch_norm = _norm_with_fetch_hints(norm, fx)
         ext_for_search = extract_entities(fetch_norm) if fetch_norm is not norm else ext_local
-        company = ext_for_search.company_hint or hardened_company or ""
+        employer_for_queries = pick_employer_display_name(
+            ext_for_search.company_hint,
+            hardened_company,
+        )
+        company = employer_for_queries or ""
         title = ext_for_search.title_hint or ""
         base_query = f"{company} {title}".strip() or (norm.canonical_url or "")
 
@@ -545,7 +552,9 @@ async def verify_job(
                 )
 
         evidence_task = asyncio.create_task(_collect_serper_queries(coordinator, base_query, company, title))
-        review_task = asyncio.create_task(get_company_reviews(coordinator, hardened_company, request_id=request_id))
+        review_task = asyncio.create_task(
+            get_company_reviews(coordinator, employer_for_queries, request_id=request_id)
+        )
         serp_results, review_summary = await asyncio.gather(evidence_task, review_task)
         bundle = build_evidence_bundle(norm, ext_local, serp_results, page_fetch=fx)
         signals.extend(bundle.signals)
