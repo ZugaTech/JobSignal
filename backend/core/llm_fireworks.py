@@ -7,11 +7,15 @@ provided job text. It must never become a source of truth on its own.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
+from backend.core.prompt_guard import extract_chat_completion_message_text
+
+logger = logging.getLogger("jobsignal")
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,13 +175,108 @@ def extract_job_fields_from_image_vision(
     return data, warnings
 
 
+def _jd_signals_strip_code_fence(text: str) -> str:
+    t = text.strip()
+    if not t.startswith("```"):
+        return t
+    lines = t.splitlines()
+    if not lines:
+        return t
+    if lines[0].strip().startswith("```"):
+        lines = lines[1:]
+    while lines and lines[-1].strip() == "```":
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
+def _jd_signals_extract_json_object(text: str) -> Optional[str]:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    return text[start : end + 1]
+
+
+def _jd_signals_payload_ok(data: Any) -> bool:
+    if not isinstance(data, dict):
+        return False
+    if "specificity" not in data:
+        return False
+    rf = data.get("red_flags")
+    if rf is not None and not isinstance(rf, list):
+        return False
+    mf = data.get("missing_fields")
+    if mf is not None and not isinstance(mf, list):
+        return False
+    return True
+
+
+def jd_signals_parse_model_content(raw: Optional[str], *, fallback: str) -> str:
+    """Turn assistant output into a JSON object string for ``jd_signals``.
+
+    Strips optional markdown fences and tolerates instruction-like preamble before the first ``{``,
+    so we do not treat harmless meta chatter as a prompt leak when a valid payload is present.
+    """
+
+    if not raw or not str(raw).strip():
+        return fallback
+    text = _jd_signals_strip_code_fence(str(raw).strip())
+    blob = _jd_signals_extract_json_object(text)
+    if blob is None:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return fallback
+        return json.dumps(data, separators=(",", ":")) if _jd_signals_payload_ok(data) else fallback
+    try:
+        data = json.loads(blob)
+    except json.JSONDecodeError:
+        return fallback
+    if not _jd_signals_payload_ok(data):
+        return fallback
+    return blob
+
+
+def _jd_signals_chat_completion_json(
+    *,
+    messages: List[Dict[str, str]],
+    model: str,
+    timeout_s: float,
+    json_fallback: str,
+) -> str:
+    """Fireworks chat completion for jd_signals — JSON extraction only, no prose leak heuristics."""
+
+    try:
+        client = _client()
+        resp = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0.1,
+            max_tokens=512,
+            timeout=float(timeout_s),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("jd_signals_completion_failed error=%s", str(e))
+        return json_fallback
+
+    raw = extract_chat_completion_message_text(resp)
+    out = jd_signals_parse_model_content(raw, fallback=json_fallback)
+    if out == json_fallback and raw and str(raw).strip():
+        logger.debug(
+            "jd_signals_parse_used_fallback preview=%s",
+            str(raw).strip()[:120],
+        )
+    return out
+
+
 def build_llm_signals(*, job_text: str) -> LlmSignalResult:
     """Produce additional signals from job description text.
 
     Safety/honesty rules:
     - If data is not explicitly present, return it as missing.
     - Do not invent facts about the employer or role.
-    - Output must be JSON; callers treat malformed output as a warning and proceed.
+    - The LLM must return one JSON object (see prompts in this module); parsing accepts optional
+      markdown fences or short preamble before the first ``{`` without treating that as a prompt leak.
     """
 
     if not llm_enabled():
@@ -201,46 +300,41 @@ def build_llm_signals(*, job_text: str) -> LlmSignalResult:
     model = _get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL) or ""
     timeout_s = int(_get("FIREWORKS_TIMEOUT_S", "20") or "20")
 
-    prompt = (
-        "You analyze a job description and extract only what is explicitly stated.\n"
-        "Return JSON ONLY with this schema:\n"
-        "{\n"
-        '  "specificity": "low"|"medium"|"high",\n'
-        '  "red_flags": string[],\n'
-        '  "missing_fields": string[],\n'
-        '  "notes": string\n'
-        "}\n"
-        "Rules:\n"
-        "- Do not guess employer facts.\n"
-        "- If the text lacks salary/location/contract type/clear responsibilities, list as missing_fields.\n"
-        "- red_flags should be short, observable patterns (e.g. 'vague_responsibilities', 'no_company_info').\n"
-        "- notes should be one short sentence.\n\n"
-        "JOB DESCRIPTION:\n"
+    system_msg = (
+        "You return exactly one JSON object and nothing else.\n"
+        "Constraints:\n"
+        "- First non-whitespace character of your message must be `{`. Last must be `}`.\n"
+        "- No markdown fences, no labels like 'JSON:', no preamble or epilogue.\n"
+        "- Do not describe instructions, your role, or what anyone 'wants' you to do.\n"
+        "- Extract only what is explicitly stated in the job text; prefer marking gaps over guessing.\n"
+        "- Keys: specificity (string: low|medium|high), red_flags (array of short snake_case tokens), "
+        "missing_fields (array of short strings), notes (one concise factual sentence).\n"
+        "- red_flags must name observable text patterns only (e.g. vague_responsibilities, no_company_info)."
+    )
+
+    user_msg = (
+        "Fill the schema from the job text only.\n"
+        "- If salary, location, contract type, or clear responsibilities are absent or vague, list them under missing_fields.\n"
+        "- notes: coverage only (what is present/missing); no meta commentary.\n\n"
+        "---\nJOB TEXT:\n"
         + job_text[:20_000]
     )
 
     json_fallback = '{"specificity":"low","red_flags":[],"missing_fields":[],"notes":"Unavailable."}'
     try:
-        from backend.core.llm_safe import call_llm_safe_chat_sync
-
-        content = call_llm_safe_chat_sync(
+        content = _jd_signals_chat_completion_json(
             messages=[
-                {"role": "system", "content": "You are a cautious evaluator. Prefer 'missing' over guessing."},
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
             ],
-            fallback=json_fallback,
-            request_id="jd_signals",
             model=model,
-            temperature=0.2,
-            max_tokens=512,
-            timeout=float(timeout_s),
-            prose_mode=False,
-            max_chars=16_000,
+            timeout_s=float(timeout_s),
+            json_fallback=json_fallback,
         )
     except Exception as e:  # noqa: BLE001 - surfaced as warning only
         return LlmSignalResult(
             signals=[],
-            warnings=[{"code": "LLM_ERROR", "message": f"LLM call failed; continuing without LLM signals. ({type(e).__name__})"}],
+            warnings=[{"code": "LLM_ERROR", "message": f"LLM call failed; continuing without LLM-derived signals. ({type(e).__name__})"}],
         )
 
     try:

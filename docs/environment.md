@@ -44,7 +44,7 @@ This MVP does not currently ship tenant-header auth variables in code. Older pla
 | `RECOMMENDATIONS_ENABLED` | No | Default off; client can pass `recommendations_enabled` to override per request |
 | `RECOMMENDATIONS_MAX` | No | Hard-capped at **3** in code |
 | `RECOMMENDATIONS_CANDIDATE_POOL` | No | Max URLs to pull from search before verify (default 8) |
-| `ENABLE_LLM_SIGNALS` | Optional | `1` enables LLM-derived *text-only* signals from job description |
+| `ENABLE_LLM_SIGNALS` | Optional | `1` enables LLM-derived *text-only* signals (`jd_specificity`, `jd_red_flags`, `jd_missing_fields`) from pasted/fetched job text. The model is instructed to return a single JSON object; the server strips optional preamble or markdown fences before parsing (see `build_llm_signals` in `backend/core/llm_fireworks.py`). |
 | `FIREWORKS_API_KEY` | When LLM enabled | Fireworks API key for runtime inference |
 | `FIREWORKS_BASE_URL` | No | Defaults to Fireworks OpenAI-compatible base URL |
 | `FIREWORKS_MODEL` | No | Fireworks model id for chat completions (default: **Kimi K2.6** — canonical id in `backend/core/fireworks_defaults.py`) |
@@ -88,3 +88,4 @@ The current codebase does not yet read `SENTRY_DSN`; keep it as future-facing do
 |------|--------|-----|
 | Sprint 1 | Added `docs/environment.md` | Single reference for deployers and agents. |
 | Sprint 1 | Added `SCORER_VERSION` distinct from pipeline | Clearer cache invalidation when only rules change. |
+| 2026-05 | Documented jd_signals JSON-only contract | JD LLM path parses structured output locally without prose leak heuristics; reduces noisy logs when models add preamble. |
