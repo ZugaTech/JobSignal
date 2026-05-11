@@ -171,7 +171,9 @@ async def test_synthesize_reputation_returns_none_when_both_sources_missing():
 
 
 def test_extract_company_from_domain_wema_careers():
-    assert extract_company_from_domain("https://careers.wemabank.com/jobs/123") == "Wemabank"
+    # ``wemabank`` is re-split into "Wema Bank" so the LLM baseline and Serper queries
+    # see a recognizable employer name, not a single-word slug.
+    assert extract_company_from_domain("https://careers.wemabank.com/jobs/123") == "Wema Bank"
 
 
 def test_contains_raw_snippet_two_markers():

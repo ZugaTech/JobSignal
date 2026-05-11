@@ -257,6 +257,36 @@ _SKIP_DOMAIN_LABELS = frozenset(
 )
 
 
+# Short suffixes that, when fused into the bare domain label (e.g. "wemabank", "halobank"),
+# should be re-split so the LLM baseline and Serper queries see a recognizable employer name.
+_DOMAIN_SUFFIX_SPLITS = (
+    "bank",
+    "group",
+    "corp",
+    "holdings",
+    "industries",
+    "international",
+    "systems",
+    "labs",
+    "media",
+    "tech",
+    "global",
+)
+
+
+def _humanize_domain_label(label: str) -> str:
+    base = label.replace("-", " ").strip()
+    if " " in base or len(base) < 6:
+        return base.title()
+    low = base.lower()
+    for suf in _DOMAIN_SUFFIX_SPLITS:
+        if low.endswith(suf) and len(low) > len(suf) + 1:
+            head = base[: len(base) - len(suf)]
+            tail = base[len(base) - len(suf):]
+            return f"{head.title()} {tail.title()}".strip()
+    return base.title()
+
+
 def extract_company_from_domain(url: str) -> str | None:
     try:
         host = (urlparse(url).hostname or "").lower().strip()
@@ -273,7 +303,7 @@ def extract_company_from_domain(url: str) -> str | None:
         name = parts[i]
         if name in _SKIP_DOMAIN_LABELS or len(name) < 2:
             return None
-        return name.replace("-", " ").title()
+        return _humanize_domain_label(name)
     except Exception:  # noqa: BLE001
         return None
 
@@ -416,13 +446,14 @@ async def get_llm_company_baseline(
 
 
 def _serper_summary_for_llm(rows: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    # Keep the synthesis prompt small enough that Kimi K2.6 can generate the full JSON
+    # within our 25s inner timeout — 6 rows × ~200 chars stays well under 4KB of context.
     out: List[Dict[str, str]] = []
-    for row in rows[:12]:
+    for row in rows[:6]:
         out.append(
             {
-                "title": str(row.get("title") or "")[:240],
-                "snippet": str(row.get("snippet") or "")[:400],
-                "link": str(row.get("link") or "")[:300],
+                "title": str(row.get("title") or "")[:120],
+                "snippet": str(row.get("snippet") or "")[:240],
             }
         )
     return out
