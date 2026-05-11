@@ -16,19 +16,23 @@ from backend.core.fetch_job_page import job_fetch_enabled, run_job_page_fetch
 from backend.core.llm_safe import under_pytest
 
 _JOB_PATH_RE = re.compile(
-    r"(/jobs?/|/careers?/|/position/|/opening/|/vacancy/|/apply/|/posting/|"
+    r"(/jobs?/|/careers?/|/positions?/|/opening|/vacanc|/apply/|/posting/|/requisition/|"
+    r"/job-detail|/jobdetail|/job_description|/jobdescription|/role/|/opportunit|/join-us/|"
     r"linkedin\.com/jobs|indeed\.com|glassdoor\.com/job|greenhouse\.io|lever\.co|"
-    r"workday|wellfound\.com|jobvite|smartrecruiters|myworkdayjobs)",
+    r"workday|wellfound\.com|jobvite|smartrecruiters|myworkdayjobs|teamtailor|personio|workable)",
     re.I,
 )
 _JOB_KEYWORD_RE = re.compile(
-    r"\b(salary|responsibilities|requirements|apply|hiring|position|experience)\b",
+    r"\b(salary|responsibilities|requirements|qualifications|apply|hiring|position|experience|"
+    r"employment type|job posting|job description|about the job|your tasks|what you bring|benefits)\b",
     re.I,
 )
 _HOSTED_JOBS_SUBDOMAIN_PATH_RE = re.compile(
     r"^/o/[^/?#]+(?:/c/new)?/?$",
     re.I,
 )
+_JOB_SUBDOMAIN_LABELS = frozenset({"jobs", "careers", "apply", "join", "talent", "recruiting"})
+_JOB_SCHEMA_RE = re.compile(r"JobPosting|hiringOrganization|jobLocation", re.I)
 _KNOWN_JOB_PLATFORMS = frozenset(
     {
         "linkedin.com",
@@ -46,6 +50,9 @@ _KNOWN_JOB_PLATFORMS = frozenset(
         "recruitee.com",
         "breezy.hr",
         "bamboohr.com",
+        "teamtailor.com",
+        "personio.com",
+        "workable.com",
         "icims.com",
         "taleo.net",
         "successfactors.com",
@@ -200,13 +207,16 @@ def _url_matches_job_heuristic(url: str) -> bool:
     # Some ATS platforms host postings on jobs.<company> with /o/<role-slug>/c/new paths.
     if host.startswith("jobs.") and _HOSTED_JOBS_SUBDOMAIN_PATH_RE.match(path):
         return True
+    first_label = host.split(".", 1)[0] if host else ""
+    if first_label in _JOB_SUBDOMAIN_LABELS and len([p for p in path.split("/") if p]) >= 1:
+        return True
     return bool(_JOB_PATH_RE.search(path))
 
 
 def _description_matches_job_keywords(desc: Optional[str]) -> bool:
     if not desc:
         return False
-    return bool(_JOB_KEYWORD_RE.search(desc))
+    return bool(_JOB_KEYWORD_RE.search(desc) or _JOB_SCHEMA_RE.search(desc))
 
 
 async def evaluate_job_url_preflight(
@@ -239,6 +249,9 @@ async def evaluate_job_url_preflight(
         page_blob = " ".join(parts)
 
     if _JOB_KEYWORD_RE.search(page_blob):
+        return UrlPreflightResult(outcome="proceed", plain_reason="")
+
+    if job_fetch_enabled():
         return UrlPreflightResult(outcome="proceed", plain_reason="")
 
     return UrlPreflightResult(outcome="verify_weak", plain_reason=_REASON_VERIFY_JOBISH)

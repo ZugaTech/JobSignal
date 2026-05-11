@@ -65,3 +65,41 @@ async def test_jobs_subdomain_hosted_ats_o_path_proceeds():
         cfg=cfg,
     )
     assert result.outcome == "proceed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://company.teamtailor.com/jobs/12345-engineer",
+        "https://company.jobs.personio.com/job/123456?display=en",
+        "https://apply.workable.com/acme/j/backend-engineer/",
+        "https://careers.example.com/roles/backend-engineer",
+        "https://talent.example.com/openings/123",
+        "https://example.com/job-detail/backend-engineer",
+    ],
+)
+async def test_common_ats_and_careers_url_shapes_proceed(url):
+    cfg = EnvConfig.load(strict=False)
+    result = await evaluate_job_url_preflight(url, None, cfg=cfg)
+    assert result.outcome == "proceed"
+
+
+@pytest.mark.asyncio
+async def test_unknown_reachable_url_proceeds_to_pipeline_when_fetch_enabled(monkeypatch):
+    monkeypatch.setenv("ENABLE_JOB_FETCH", "1")
+    monkeypatch.setattr("backend.core.url_preflight.domain_resolves", lambda _url: True)
+
+    async def fake_head(_url: str):
+        return "ok"
+
+    monkeypatch.setattr("backend.core.url_preflight.head_domain_root", fake_head)
+
+    class FetchOutcome:
+        signals = [{"details": "HTTP 200; page fetched but no obvious keyword in preflight metadata"}]
+
+    monkeypatch.setattr("backend.core.url_preflight.run_job_page_fetch", lambda _url, _cfg: FetchOutcome())
+
+    cfg = EnvConfig.load(strict=False)
+    result = await evaluate_job_url_preflight("https://example.com/custom-role-page/abc", None, cfg=cfg)
+    assert result.outcome == "proceed"
