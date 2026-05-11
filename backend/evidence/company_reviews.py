@@ -350,7 +350,9 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
     if positive_count > negative_count * 2: overall_sentiment = "mostly positive"
     elif negative_count > positive_count: overall_sentiment = "mostly negative"
 
-    plain_summary = await _generate_llm_summary(company_name, all_highlights + reddit_results + x_results, request_id=request_id)
+    # Keep narrative anchored to curated platform highlights; social channels still influence
+    # score/flags via reddit_data and x_data, but raw snippets are too noisy for primary prose.
+    plain_summary = await _generate_llm_summary(company_name, all_highlights, request_id=request_id)
     if not plain_summary:
         top_red = red_dedup[0] if red_dedup else None
         top_green = green_dedup[0] if green_dedup else None
