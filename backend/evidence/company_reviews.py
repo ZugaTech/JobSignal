@@ -81,6 +81,20 @@ _CORPORATE_STOPWORDS = frozenset(
 )
 
 
+def _company_aliases(company_name: str) -> List[str]:
+    raw = (company_name or "").strip().lower()
+    if not raw:
+        return []
+    aliases = [raw]
+    tokens = _significant_company_tokens(company_name)
+    if tokens:
+        compact = " ".join(tokens).strip()
+        if compact and compact not in aliases:
+            aliases.append(compact)
+        aliases.extend(t for t in tokens if t not in aliases)
+    return aliases
+
+
 def _significant_company_tokens(company_name: str) -> List[str]:
     """Tokens used to reject unrelated SERP rows (e.g. NBC News about Twitter when verifying Sofatutor)."""
 
@@ -102,12 +116,42 @@ def _significant_company_tokens(company_name: str) -> List[str]:
     return tokens
 
 
-def _snippet_references_employer(company_name: str, title: str, snippet: str, link: str) -> bool:
-    tokens = _significant_company_tokens(company_name)
-    if not tokens:
-        return True
-    hay = f"{title} {snippet} {link}".lower()
-    return any(t in hay for t in tokens)
+def is_company_relevant(result: Dict[str, Any], company_name: str) -> bool:
+    text = f"{result.get('snippet', '')} {result.get('title', '')}".lower()
+    aliases = _company_aliases(company_name)
+    if not aliases:
+        return False
+    return any(alias in text for alias in aliases)
+
+
+def is_relevant_negative_hit(snippet: str, keyword: str, company: str) -> bool:
+    snippet_lower = (snippet or "").lower()
+    keyword_lower = (keyword or "").lower()
+    if not snippet_lower or not keyword_lower:
+        return False
+    aliases = _company_aliases(company)
+    if not aliases:
+        return False
+    keyword_positions = []
+    start = 0
+    while True:
+        idx = snippet_lower.find(keyword_lower, start)
+        if idx == -1:
+            break
+        keyword_positions.append(idx)
+        start = idx + 1
+    if not keyword_positions:
+        return False
+    for alias in aliases:
+        start = 0
+        while True:
+            company_pos = snippet_lower.find(alias, start)
+            if company_pos == -1:
+                break
+            if any(abs(company_pos - keyword_pos) < 200 for keyword_pos in keyword_positions):
+                return True
+            start = company_pos + 1
+    return False
 
 
 GLOBAL_GREEN_TRIGGERS = [
@@ -238,7 +282,12 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
         tasks = {k: coordinator.search(q, num=5) for k, q in queries.items()}
         # Wait up to 10s for the searches
         results_list = await asyncio.wait_for(asyncio.gather(*tasks.values()), timeout=8.0)
-        results = dict(zip(tasks.keys(), results_list))
+        results = {}
+        for k, rows in zip(tasks.keys(), results_list):
+            if rows is None:
+                results[k] = None
+            else:
+                results[k] = [row for row in rows if is_company_relevant(row, company_name)]
     except asyncio.TimeoutError:
         return ReviewSummary(status="unavailable", message="Review pipeline timed out.", timeout=True, partial=True)
     except Exception as e:
@@ -282,7 +331,7 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
             overall_sentiment="unknown",
             sources_checked=len(queries),
             sources_found=0,
-            plain_summary=_template_summary(company_name, 0, "unknown", None, None),
+            plain_summary=_template_summary(company_name, 0, "unknown", None, [], []),
             sources_unavailable=["Glassdoor", "Indeed", "Trustpilot", "LinkedIn", "Reddit", "X/Twitter"]
         )
 
@@ -352,11 +401,25 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
 
     # Keep narrative anchored to curated platform highlights; social channels still influence
     # score/flags via reddit_data and x_data, but raw snippets are too noisy for primary prose.
-    plain_summary = await _generate_llm_summary(company_name, all_highlights, request_id=request_id)
+    avg_rating = _average_rating(all_highlights)
+    plain_summary = await _generate_llm_summary(
+        company_name,
+        overall_sentiment=overall_sentiment,
+        avg_rating=avg_rating,
+        green_flags=green_dedup,
+        red_flags=red_dedup,
+        sources_found=len(platforms_found),
+        request_id=request_id,
+    )
     if not plain_summary:
-        top_red = red_dedup[0] if red_dedup else None
-        top_green = green_dedup[0] if green_dedup else None
-        plain_summary = _template_summary(company_name, len(platforms_found), overall_sentiment, top_green, top_red)
+        plain_summary = _template_summary(
+            company_name,
+            len(platforms_found),
+            overall_sentiment,
+            avg_rating,
+            red_dedup,
+            green_dedup,
+        )
 
     sources_unavailable = [p for p in ["Glassdoor", "Indeed", "Trustpilot", "LinkedIn", "Reddit", "X/Twitter"] if p not in platforms_found]
 
@@ -381,21 +444,41 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
         x_twitter=x_data
     )
 
-def _template_summary(company: str, count: int, sentiment: str, green: Optional[str], red: Optional[str]) -> str:
-    """Template fallback when reputation LLM output is unavailable or invalid (never assign raw prompts here)."""
-    green_text = green if green else "No standout positive themes appeared in the snippets we saw."
+def _average_rating(highlights: List[ReviewSource]) -> Optional[float]:
+    vals = [float(h.rating) for h in highlights if h.rating is not None]
+    if not vals:
+        return None
+    return round(sum(vals) / len(vals), 1)
+
+
+def _template_summary(
+    company: str,
+    count: int,
+    sentiment: str,
+    avg_rating: Optional[float],
+    red_flags: List[str],
+    green_flags: List[str],
+) -> str:
+    """Template fallback when reputation LLM output is unavailable or invalid."""
+    top_green = green_flags[0] if green_flags else "No standout positive themes appeared in the public review signals."
+    top_red = red_flags[0] if red_flags else "No major concerns detected."
     if count == 0:
         base = (
             f"Public employer reputation data was sparse for {company}, so we could not summarize sentiment reliably. "
             "That usually means independent reviews were hard to find—not that the employer is problematic."
         )
-        if red:
-            return f"{base} Note: {red}."
+        if red_flags:
+            return f"{base} Note: {top_red}."
         return base
-    summary = f"Drawing on {count} public sources, {company} skews toward a {sentiment} employer reputation. {green_text}."
-    if red:
-        summary += f" {red}."
-    return summary
+    if avg_rating is not None:
+        return (
+            f"Based on {count} sources, {company} has a {sentiment} employer reputation with an average rating of "
+            f"{avg_rating}/5. {top_green}. {top_red}"
+        )
+    return (
+        f"Based on {count} sources, {company} has a {sentiment} employer reputation. "
+        f"{top_green}. {top_red}"
+    )
 
 def _process_reddit(results: List[ReviewSource]) -> Optional[Dict[str, Any]]:
     if not results: return None
@@ -516,7 +599,7 @@ def _parse_serper_item(item: Dict[str, Any], query_key: str, company_name: str) 
     link = (item.get("link", "") or "").lower()
     title_lower = title_raw.lower()
 
-    if not _snippet_references_employer(company_name, title_raw, snippet_raw, link):
+    if not is_company_relevant(item, company_name):
         return None
 
     platform = "Web"
@@ -580,7 +663,14 @@ def _parse_serper_item(item: Dict[str, Any], query_key: str, company_name: str) 
 
 
 async def _generate_llm_summary(
-    company: str, highlights: List[ReviewSource], *, request_id: str = "unknown"
+    company: str,
+    *,
+    overall_sentiment: str,
+    avg_rating: Optional[float],
+    green_flags: List[str],
+    red_flags: List[str],
+    sources_found: int,
+    request_id: str = "unknown",
 ) -> Optional[str]:
     from backend.core.llm_fireworks import _get, llm_enabled
     from backend.core.llm_safe import call_llm_safe
@@ -590,39 +680,25 @@ async def _generate_llm_summary(
     if not api_key or not llm_enabled_flag:
         return None
 
-    context = "\n".join([f"- {h.platform} ({h.sentiment}): {h.snippet}" for h in highlights[:10]])
+    green_text = "; ".join(green_flags[:3]) if green_flags else "No standout positive themes appeared in public reviews."
+    red_text = "; ".join(red_flags[:3]) if red_flags else "No major concerns detected."
+    rating_text = f"{avg_rating}/5" if avg_rating is not None else "limited published ratings"
     user_content = (
         f"Company: {company}\n"
-        "Only describe reputation for THIS company. Ignore any line that is clearly about a different "
-        "organization (for example a news headline dominated by another employer's name).\n"
-        f"Data:\n{context}"
+        "Write a concise recruiter-style reputation note using ONLY this structured data.\n"
+        f"overall_sentiment: {overall_sentiment}\n"
+        f"average_rating: {rating_text}\n"
+        f"sources_found: {sources_found}\n"
+        f"green_flags: {green_text}\n"
+        f"red_flags: {red_text}\n"
     )
-
-    pos = sum(1 for h in highlights if h.sentiment == "positive")
-    neg = sum(1 for h in highlights if h.sentiment == "negative")
-    if pos > neg:
-        overall_guess = "positive"
-    elif neg > pos:
-        overall_guess = "negative"
-    else:
-        overall_guess = "mixed"
-
-    display_company = company.strip() if company.strip() else "The employer behind this posting"
-    top_green_snip = next((h.snippet for h in highlights if h.sentiment == "positive"), None)
-    top_red_snip = next((h.snippet for h in highlights if h.sentiment == "negative"), None)
-    green_clause = (
-        (top_green_snip[:160].rsplit(" ", 1)[0] + ".")
-        if top_green_snip
-        else "No strong positive signals were found."
-    )
-    red_clause = (
-        (top_red_snip[:160].rsplit(" ", 1)[0] + ".")
-        if top_red_snip
-        else "No major concerns were detected."
-    )
-    fallback_txt = (
-        f"Based on {len(highlights)} sources, {display_company} shows a {overall_guess} employer reputation. "
-        f"{green_clause} {red_clause}"
+    fallback_txt = _template_summary(
+        company.strip() if company.strip() else "The employer behind this posting",
+        sources_found,
+        overall_sentiment,
+        avg_rating,
+        red_flags,
+        green_flags,
     )
 
     def _looks_like_meta_text(s: str) -> bool:

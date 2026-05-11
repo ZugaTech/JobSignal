@@ -14,10 +14,13 @@ Provider/env authority (Sprint 2 audit):
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Optional
 
 from backend.core.config import AppConfig
-from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
+from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL, VALID_FIREWORKS_MODELS
+
+logger = logging.getLogger("jobsignal")
 
 
 def _int(name: str, default: int, *, min_v: int, max_v: int) -> int:
@@ -103,6 +106,10 @@ class EnvConfig:
         fw_base = str(app_cfg.get("FIREWORKS_BASE_URL") or "https://api.fireworks.ai/inference/v1")
         fw_model = str(app_cfg.get("FIREWORKS_MODEL") or DEFAULT_FIREWORKS_MODEL)
         fw_vision_model = str(app_cfg.get("FIREWORKS_VISION_MODEL") or fw_model)
+        if fw_model not in VALID_FIREWORKS_MODELS:
+            logger.warning("invalid_fireworks_model_configured model=%s", fw_model)
+        if fw_vision_model not in VALID_FIREWORKS_MODELS:
+            logger.warning("invalid_fireworks_vision_model_configured model=%s", fw_vision_model)
         fw_timeout_s = _int("FIREWORKS_TIMEOUT_S", int(app_cfg.get("FIREWORKS_TIMEOUT_S") or 10), min_v=1, max_v=120)
         fw_retry_count = _int("FIREWORKS_RETRY_COUNT", int(app_cfg.get("FIREWORKS_RETRY_COUNT") or 2), min_v=0, max_v=5)
         pipeline_deadline_s = _int("PIPELINE_DEADLINE_S", int(app_cfg.get("PIPELINE_DEADLINE_S") or 18), min_v=8, max_v=90)

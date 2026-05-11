@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 from backend.core.extraction import ExtractionResult
 from backend.core.fetch_job_page import JobPageFetchOutcome
 from backend.core.normalization import NormalizationResult, registrable_domain_naive
+from backend.evidence.company_reviews import is_company_relevant, is_relevant_negative_hit
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,7 +169,7 @@ async def _collect_serper_queries(coordinator: Any, base_query: str, company: st
     tasks = {
         "careers": coordinator.search(f"{base_query} careers".strip(), num=8),
         "board": coordinator.search(f"\"{title}\" \"{company}\" job".strip(), num=10),
-        "rep": coordinator.search(f"\"{company}\" layoffs scam \"fake recruiter\"".strip(), num=8),
+        "rep": coordinator.search(f"\"{company}\" layoffs OR scam OR \"fake recruiter\"".strip(), num=8),
         "linkedin": coordinator.search(f"{company} LinkedIn company page official".strip(), num=8),
         "registry": coordinator.search(f"\"{company}\" (crunchbase OR \"companies house\")".strip(), num=8),
         "duplicates": coordinator.search(f"\"{title}\" \"{company}\"".strip(), num=10),
@@ -350,10 +351,12 @@ def build_evidence_bundle(
         warnings.append(rep_warning)
     rep_hits = 0
     for row in rep_rows:
-        snippet = str(row.get("snippet") or "").lower()
-        title_text = str(row.get("title") or "").lower()
-        blob = f"{snippet} {title_text}"
-        if any(k in blob for k in ("layoff", "scam", "fake recruiter")):
+        if not is_company_relevant(row, company):
+            continue
+        snippet = str(row.get("snippet") or "")
+        title_text = str(row.get("title") or "")
+        blob = f"{title_text} {snippet}"
+        if any(is_relevant_negative_hit(blob, k, company) for k in ("layoff", "scam", "fake recruiter")):
             rep_hits += 1
         link = str(row.get("link") or "").strip()
         if link.startswith(("http://", "https://")):

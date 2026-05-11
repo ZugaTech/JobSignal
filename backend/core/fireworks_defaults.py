@@ -1,7 +1,9 @@
-"""Canonical Fireworks serverless model id when ``FIREWORKS_MODEL`` / env is unset.
+"""Canonical Fireworks model ids used across the app."""
 
-Keep this as the **single** default string for Kimi K2.6 so ``config.py``, LLM call
-sites, and tests cannot drift.
-"""
+VALID_FIREWORKS_MODELS = frozenset(
+    {
+        "accounts/fireworks/models/kimi-k2-instruct",
+    }
+)
 
-DEFAULT_FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2p6"
+DEFAULT_FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2-instruct"

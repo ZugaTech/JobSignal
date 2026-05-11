@@ -54,7 +54,7 @@ def test_company_name_extraction_safe_null():
     assert extract_company_name_hardened(None, "Just some random text") is None
 
 def test_plain_summary_template():
-    res = _template_summary("Acme", 0, "unknown", None, None)
+    res = _template_summary("Acme", 0, "unknown", None, [], [])
     assert "sparse" in res.lower()
     assert "Acme" in res
 

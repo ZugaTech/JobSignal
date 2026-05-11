@@ -12,8 +12,8 @@ class DummyCoordinator:
 @pytest.mark.asyncio
 async def test_review_signals_with_sources():
     mock_serper = [
-        {"title": "Glassdoor Reviews", "snippet": "Rating: 4.5 - 100 reviews. Great place to work, very stable culture.", "link": "https://glassdoor.com/reviews/test"},
-        {"title": "Indeed Reviews", "snippet": "Rating: 4.2 - 50 reviews. Highly recommended for growth.", "link": "https://indeed.com/reviews/test"}
+        {"title": "Test Company Glassdoor Reviews", "snippet": "Test Company rating: 4.5 - 100 reviews. Great place to work, very stable culture.", "link": "https://glassdoor.com/reviews/test"},
+        {"title": "Test Company Indeed Reviews", "snippet": "Test Company rating: 4.2 - 50 reviews. Highly recommended for growth.", "link": "https://indeed.com/reviews/test"}
     ]
     
     with patch.dict("os.environ", {"SERPER_API_KEY": "test_key", "FIREWORKS_API_KEY": "test_key"}):
