@@ -170,7 +170,7 @@ def call_to_action_for_verdict(verdict: str) -> str:
 
 
 def build_fallback_llm_summary(report: Mapping[str, Any]) -> str:
-    """Template fallback when LLM output is missing or unsafe — calm, non-robotic, no signal arithmetic."""
+    """Template fallback when LLM output is missing or unsafe: calm, non-robotic, no signal arithmetic."""
 
     v = str(report.get("verdict") or "VERIFY").upper()
     reasons = report.get("reasons") or []
