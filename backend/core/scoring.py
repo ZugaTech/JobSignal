@@ -45,15 +45,6 @@ def _sig_details(signals: List[Mapping[str, Any]], sid: str) -> str:
     return str(s.get("details", "")) if s else ""
 
 
-def _cross_platform_direct_posting_neutral(signals: List[Mapping[str, Any]]) -> bool:
-    details = _sig_details(signals, "cross_platform_freshness").lower()
-    if "found on 0 platforms" not in details:
-        return False
-    careers_domain = _sig_strength(signals, "careers_domain_match")
-    careers_page = _sig_strength(signals, "careers_page_match")
-    return careers_domain == "high" and careers_page == "high"
-
-
 def _best_strength_in_tier(signals: List[Mapping[str, Any]], tier: str) -> str:
     strengths = [str(s.get("strength", "none")) for s in signals if str(s.get("tier")) == tier]
     if not strengths:
@@ -304,9 +295,6 @@ def decide_from_signals(
     company_ids = {"company_linkedin_presence", "careers_domain_match", "company_registry_presence", "cross_platform_freshness"}
     posting_ids = {"salary_range_plausibility", "role_title_consistency", "jd_red_flags", "contact_legitimacy", "posting_duplication_signal"}
     freshness_ids = {"staleness_flag", "first_seen_estimate", "cross_platform_freshness"}
-    if _cross_platform_direct_posting_neutral(sorted_rows):
-        company_ids.discard("cross_platform_freshness")
-        freshness_ids.discard("cross_platform_freshness")
 
     company_score = _layer_score(sorted_rows, company_ids)
     posting_score = _layer_score(sorted_rows, posting_ids)

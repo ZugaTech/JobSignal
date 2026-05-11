@@ -1,3 +1,5 @@
+import pytest
+
 from backend.core.scoring import SCORER_VERSION, decide_from_signals, decision_to_jsonable
 from backend.core.report import build_public_report
 
@@ -293,19 +295,3 @@ def test_medium_confidence_band_caps_numeric_score():
     d = decide_from_signals(rows, url_provided=True)
     assert d["confidence"] == "medium"
     assert d["confidence_score"] <= 66
-
-
-def test_cross_platform_zero_boards_is_neutral_for_direct_employer_posting():
-    rows = [
-        _sig("official_careers_page", "T1", "high", "Official careers page found."),
-        _sig("careers_domain_match", "T1", "high", "Domains align."),
-        _sig("careers_page_match", "T1", "high", "Official employer careers listing found."),
-        _sig("company_linkedin_presence", "T1", "high", "Verified LinkedIn company profile found."),
-        _sig("company_registry_presence", "T2", "high", "Company registry trail found."),
-        _sig("staleness_flag", "T2", "high", "Observed listing age up to 0 days."),
-        _sig("first_seen_estimate", "T2", "medium", "2026-05-01"),
-        _sig("cross_platform_freshness", "T2", "low", "Found on 0 platforms (none)."),
-    ]
-    d = decide_from_signals(rows, url_provided=True)
-    assert d["company_legitimacy_score"] >= 90
-    assert d["freshness_score"] >= 80

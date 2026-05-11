@@ -35,15 +35,16 @@ def test_x_positive_mention_corroboration():
     assert "pays well" in res2["green_flags_found"]
 
 def test_plain_summary_template_new_format():
-    res = _template_summary("Acme", 5, "mostly positive", [], ["Great culture"])
+    res = _template_summary("Acme", 5, "mostly positive", 4.4, [], ["Great culture"])
     assert "Based on 5 sources" in res
+    assert "4.4/5" in res
     assert "Great culture" in res
 
-    res_red = _template_summary("Acme", 5, "mostly negative", ["High turnover"], [])
+    res_red = _template_summary("Acme", 5, "mostly negative", None, ["High turnover"], [])
     assert "Based on 5 sources" in res_red
     assert "High turnover" in res_red
 
-    res_none = _template_summary("Acme", 5, "mixed", [], [])
+    res_none = _template_summary("Acme", 5, "mixed", None, [], [])
     assert "Based on 5 sources" in res_none
     assert "mixed" in res_none
 

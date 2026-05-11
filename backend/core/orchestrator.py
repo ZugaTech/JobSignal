@@ -22,6 +22,7 @@ from backend.core.cache_store import CacheStore, InMemoryCache, RedisCache
 from backend.core.coordinator import EvidenceCoordinator
 from backend.core.decision_schema import DecisionResponse, ReasonItem, Verdict, WarningItem
 from backend.core.env import EnvConfig
+from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
 from backend.core.evidence import build_evidence_bundle, _collect_serper_queries
 from backend.core.extraction import extract_entities
 from backend.core.fetch_job_page import JobPageFetchOutcome, job_fetch_enabled, run_job_page_fetch
@@ -42,7 +43,8 @@ from backend.core.image_ingest import (
 )
 from backend.core.inputs import InputValidationError, validate_verify_inputs
 from backend.core.job_url_shortcuts import is_known_job_platform_url, pick_employer_display_name, is_scam_domain_url
-from backend.core.llm_fireworks import build_llm_signals
+from backend.core.llm_fireworks import build_llm_signals, llm_enabled
+from backend.core.llm_safe import call_llm_safe
 from backend.core.normalization import NormalizationResult, normalize_job_input, materialize_url_result_cache_key
 from backend.core.quick_url_probe import probe_http_status_head
 from backend.core.report import build_public_report
@@ -66,42 +68,6 @@ logger = logging.getLogger("jobsignal")
 
 async def _shutdown_serp_coords(*coords: EvidenceCoordinator) -> None:
     await asyncio.gather(*(c.close() for c in coords), return_exceptions=True)
-
-
-def build_verdict_summary_messages(
-    *,
-    verdict: str,
-    confidence_band: str,
-    company_name: str,
-    findings: List[str],
-) -> List[Dict[str, str]]:
-    confidence_label = {"low": "low", "medium": "moderate", "high": "high"}.get(confidence_band, confidence_band)
-    user_lines = [
-        f"verdict={verdict}",
-        f"confidence={confidence_label}",
-    ]
-    if company_name.strip():
-        user_lines.append(f"company={company_name.strip()}")
-    if findings:
-        user_lines.append(f"primary_reason={findings[0]}")
-    if len(findings) > 1:
-        user_lines.append(f"supporting_reason={findings[1]}")
-    return [
-        {
-            "role": "system",
-            "content": (
-                "You are JobSignal, a job verification assistant. Your only job is to write a 2-sentence plain "
-                "English summary for a job seeker based on the evidence provided. Respond with the summary only. "
-                "Start directly with the advice. No preamble. Use natural prose, not field labels, bullets, or "
-                "planning notes. Maximum 60 words. No jargon. Never mention internal tiers, gates, or scoring "
-                "rule names."
-            ),
-        },
-        {
-            "role": "user",
-            "content": "\n".join(user_lines),
-        },
-    ]
 
 
 _MEM_CACHE = InMemoryCache()
@@ -647,6 +613,8 @@ async def verify_job(
     steps.append({"id": "score", "label": "Scoring engine"})
     decision = decide_from_signals(signals, url_provided=bool(norm.canonical_url))
 
+    from backend.core.llm_fireworks import _get
+
     verdict_raw = decision["verdict"]
     verdict_val = verdict_raw.value if hasattr(verdict_raw, "value") else str(verdict_raw)
     reasons_list = decision.get("reasons") or []
@@ -681,12 +649,40 @@ async def verify_job(
     summary_findings = [s for s in summary_findings if s]
     if not summary_findings:
         summary_findings = [fallback_txt]
-    summary_company = sanitize_company_name(getattr(merged_fields, "company_name", None)) or ""
 
-    # Candidate-facing summary copy is deterministic for now. Live traffic showed Kimi K2.6
-    # still echoing prompt scaffolding ("I need to", "Key data points") even after prompt tightening.
-    # Prefer stable prose over leak-prone completions in production.
-    llm_summary = fallback_txt
+    api_key_llm = _get("FIREWORKS_API_KEY") or _get("LLM_API_KEY")
+    llm_enabled_flag = llm_enabled()
+    if api_key_llm and llm_enabled_flag and use_llm_summary:
+        llm_summary = await call_llm_safe(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are JobSignal, a verification assistant. Write exactly two sentences of plain advice "
+                        "for someone deciding whether to pursue this job. "
+                        "Do not restate or summarize the task (never start with \"The user wants\", \"I will\", "
+                        "\"Here is\", or similar meta). Begin immediately with substance about the employer and decision. "
+                        "No jargon. Never mention internal tiers (such as T1/T2/T3), gates, or scoring rule names. "
+                        "No headers. Output ONLY the two sentences."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"The recommendation is {verdict_val} with {conf_band} confidence.\n"
+                        f"Main findings: {' '.join(summary_findings[:2])}"
+                    ),
+                },
+            ],
+            fallback=fallback_txt,
+            request_id=request_id,
+            model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
+            temperature=0.3,
+            max_tokens=150,
+            timeout=8.0,
+        )
+    else:
+        llm_summary = fallback_txt
 
     log_stage(
         request_id=request_id,
