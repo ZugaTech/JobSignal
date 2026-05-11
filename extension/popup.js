@@ -103,6 +103,7 @@ function openWebApp(jobUrl, jobDescription, existingResult) {
 
   const params = new URLSearchParams();
   if (jobUrl) params.set("url", encodeURIComponent(jobUrl));
+  params.set("verify_depth", "quick");
 
   if (existingResult) {
     try {
@@ -187,7 +188,7 @@ function applyResult(report) {
 async function verifyJob(data) {
   showState(stateLoading);
   
-  const cacheKey = "verify_" + btoa(data.url || currentTabUrl).substring(0, 50);
+  const cacheKey = "verify_quick_" + btoa(data.url || currentTabUrl).substring(0, 50);
   const cached = await chrome.storage.session.get(cacheKey);
   if (cached[cacheKey]) {
     applyResult(cached[cacheKey]);
@@ -200,7 +201,8 @@ async function verifyJob(data) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         job_url: data.url,
-        job_description: data.description
+        job_description: data.description,
+        verify_depth: "quick",
       })
     });
     

@@ -1,8 +1,8 @@
 """Job URL and pasted-text normalization (Sprint 2).
 
-Naive registrable-domain extraction is intentional (no publicsuffix dependency).
-Known limitation: multi-part public suffixes (e.g. ``co.uk``) are not handled;
-bump ``NORMALIZATION_VERSION`` if replaced with a proper PSL library.
+Registrable domains use a **frozen multi-label suffix list** (common ``co.uk``,
+``.com.ng``, ``.com.au``, …) — not a full PSL file (no extra dependency).
+Bump ``NORMALIZATION_VERSION`` when suffix tables or URL canonicalization rules change.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-NORMALIZATION_VERSION = "2.0.0"
+NORMALIZATION_VERSION = "2.1.0"
 
 # Strip common marketing/analytics params; extend via version bump.
 _TRACKING_PARAMS = frozenset(
@@ -64,14 +64,132 @@ def _collapse_ws(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def registrable_domain_naive(host: str) -> Optional[str]:
+# ICANN-style multi-label **public suffixes** (non-exhaustive; extend as traffic dictates).
+_MULTI_LABEL_PUBLIC_SUFFIXES: frozenset[str] = frozenset(
+    {
+        # United Kingdom
+        "co.uk",
+        "org.uk",
+        "ac.uk",
+        "gov.uk",
+        "ltd.uk",
+        "plc.uk",
+        "net.uk",
+        "sch.uk",
+        "me.uk",
+        # Oceania / Asia
+        "com.au",
+        "net.au",
+        "org.au",
+        "edu.au",
+        "gov.au",
+        "asn.au",
+        "id.au",
+        "co.jp",
+        "ne.jp",
+        "or.jp",
+        "ac.jp",
+        "go.jp",
+        "co.nz",
+        "net.nz",
+        "org.nz",
+        "govt.nz",
+        "ac.nz",
+        "school.nz",
+        "com.sg",
+        "edu.sg",
+        "gov.sg",
+        "net.sg",
+        "org.sg",
+        "com.hk",
+        "edu.hk",
+        "gov.hk",
+        "org.hk",
+        "com.my",
+        "edu.my",
+        "gov.my",
+        "com.ph",
+        "edu.ph",
+        "co.id",
+        "go.id",
+        "ac.id",
+        # Africa / Americas / South Asia (job boards often use ccTLD second levels)
+        "co.za",
+        "gov.za",
+        "ac.za",
+        "org.za",
+        "com.ng",
+        "edu.ng",
+        "gov.ng",
+        "org.ng",
+        "sch.ng",
+        "com.br",
+        "gov.br",
+        "edu.br",
+        "org.br",
+        "co.in",
+        "firm.in",
+        "gen.in",
+        "ind.in",
+        "net.in",
+        "org.in",
+        "nic.in",
+        "ac.in",
+        "edu.in",
+        "res.in",
+        # Generic coordinated multi-part (examples)
+        "co.il",
+        "gov.il",
+        "org.il",
+        "ac.il",
+        "com.tr",
+        "edu.tr",
+        "gov.tr",
+        "org.tr",
+        "com.mx",
+        "edu.mx",
+        "gob.mx",
+        "org.mx",
+        "com.ar",
+        "edu.ar",
+        "gob.ar",
+        "co.ke",
+        "go.ke",
+        "or.ke",
+        "ac.ke",
+        "com.gh",
+        "edu.gh",
+        "gov.gh",
+        "org.gh",
+    }
+)
+
+
+def registrable_domain(host: str) -> Optional[str]:
+    """Best-effort eTLD+1 using multi-label suffix awareness (no bundled PSL file)."""
+
     host = host.lower().rstrip(".")
     if not host:
         return None
     parts = host.split(".")
     if len(parts) < 2:
         return host
+    # Try longest multi-part suffix first (3 labels e.g. xx.xx.ng rare — most entries are 2-label PS).
+    for n_suffix in (3, 2):
+        if len(parts) < n_suffix + 1:
+            continue
+        candidate_ps = ".".join(parts[-n_suffix:])
+        if candidate_ps in _MULTI_LABEL_PUBLIC_SUFFIXES:
+            # One DNS label immediately left of the public suffix (organizational registrable domain).
+            reg_labels = n_suffix + 1
+            return ".".join(parts[-reg_labels:])
     return ".".join(parts[-2:])
+
+
+def registrable_domain_naive(host: str) -> Optional[str]:
+    """Backward-compatible name; delegates to :func:`registrable_domain`."""
+
+    return registrable_domain(host)
 
 
 def strip_trailing_slash_url(url: str) -> str:

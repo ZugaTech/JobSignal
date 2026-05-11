@@ -14,7 +14,7 @@ import time
 from dataclasses import asdict
 from datetime import datetime, timezone
 from functools import partial
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from backend.core.cache_key import build_public_cache_key
 from backend.core.cache_payload import serialize_payload, strip_tenant_fields
@@ -44,6 +44,7 @@ from backend.core.inputs import InputValidationError, validate_verify_inputs
 from backend.core.job_url_shortcuts import is_known_job_platform_url, is_scam_domain_url, resolve_employer_identity
 from backend.core.llm_fireworks import build_llm_signals
 from backend.core.normalization import NormalizationResult, normalize_job_input, materialize_url_result_cache_key
+from backend.core.url_normalize_llm import maybe_refine_job_url_with_llm
 from backend.core.quick_url_probe import probe_http_status_head
 from backend.core.report import build_public_report
 from backend.core.response_contract import (
@@ -351,7 +352,14 @@ async def verify_job(
             request_id=request_id,
         )
 
-    norm = normalize_job_input(effective_url, effective_text)
+    url_for_normalization = effective_url
+    if effective_url:
+        refined = await maybe_refine_job_url_with_llm(effective_url, request_id=request_id)
+        if refined:
+            url_for_normalization = refined
+            log_stage(request_id=request_id, stage="llm_url_normalize_applied", duration_ms=0.0)
+
+    norm = normalize_job_input(url_for_normalization, effective_text)
 
     if norm.canonical_url:
         if is_scam_domain_url(norm.canonical_url):
@@ -393,9 +401,9 @@ async def verify_job(
     endpoint = (cfg.search_api_endpoint or "").strip() or "https://google.serper.dev/search"
     serpapi_ep = (cfg.serpapi_search_endpoint or "").strip() or "https://serpapi.com/search.json"
     timeout_s = float(cfg.search_timeout_s)
-    ev_calls = 4 if depth_quick else cfg.search_max_calls_evidence
-    # Hybrid reputation: 3 Serper calls (quick) or 4 (full); coordinator budget must cover parallel gather.
-    rep_calls = 3 if depth_quick else 4
+    ev_calls = 3 if depth_quick else cfg.search_max_calls_evidence
+    # Quick: two parallel reputation queries (+ coordinator headroom); full keeps four-call hybrid gather.
+    rep_calls = 2 if depth_quick else 4
     rec_calls = 2 if depth_quick else cfg.search_max_calls_recommendations
     coord_evidence = EvidenceCoordinator(
         serper_key,
@@ -711,6 +719,26 @@ async def verify_job(
 
     steps.append({"id": "score", "label": "Scoring engine"})
     decision = decide_from_signals(signals, url_provided=bool(norm.canonical_url))
+    if depth_quick:
+        q_warnings = list(decision["warnings"])
+        q_warnings.append(
+            WarningItem(
+                code="quick_scan_reduced_coverage",
+                message=(
+                    "Quick scan runs fewer checks (no AI description signals; lighter reputation search). "
+                    "Use a deep scan before high-stakes decisions."
+                ),
+            )
+        )
+        prev_cs = int(decision.get("confidence_score") or 0)
+        decision = cast(
+            DecisionResponse,
+            {
+                **decision,
+                "warnings": q_warnings,
+                "confidence_score": min(prev_cs, 90),
+            },
+        )
 
     verdict_raw = decision["verdict"]
     verdict_val = verdict_raw.value if hasattr(verdict_raw, "value") else str(verdict_raw)

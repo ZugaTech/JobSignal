@@ -96,6 +96,7 @@ export default function App() {
   const [batchUrls, setBatchUrls] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [includeSimilar, setIncludeSimilar] = useState(false);
+  const [verifyDepth, setVerifyDepth] = useState<'quick' | 'full'>('quick');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { phase, report, error, loadingStep, elapsed, verify, reanalyseBypassCache, hydrateReport, reset } = useJobSignal();
@@ -124,6 +125,9 @@ export default function App() {
   }, [phase, batchPhase, handleCloseResults]);
 
   const { pendingClipboard, dismissClipboard, confirmClipboard } = useClipboardAndHandoff((data: any) => {
+    if (data.verifyDepth === 'quick' || data.verifyDepth === 'full') {
+      setVerifyDepth(data.verifyDepth);
+    }
     if (data.url) {
       setJobUrl(data.url);
       setActiveTab('url');
@@ -143,24 +147,26 @@ export default function App() {
     
     // Auto-run if we got data from handoff/clipboard
     if (data.url || data.text) {
+      const depth = data.verifyDepth ?? verifyDepth;
       setTimeout(() => {
-        verify({ 
-          url: data.url, 
-          text: data.text, 
-          includeSimilarJobs: includeSimilar 
+        verify({
+          url: data.url,
+          text: data.text,
+          includeSimilarJobs: includeSimilar,
+          verifyDepth: depth,
         });
       }, 100);
     }
   });
 
   const handleVerify = () => {
-    if (activeTab === 'url') verify({ url: jobUrl, includeSimilarJobs: includeSimilar });
-    else if (activeTab === 'text') verify({ text: jobText, includeSimilarJobs: includeSimilar });
-    else if (activeTab === 'image') verify({ file, includeSimilarJobs: includeSimilar });
+    if (activeTab === 'url') verify({ url: jobUrl, includeSimilarJobs: includeSimilar, verifyDepth });
+    else if (activeTab === 'text') verify({ text: jobText, includeSimilarJobs: includeSimilar, verifyDepth });
+    else if (activeTab === 'image') verify({ file, includeSimilarJobs: includeSimilar, verifyDepth });
     else if (activeTab === 'batch') {
       const urls = [...new Set(batchUrls.split('\n').map((u) => u.trim()).filter(Boolean))];
       if (!urls.length) return;
-      void runBatch(urls, { includeSimilarJobs: includeSimilar });
+      void runBatch(urls, { includeSimilarJobs: includeSimilar, verifyDepth });
     }
   };
 
@@ -351,7 +357,41 @@ export default function App() {
             </motion.div>
           </AnimatePresence>
 
-          <div className="mt-8 pt-8 border-t border-border flex flex-col md:flex-row items-stretch md:items-center justify-between gap-6">
+          <div className="mt-8 pt-8 border-t border-border space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+              <span className="text-sm font-medium text-neutral-400 shrink-0">Scan depth</span>
+              <div className="flex rounded-full bg-neutral-900/80 border border-border p-1 gap-1 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setVerifyDepth('quick')}
+                  className={cn(
+                    'flex-1 sm:flex-none min-h-[40px] px-4 rounded-full text-sm font-medium transition-colors touch-manipulation',
+                    verifyDepth === 'quick'
+                      ? 'bg-brand text-white shadow-md shadow-brand/20'
+                      : 'text-neutral-400 hover:text-white',
+                  )}
+                >
+                  Quick (~5–15s)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVerifyDepth('full')}
+                  className={cn(
+                    'flex-1 sm:flex-none min-h-[40px] px-4 rounded-full text-sm font-medium transition-colors touch-manipulation',
+                    verifyDepth === 'full'
+                      ? 'bg-brand text-white shadow-md shadow-brand/20'
+                      : 'text-neutral-400 hover:text-white',
+                  )}
+                >
+                  Deep (~30–60s)
+                </button>
+              </div>
+              <p className="text-xs text-neutral-500 sm:ml-auto leading-snug">
+                Quick runs fewer AI and web checks. Use deep before high-stakes applications.
+              </p>
+            </div>
+
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-6">
             <label className="flex items-center gap-3 cursor-pointer group min-h-[44px] py-1 touch-manipulation">
               <div className="relative">
                 <input 
@@ -392,6 +432,7 @@ export default function App() {
                 </>
               )}
             </button>
+            </div>
           </div>
         </div>
 

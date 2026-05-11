@@ -83,7 +83,7 @@ class EnvConfig:
         if not serpapi_search_endpoint:
             serpapi_search_endpoint = "https://serpapi.com/search.json"
         search_timeout_s = _int("SEARCH_TIMEOUT_S", int(app_cfg.get("SEARCH_TIMEOUT_S") or 10), min_v=1, max_v=60)
-        search_retry_count = _int("SEARCH_RETRY_COUNT", int(app_cfg.get("SEARCH_RETRY_COUNT") or 2), min_v=0, max_v=5)
+        search_retry_count = _int("SEARCH_RETRY_COUNT", int(app_cfg.get("SEARCH_RETRY_COUNT") or 1), min_v=0, max_v=5)
         search_rate_limit = _int("SEARCH_RATE_LIMIT_PER_MINUTE", int(app_cfg.get("SEARCH_RATE_LIMIT_PER_MINUTE") or 60), min_v=1, max_v=10000)
         search_max_evidence = _int(
             "SEARCH_MAX_CALLS_EVIDENCE",

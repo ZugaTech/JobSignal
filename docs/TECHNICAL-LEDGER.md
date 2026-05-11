@@ -127,7 +127,9 @@
 
 ## 10) Known risks (carried)
 
-- 🟡 **PSL-naive domain parsing** (`registrable_domain_naive`) may mis-handle some ccTLDs.
+- 🟢 **Registrable domains** — `registrable_domain` applies a frozen multi-label suffix list (`co.uk`, `com.ng`, `com.au`, …); exotic ccTLDs may still need suffix entries.
+- 🟡 **Live browser E2E / Playwright** — not automated in CI; rely on pytest + manual mobile/desktop checks.
+- 🟡 **Sustained load / abuse harness** — no in-repo torture tests; per-IP limits provide baseline protection.
 - 🟡 **Prompt guard is heuristic** and must not be treated as proof of safety.
 - 🔴 **No real fetch/search adapters** (largest demo gap).
 - 🟡 **Vision path** needs real `FIREWORKS_API_KEY` + `ENABLE_IMAGE_VERIFY=1` for live screenshot demos; CI uses stubs.

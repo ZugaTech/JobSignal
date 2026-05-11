@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "hints": [
+    {
+      "aliases": ["flutterwave", "flutter wave"],
+      "reputation_summary": "Pan-African payments and fintech company founded in Nigeria; large legitimate employer in Lagos tech.",
+      "known_positives": ["Established regulated payments brand"],
+      "known_concerns": [],
+      "confidence": "low"
+    },
+    {
+      "aliases": ["paystack", "pay stack"],
+      "reputation_summary": "Nigeria-based online payments (Stripe subsidiary); common legitimate employer in African startup hiring.",
+      "known_positives": ["Known fintech acquirer footprint"],
+      "known_concerns": [],
+      "confidence": "low"
+    },
+    {
+      "aliases": ["andela", "andela inc"],
+      "reputation_summary": "Engineering talent network with strong historical presence in Nigeria and Africa-wide remote hiring.",
+      "known_positives": ["Recognized tech talent brand"],
+      "known_concerns": [],
+      "confidence": "low"
+    }
+  ]
+}

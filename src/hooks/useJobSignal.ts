@@ -35,12 +35,16 @@ function messageFromVerifyAxiosError(err: unknown): string {
   return 'Something went wrong. Please try again.';
 }
 
+export type VerifyDepth = 'quick' | 'full';
+
 export type VerifyParams = {
   url?: string;
   text?: string;
   file?: File | null;
   includeSimilarJobs?: boolean;
   forceRefresh?: boolean;
+  /** Matches API verify_depth: quick = fewer checks / faster; full = default pipeline. */
+  verifyDepth?: VerifyDepth;
 };
 
 export function useJobSignal() {
@@ -55,6 +59,7 @@ export function useJobSignal() {
     text?: string;
     file?: File | null;
     includeSimilarJobs?: boolean;
+    verifyDepth?: VerifyDepth;
   } | null>(null);
 
   const apiBase = useCallback(() => resolveApiBase(), []);
@@ -66,6 +71,7 @@ export function useJobSignal() {
         text: params.text,
         file: params.file ?? null,
         includeSimilarJobs: params.includeSimilarJobs,
+        verifyDepth: params.verifyDepth,
       };
 
       setPhase('loading');
@@ -86,13 +92,16 @@ export function useJobSignal() {
         'Building your report...',
       ];
       let stepIdx = 0;
+      const stepMs = params.verifyDepth === 'quick' ? 2200 : 3000;
       const stepTimer = setInterval(() => {
         stepIdx = (stepIdx + 1) % steps.length;
         setLoadingStep(steps[stepIdx]);
-      }, 3000);
+      }, stepMs);
 
       const base = apiBase();
       const wantsForce = !!params.forceRefresh;
+
+      const vd = params.verifyDepth === 'quick' ? 'quick' : 'full';
 
       const buildMultipart = (forceRefresh: boolean) => {
         const fd = new FormData();
@@ -100,6 +109,7 @@ export function useJobSignal() {
         if (params.text) fd.append('job_description', params.text);
         if (params.file) fd.append('job_image', params.file);
         fd.append('include_similar_jobs', params.includeSimilarJobs ? 'true' : 'false');
+        fd.append('verify_depth', vd);
         if (forceRefresh) fd.append('force_refresh', 'true');
         return fd;
       };
@@ -112,6 +122,7 @@ export function useJobSignal() {
           job_url: params.url || null,
           job_description: params.text || null,
           include_similar_jobs: params.includeSimilarJobs,
+          verify_depth: vd,
           ...(forceRefresh ? { force_refresh: true } : {}),
         });
       };

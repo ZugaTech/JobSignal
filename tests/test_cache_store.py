@@ -54,7 +54,7 @@ def test_strip_tenant_fields_before_serialize():
         "schema_version": "1",
         "pipeline_version": "1",
         "source_set_version": "1",
-        "normalization_version": "2.0.0",
+        "normalization_version": "2.1.0",
         "signals": [{"id": "x", "tenant_id": "nope"}],
         "warnings": [],
         "coverage": "partial",

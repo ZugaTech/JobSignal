@@ -11,7 +11,15 @@ function decodeBase64JsonParam(value: string): unknown {
   return JSON.parse(decodeURIComponent(escape(atob(value))));
 }
 
-export function useClipboardAndHandoff(onDetect: (data: { url?: string; text?: string; batch?: string[]; cachedResult?: unknown }) => void) {
+export function useClipboardAndHandoff(
+  onDetect: (data: {
+    url?: string;
+    text?: string;
+    batch?: string[];
+    cachedResult?: unknown;
+    verifyDepth?: 'quick' | 'full';
+  }) => void,
+) {
   const [pendingClipboard, setPendingClipboard] = useState<{ content: string; type: 'url' | 'description' | 'unknown' } | null>(null);
 
   const classifyContent = (text: string) => {
@@ -58,9 +66,21 @@ export function useClipboardAndHandoff(onDetect: (data: { url?: string; text?: s
     const url = params.get("url");
     const job_description = params.get("job_description");
     const batch_urls = params.get("batch_urls");
+    const verify_depth_raw = params.get('verify_depth') || params.get('depth');
 
     let detected = false;
-    const result: { url?: string; text?: string; batch?: string[]; cachedResult?: unknown } = {};
+    const result: {
+      url?: string;
+      text?: string;
+      batch?: string[];
+      cachedResult?: unknown;
+      verifyDepth?: 'quick' | 'full';
+    } = {};
+
+    if (verify_depth_raw === 'quick' || verify_depth_raw === 'full') {
+      result.verifyDepth = verify_depth_raw;
+      detected = true;
+    }
 
     if (url) {
       result.url = decodeURIComponent(url);

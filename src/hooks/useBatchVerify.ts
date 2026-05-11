@@ -83,7 +83,10 @@ export function useBatchVerify() {
     setError(null);
   }, []);
 
-  const runBatch = useCallback(async (urls: string[], opts: { includeSimilarJobs?: boolean }) => {
+  const runBatch = useCallback(async (
+    urls: string[],
+    opts: { includeSimilarJobs?: boolean; verifyDepth?: 'quick' | 'full' },
+  ) => {
     const unique = [...new Set(urls.map((u) => u.trim()).filter(Boolean))];
     if (!unique.length) return;
 
@@ -106,6 +109,7 @@ export function useBatchVerify() {
           options: {
             include_similar_jobs: opts.includeSimilarJobs,
             force_refresh: false,
+            verify_depth: opts.verifyDepth === 'quick' ? 'quick' : 'full',
           },
         }),
       });

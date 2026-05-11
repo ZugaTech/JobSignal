@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+from backend.core.employer_hints import merge_curated_baseline
 from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
 from backend.core.job_url_shortcuts import is_job_board_brand_label, is_known_job_platform_url
 from backend.core.prompt_guard import is_prompt_leak
@@ -582,6 +583,7 @@ async def get_llm_company_baseline(
             require_sentence_period=False,
         )
         data = _parse_llm_json_object(raw)
+        data = merge_curated_baseline(company_name, data)
         if not data or not data.get("known"):
             # Negative result is also cached so we don't keep retrying unknown employers
             # within the 24h window — saves repeat 25-35s timeouts on niche names.
@@ -883,9 +885,11 @@ def _sentiment_from_baseline(baseline: Optional[Dict[str, Any]]) -> str:
     return "unknown"
 
 
-async def _one_serper_query(coordinator: Any, q: str) -> Optional[List[Dict[str, Any]]]:
+async def _one_serper_query(
+    coordinator: Any, q: str, *, timeout_s: float = 6.0
+) -> Optional[List[Dict[str, Any]]]:
     try:
-        rows = await asyncio.wait_for(coordinator.search(q, num=5), timeout=6.0)
+        rows = await asyncio.wait_for(coordinator.search(q, num=5), timeout=timeout_s)
         return rows
     except Exception:  # noqa: BLE001
         return None
@@ -928,8 +932,10 @@ async def get_company_reviews(
         f"{company_name_eff} company culture employees",
         f"{company_name_eff} employer reputation",
     ]
-    query_templates = query_templates_full[:3] if quick else query_templates_full
+    # Quick: two highest-yield queries only; full: four parallel signals.
+    query_templates = query_templates_full[:2] if quick else query_templates_full
     query_keys = [f"enrich_{i}" for i in range(len(query_templates))]
+    serper_timeout_s = 4.0 if quick else 6.0
 
     async def _bounded_baseline() -> Optional[Dict[str, Any]]:
         # Hard ceiling on the baseline call. Production probes showed Kimi K2.6 on Fireworks
@@ -949,10 +955,16 @@ async def get_company_reviews(
             return None
 
     async def _run_pipeline() -> ReviewSummary:
-        baseline_task = asyncio.create_task(_bounded_baseline())
-        serper_tasks = [_one_serper_query(coordinator, q) for q in query_templates]
-        serper_gathered = asyncio.gather(*serper_tasks)
-        llm_baseline, raw_lists = await asyncio.gather(baseline_task, serper_gathered)
+        serper_tasks = [
+            _one_serper_query(coordinator, q, timeout_s=serper_timeout_s) for q in query_templates
+        ]
+        if quick:
+            raw_lists = await asyncio.gather(*serper_tasks)
+            llm_baseline = None
+        else:
+            baseline_task = asyncio.create_task(_bounded_baseline())
+            serper_gathered = asyncio.gather(*serper_tasks)
+            llm_baseline, raw_lists = await asyncio.gather(baseline_task, serper_gathered)
 
         results: Dict[str, List[Dict[str, Any]]] = {}
         flat_for_summary: List[Dict[str, Any]] = []
@@ -1089,6 +1101,43 @@ async def get_company_reviews(
             for h in all_highlights
         ]
 
+        # Quick reputation: Serper + heuristic scoring only (no Kimi baseline or synthesis).
+        if quick:
+            if not serper_for_llm:
+                return ReviewSummary(
+                    review_confidence_score=None,
+                    overall_sentiment="unknown",
+                    sources_checked=len(query_templates),
+                    sources_found=0,
+                    plain_summary=_template_summary(company_name_eff, 0, "unknown", [], []),
+                    sources_unavailable=["Glassdoor", "Indeed", "Trustpilot", "LinkedIn", "Reddit", "X/Twitter"],
+                    data_sources=[],
+                    reliability_report="",
+                )
+            tpl_plain = _template_summary(
+                company_name_eff,
+                len(platforms_found),
+                overall_sentiment,
+                red_dedup,
+                green_dedup,
+            )
+            rcs_quick = min(final_score, 85)
+            return ReviewSummary(
+                review_confidence_score=rcs_quick,
+                overall_sentiment=overall_sentiment,
+                sources_checked=len(query_templates),
+                sources_found=len(platforms_found),
+                highlights=highlights_payload,
+                red_flags=red_dedup[:4],
+                green_flags=green_dedup[:4],
+                plain_summary=tpl_plain,
+                sources_unavailable=sources_unavailable,
+                reddit=reddit_data,
+                x_twitter=x_data,
+                data_sources=["Live search only"],
+                reliability_report="",
+            )
+
         if not llm_baseline and not serper_for_llm:
             return ReviewSummary(
                 review_confidence_score=None,
@@ -1198,7 +1247,8 @@ async def get_company_reviews(
         )
 
     try:
-        return await asyncio.wait_for(_run_pipeline(), timeout=75.0)
+        outer_budget = 22.0 if quick else 75.0
+        return await asyncio.wait_for(_run_pipeline(), timeout=outer_budget)
     except asyncio.TimeoutError:
         return ReviewSummary(status="unavailable", message="Review pipeline timed out.", timeout=True, partial=True)
     except Exception as e:  # noqa: BLE001
