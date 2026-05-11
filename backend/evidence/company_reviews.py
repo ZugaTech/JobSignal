@@ -400,7 +400,7 @@ async def get_llm_company_baseline(
             model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
             temperature=0.2,
             max_tokens=600,
-            timeout=14.0,
+            timeout=25.0,
             prose_mode=False,
             max_chars=8000,
             min_prose_len=2,
@@ -570,7 +570,7 @@ async def synthesize_reputation(
             model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
             temperature=0.25,
             max_tokens=700,
-            timeout=18.0,
+            timeout=25.0,
             prose_mode=False,
             max_chars=12_000,
             min_prose_len=2,
@@ -751,10 +751,9 @@ async def get_company_reviews(
     query_keys = [f"enrich_{i}" for i in range(len(query_templates))]
 
     async def _bounded_baseline() -> Optional[Dict[str, Any]]:
-        # Hard ceiling on the baseline call so a slow/retrying Fireworks request can never
-        # consume the outer pipeline budget — synthesis still has room to run on Serper-only.
-        # 18s fits Kimi K2.6 first-token latency on Fireworks with a small margin while still
-        # leaving 25+ seconds for synthesis under the 45s outer wait_for.
+        # Hard ceiling on the baseline call so a slow Fireworks request can never consume the
+        # outer pipeline budget. 30s covers Kimi K2.6 cold starts on Fireworks; the 75s outer
+        # budget still leaves room for synthesis to run after baseline + Serper resolve.
         try:
             return await asyncio.wait_for(
                 get_llm_company_baseline(
@@ -763,7 +762,7 @@ async def get_company_reviews(
                     job_location,
                     request_id=f"{request_id}_baseline",
                 ),
-                timeout=18.0,
+                timeout=30.0,
             )
         except Exception:  # noqa: BLE001
             return None
@@ -934,7 +933,7 @@ async def get_company_reviews(
                     sources_found=len(platforms_found),
                     request_id=f"{request_id}_synthesize",
                 ),
-                timeout=20.0,
+                timeout=30.0,
             )
         except Exception:  # noqa: BLE001
             synth = _synthesize_fallback_payload(
@@ -1018,7 +1017,7 @@ async def get_company_reviews(
         )
 
     try:
-        return await asyncio.wait_for(_run_pipeline(), timeout=60.0)
+        return await asyncio.wait_for(_run_pipeline(), timeout=75.0)
     except asyncio.TimeoutError:
         return ReviewSummary(status="unavailable", message="Review pipeline timed out.", timeout=True, partial=True)
     except Exception as e:  # noqa: BLE001
