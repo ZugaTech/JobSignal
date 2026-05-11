@@ -26,6 +26,20 @@ _INTERNAL_SUBSTRINGS = (
     "tier t1",
     "tier t2",
     "tier t3",
+    "decision:",
+    "confidence:",
+    "signals:",
+    "company_reputation_signal",
+    "fetch_ok",
+    "domain_align",
+    "careers_page_match",
+    "careers_domain_match",
+    "staleness_flag",
+    "first_seen_estimate",
+    "cross_platform_freshness",
+    "posting_duplication_signal",
+    "company_registry_presence",
+    "company_linkedin_presence",
 )
 
 
@@ -41,6 +55,9 @@ def contains_internal_verdict_jargon(text: str) -> bool:
     if re.search(r"\btier\b", tl) and ("t1" in tl or "t2" in tl or "t3" in tl):
         return True
     if re.search(r"\bt[123]\b", tl):
+        return True
+    # Model occasionally echoes internal-style signal IDs in summaries.
+    if re.search(r"\b[a-z]+_[a-z0-9_]+\b", tl) and ("signal" in tl or "signals:" in tl):
         return True
     return False
 

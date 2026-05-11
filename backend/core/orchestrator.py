@@ -60,7 +60,7 @@ from backend.core.url_result_cache import (
     decorate_hit_response,
     parse_stored_payload,
 )
-from backend.core.user_copy import build_fallback_llm_summary
+from backend.core.user_copy import build_fallback_llm_summary, human_reason_warning_line
 from backend.evidence.company_reviews import ReviewSummary, extract_company_name_hardened, get_company_reviews
 
 logger = logging.getLogger("jobsignal")
@@ -635,6 +635,20 @@ async def verify_job(
     use_llm_summary = not (
         verdict_val in ("APPLY", "SKIP") and cs_num >= int(cfg.llm_summary_confidence_threshold)
     )
+    summary_findings: List[str] = []
+    for item in reasons_list[:3]:
+        if isinstance(item, dict):
+            summary_findings.append(
+                human_reason_warning_line(
+                    code=str(item.get("code") or ""),
+                    message=str(item.get("message") or ""),
+                )
+            )
+        elif isinstance(item, str) and item.strip():
+            summary_findings.append(item.strip())
+    summary_findings = [s for s in summary_findings if s]
+    if not summary_findings:
+        summary_findings = [fallback_txt]
 
     api_key_llm = _get("FIREWORKS_API_KEY") or _get("LLM_API_KEY")
     llm_enabled_flag = llm_enabled()
@@ -655,9 +669,8 @@ async def verify_job(
                 {
                     "role": "user",
                     "content": (
-                        f"Decision: {decision['verdict'].value}, Confidence: {decision['confidence']}\n"
-                        f"Signals: {', '.join([s.get('id', '') for s in signals if s.get('strength') in ('high', 'medium')])}\n"
-                        f"Reputation: {review_summary.plain_summary if review_summary else 'N/A'}"
+                        f"The recommendation is {verdict_val} with {conf_band} confidence.\n"
+                        f"Main findings: {' '.join(summary_findings[:2])}"
                     ),
                 },
             ],

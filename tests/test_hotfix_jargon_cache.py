@@ -63,6 +63,29 @@ def test_no_jargon_in_validated_reasons_and_llm_fallback():
     assert "tier" not in blob
 
 
+def test_summary_with_raw_signal_ids_is_repaired():
+    leaked = {
+        "verdict": "VERIFY",
+        "confidence": "medium",
+        "confidence_score": 55,
+        "reasons": ["Not enough corroboration from official sources."],
+        "warnings": [],
+        "signals": [{"id": "fetch_ok", "strength": "high"}],
+        "llm_summary": (
+            "Key points from the signals: - Decision: VERIFY, Confidence: medium - "
+            "Signals: fetch_ok, domain_align, careers_page_match."
+        ),
+        "review_summary": None,
+        "request_id": "00000000-0000-0000-0000-000000000098",
+    }
+    out = validate_and_repair_response(dict(leaked), request_id="00000000-0000-0000-0000-000000000098")
+    low = str(out["llm_summary"]).lower()
+    assert "fetch_ok" not in low
+    assert "domain_align" not in low
+    assert "signals:" not in low
+    assert "decision:" not in low
+
+
 def test_llm_fallback_template_clean():
     report = {
         "verdict": "VERIFY",
@@ -75,6 +98,11 @@ def test_llm_fallback_template_clean():
     s = build_fallback_llm_summary(report)
     assert "We checked" not in s
     assert not contains_internal_verdict_jargon(s)
+
+
+def test_contains_internal_jargon_flags_signal_id_style_output():
+    txt = "Decision: VERIFY. Signals: fetch_ok, domain_align, company_reputation_signal."
+    assert contains_internal_verdict_jargon(txt) is True
 
 
 def test_is_cacheable_response_rules():

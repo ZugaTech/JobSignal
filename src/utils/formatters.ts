@@ -67,6 +67,16 @@ export function sanitizeField(value: any, fallback: string): string {
 export function containsLeakMarker(text: string): boolean {
   const t = String(text || "").toLowerCase();
   if (LEAK_MARKERS.some((m) => t.includes(m))) return true;
+  if (
+    t.includes('fetch_ok') ||
+    t.includes('domain_align') ||
+    t.includes('careers_page_match') ||
+    t.includes('careers_domain_match') ||
+    t.includes('company_reputation_signal')
+  ) {
+    return true;
+  }
+  if (/\b[a-z]+_[a-z0-9_]+\b/.test(t) && (t.includes('signal') || t.includes('signals:'))) return true;
   if (/\b(t1|t2|t3)\b/.test(t)) return true;
   if (/\b(gate|gates)\b/.test(t)) return true;
   if (/\btier\b/.test(t)) return true;
