@@ -28,15 +28,15 @@ export const JD_SPECIFICITY_DETAIL_MAP: Record<string, string> = {
 };
 
 export const STATUS_LABEL_MAP: Record<string, string> = {
-  none: "Insufficient evidence",
-  null: "Insufficient evidence",
-  low: "Weak corroboration",
-  medium: "Partial corroboration",
-  high: "Strong corroboration",
+  none: "Not enough to tell",
+  null: "Not enough to tell",
+  low: "Weak match",
+  medium: "Partial match",
+  high: "Strong match",
   pass: "Looks consistent",
   fail: "Raised concerns",
-  unknown: "Unable to confirm",
-  unverified: "No reliable public match",
+  unknown: "Could not confirm",
+  unverified: "No solid public match",
 };
 
 export const REASON_MAP: Record<string, string> = {

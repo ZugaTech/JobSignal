@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Search, FileText, Image as ImageIcon, Clipboard, X, Loader2, CheckCircle2, AlertCircle, ArrowRight, ShieldCheck, Globe, Building2, ExternalLink, Info, ListOrdered } from 'lucide-react';
+import { Search, FileText, Image as ImageIcon, Clipboard, X, Loader2, CheckCircle2, AlertCircle, ArrowRight, ShieldCheck, Info, ListOrdered } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -15,10 +15,11 @@ import { useClipboardAndHandoff } from './hooks/useClipboardAndHandoff';
 import { rewriteMicrocopy, formatCachedAgo, isSafeHttpUrl } from './utils/formatters';
 import {
   ConfidenceGaugeStrip,
-  GroupedEvidenceSections,
+  EvidenceOverviewAccordion,
   TechnicalDetailsAccordion,
   verdictHeroSubtitle,
 } from './components/TrustPresentation';
+import { ReputationSection, SimilarJobsPanel, ResultsActionsFooter } from './components/ResultPanels';
 
 const Header = () => (
   <header className="flex items-center justify-between gap-3 px-4 sm:px-6 pb-3 sm:pb-4 pt-[max(0.75rem,env(safe-area-inset-top,0px))] border-b border-border glass sticky top-0 z-50 min-w-0">
@@ -636,12 +637,12 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 lg:items-start">
-                  <div className="lg:col-span-7 space-y-6 min-w-0">
+                  <div className="lg:col-span-7 flex flex-col gap-6 min-w-0">
                     <div className="glass rounded-3xl p-5 sm:p-6 md:p-8 space-y-8 border border-border/60">
                       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                         <div className="min-w-0 flex-1">
                           <h2 className="text-sm font-medium text-neutral-500 uppercase tracking-widest mb-2">
-                            Recommendation
+                            Our call
                           </h2>
                           <div
                             className={cn(
@@ -668,15 +669,21 @@ export default function App() {
                           labelText={
                             report.confidence_label?.trim()
                               ? report.confidence_label
-                              : 'Strength unavailable'
+                              : 'No label for strength'
                           }
                         />
                       </div>
+                    </div>
 
+                    <div className="lg:hidden">
+                      <ReputationSection report={report} />
+                    </div>
+
+                    <div className="glass rounded-3xl p-5 sm:p-6 md:p-8 space-y-8 border border-border/60">
                       <div className="space-y-4">
                         <h3 className="text-lg font-bold flex items-center gap-2">
                           <Info className="w-5 h-5 text-brand" />
-                          Summary
+                          What we found
                         </h3>
                         <p className="text-neutral-300 leading-relaxed text-base md:text-lg">
                           {rewriteMicrocopy(report.llm_summary)}
@@ -684,7 +691,7 @@ export default function App() {
                       </div>
 
                       <div className="space-y-4">
-                        <h3 className="text-lg font-bold">Why we landed here</h3>
+                        <h3 className="text-lg font-bold">What drove this</h3>
                         <ul className="space-y-3">
                           {report.reasons.map((reason: string, i: number) => (
                             <li key={i} className="flex gap-3 text-neutral-400 leading-relaxed">
@@ -699,7 +706,7 @@ export default function App() {
                         <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-6 space-y-3">
                           <h3 className="text-amber-400 font-bold flex items-center gap-2">
                             <AlertCircle className="w-5 h-5" />
-                            Keep in mind
+                            Heads up
                           </h3>
                           <ul className="space-y-2">
                             {report.warnings.map((w: string, i: number) => (
@@ -714,263 +721,35 @@ export default function App() {
                     </div>
 
                     <div className="glass rounded-3xl p-5 sm:p-6 md:p-8 border border-border/60 space-y-6">
-                      <div className="space-y-1">
-                        <h3 className="text-lg font-bold flex items-center gap-2">
-                          <Globe className="w-5 h-5 text-brand shrink-0" />
-                          Evidence overview
-                        </h3>
-                        <p className="text-xs text-neutral-500 leading-snug">
-                          Grouped by how strongly each check supported this recommendation.
-                        </p>
-                      </div>
-
-                      {report.hideSignalsSection ? (
-                        <p className="text-sm text-neutral-500">
-                          No structured evidence rows were returned for this check.
-                        </p>
-                      ) : (
-                        <GroupedEvidenceSections
-                          rows={report.display_signal_rows}
-                          summaryLine={report.signals_summary_line}
-                        />
-                      )}
-
+                      <EvidenceOverviewAccordion
+                        hideSignalsSection={!!report.hideSignalsSection}
+                        rows={report.display_signal_rows}
+                        summaryLine={report.signals_summary_line}
+                      />
                       <TechnicalDetailsAccordion report={report} />
                     </div>
                   </div>
 
-                  <div className="lg:col-span-5 space-y-6 min-w-0">
-                    {report.reputationPanelVariant === 'unavailable' && (
-                      <div className="glass rounded-3xl p-6 md:p-8 space-y-3 border border-border/60">
-                        <h3 className="text-lg md:text-xl font-bold flex items-center gap-2">
-                          <Building2 className="w-5 h-5 text-brand shrink-0" />
-                          Company trust
-                        </h3>
-                        <p className="text-sm text-neutral-400 leading-relaxed">
-                          Not enough reliable public reputation data was available to summarize employer sentiment for this
-                          run.
-                        </p>
-                      </div>
-                    )}
+                  <aside className="lg:col-span-5 hidden lg:block space-y-6 min-w-0">
+                    <ReputationSection report={report} />
+                    <SimilarJobsPanel report={report} />
+                    <ResultsActionsFooter
+                      report={report}
+                      onReanalyse={() => {
+                        void reanalyseBypassCache();
+                      }}
+                    />
+                  </aside>
+                </div>
 
-                    {report.reputationPanelVariant === 'no_company' && (
-                      <div className="glass rounded-3xl p-6 md:p-8 space-y-3 border border-border/60">
-                        <h3 className="text-lg md:text-xl font-bold flex items-center gap-2">
-                          <Building2 className="w-5 h-5 text-brand shrink-0" />
-                          Company trust
-                        </h3>
-                        <p className="text-sm text-neutral-400 leading-relaxed">
-                          We could not identify a clear employer from this input, so reputation signals were not loaded.
-                        </p>
-                      </div>
-                    )}
-
-                    {report.reputationPanelVariant === 'full' && report.review_summary && (
-                      <div className="glass rounded-3xl p-6 md:p-8 space-y-6 border border-border/60 ring-1 ring-white/[0.04]">
-                        <div>
-                          <h3 className="text-lg md:text-xl font-bold flex items-center gap-2">
-                            <Building2 className="w-5 h-5 text-brand shrink-0" />
-                            Company trust
-                          </h3>
-                          <p className="text-xs text-neutral-500 mt-1.5 leading-snug">
-                            Public sentiment about the employer. This is separate from posting confidence for this role.
-                          </p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-5 sm:gap-6">
-                          <div
-                            className={cn(
-                              'w-16 h-16 rounded-2xl flex flex-col items-center justify-center border-2 shrink-0',
-                              typeof report.review_summary.review_confidence_score === 'number' &&
-                                report.review_summary.review_confidence_score >= 67
-                                ? 'border-[#16A34A]/50 text-[#16A34A] bg-[#16A34A]/5'
-                                : typeof report.review_summary.review_confidence_score === 'number' &&
-                                    report.review_summary.review_confidence_score >= 34
-                                  ? 'border-[#D97706]/50 text-[#D97706] bg-[#D97706]/5'
-                                  : 'border-[#DC2626]/50 text-[#DC2626] bg-[#DC2626]/5',
-                            )}
-                          >
-                            <span className="text-2xl font-black tabular-nums leading-none">
-                              {typeof report.review_summary.review_confidence_score === 'number' &&
-                              !Number.isNaN(report.review_summary.review_confidence_score)
-                                ? report.review_summary.review_confidence_score
-                                : 'N/A'}
-                            </span>
-                            <span className="text-[10px] uppercase font-semibold tracking-wide opacity-70 mt-1">
-                              Index
-                            </span>
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs text-neutral-500 uppercase tracking-wide font-semibold mb-1">
-                              Sentiment
-                            </p>
-                            <p className="text-xl sm:text-2xl font-display font-bold text-white capitalize">
-                              {(report.review_summary.overall_sentiment || 'mixed or unclear')
-                                .replace(/_/g, ' ')
-                                .replace(/^unknown$/i, 'Mixed or unclear')}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          {(report.review_summary.green_flags || []).map((f: string, i: number) => (
-                            <span
-                              key={`g-${i}`}
-                              className="max-w-full px-3 py-1.5 bg-green-500/10 text-green-400 text-xs font-medium rounded-xl border border-green-500/25 leading-snug break-words text-left"
-                            >
-                              <span className="mr-1 opacity-90">✓</span>
-                              {f}
-                            </span>
-                          ))}
-                          {(report.review_summary.red_flags || []).map((f: string, i: number) => (
-                            <span
-                              key={`r-${i}`}
-                              className="max-w-full px-3 py-1.5 bg-red-500/10 text-red-400 text-xs font-medium rounded-xl border border-red-500/25 leading-snug break-words text-left"
-                            >
-                              <span className="mr-1 opacity-90">⚠</span>
-                              {f}
-                            </span>
-                          ))}
-                        </div>
-
-                        <div className="rounded-2xl bg-neutral-900/40 border border-border/80 p-4 md:p-5">
-                          <p className="text-[13px] sm:text-sm text-neutral-300 leading-[1.65]">
-                            {rewriteMicrocopy(report.review_summary.plain_summary || '')}
-                          </p>
-                        </div>
-
-                        {report.review_summary.reddit &&
-                          typeof report.review_summary.reddit === 'object' &&
-                          report.review_summary.reddit.found === true && (
-                            <div className="rounded-2xl border border-border/80 bg-neutral-900/30 p-4 space-y-2">
-                              <p className="text-xs font-bold uppercase tracking-wide text-neutral-400">
-                                Reddit sentiment
-                              </p>
-                              <p className="text-sm text-neutral-200 capitalize">
-                                {String((report.review_summary.reddit as { sentiment?: string }).sentiment || 'mixed')}
-                              </p>
-                              <ul className="text-xs text-neutral-500 space-y-1 list-disc pl-4">
-                                {(
-                                  (report.review_summary.reddit as { notable_phrases?: { text?: string }[] })
-                                    .notable_phrases || []
-                                )
-                                  .slice(0, 3)
-                                  .map((ph, j) => (
-                                    <li key={j}>{ph.text || ''}</li>
-                                  ))}
-                              </ul>
-                            </div>
-                          )}
-
-                        {report.review_summary.x_twitter &&
-                          typeof report.review_summary.x_twitter === 'object' &&
-                          report.review_summary.x_twitter.found === true && (
-                            <div className="rounded-2xl border border-border/80 bg-neutral-900/30 p-4 space-y-2">
-                              <p className="text-xs font-bold uppercase tracking-wide text-neutral-400">
-                                X (Twitter) sentiment
-                              </p>
-                              <p className="text-sm text-neutral-200 capitalize">
-                                {String((report.review_summary.x_twitter as { sentiment?: string }).sentiment || 'mixed')}
-                              </p>
-                              <ul className="text-xs text-neutral-500 space-y-1 list-disc pl-4">
-                                {(
-                                  (report.review_summary.x_twitter as { notable_phrases?: { text?: string }[] })
-                                    .notable_phrases || []
-                                )
-                                  .slice(0, 2)
-                                  .map((ph, j) => (
-                                    <li key={j}>{ph.text || ''}</li>
-                                  ))}
-                              </ul>
-                            </div>
-                          )}
-                      </div>
-                    )}
-
-                    {!report.hideSimilarJobs && report.similar_jobs && report.similar_jobs.length === 0 && report.similarJobsEmptyMessage && (
-                      <div className="glass rounded-3xl p-5 sm:p-6 md:p-8 border border-border/60">
-                        <h3 className="text-lg font-bold mb-2">Similar verified roles</h3>
-                        <p className="text-sm text-neutral-400 leading-relaxed">{report.similarJobsEmptyMessage}</p>
-                      </div>
-                    )}
-
-                    {!report.hideSimilarJobs && report.similar_jobs && report.similar_jobs.length > 0 && (
-                      <div className="glass rounded-3xl p-6 md:p-8 space-y-6 border border-border/60">
-                        <h3 className="text-lg font-bold">Similar verified roles</h3>
-                        <div className="space-y-4">
-                          {report.similar_jobs.map((job, i: number) => {
-                            const href = typeof job.url === 'string' ? job.url.trim() : '';
-                            const ok = isSafeHttpUrl(href);
-                            const inner = (
-                              <>
-                                <div className="flex justify-between items-start mb-2 gap-2">
-                                  <h4 className="font-bold text-white group-hover:text-brand transition-colors truncate pr-2">
-                                    {job.title || 'Role'}
-                                  </h4>
-                                  <ExternalLink className="w-4 h-4 text-neutral-600 shrink-0" />
-                                </div>
-                                <p className="text-sm text-neutral-400 mb-3">{job.company || ''}</p>
-                                <div className="flex items-center justify-between gap-2 flex-wrap">
-                                  <span
-                                    className={cn(
-                                      'text-[10px] font-bold uppercase px-2 py-0.5 rounded-md',
-                                      job.verdict === 'APPLY'
-                                        ? 'bg-[#F0FDF4]/20 text-[#16A34A]'
-                                        : 'bg-[#FFFBEB]/20 text-[#D97706]',
-                                    )}
-                                  >
-                                    {job.verdict || 'VERIFY'}
-                                  </span>
-                                  <span className="text-[10px] text-neutral-600 font-bold uppercase">
-                                    {job.confidence_score != null ? `${job.confidence_score}% confidence` : ''}
-                                  </span>
-                                </div>
-                              </>
-                            );
-                            return ok ? (
-                              <a
-                                key={i}
-                                href={href}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="block p-4 bg-neutral-900/50 border border-border rounded-2xl hover:border-brand/50 transition-all group"
-                              >
-                                {inner}
-                              </a>
-                            ) : (
-                              <div
-                                key={i}
-                                className="group block p-4 bg-neutral-900/50 border border-border rounded-2xl opacity-80"
-                              >
-                                {inner}
-                                <p className="text-xs text-amber-400 mt-2">Link unavailable</p>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="glass rounded-2xl px-4 py-3 md:px-5 flex flex-wrap items-center justify-between gap-3 border border-border/60">
-                      <p className="text-[11px] text-neutral-600 truncate max-w-[min(100%,16rem)]">
-                        Reference available under Technical details.
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2 shrink-0">
-                        {report.cached ? (
-                          <button
-                            type="button"
-                            onClick={() => void reanalyseBypassCache()}
-                            className="text-xs font-semibold min-h-[36px] px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors border border-border/60"
-                          >
-                            Re-analyse (bypass cache)
-                          </button>
-                        ) : null}
-                        <button type="button" className="text-xs text-brand font-semibold hover:underline shrink-0">
-                          Report issue
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                <div className="lg:hidden space-y-6 min-w-0">
+                  <SimilarJobsPanel report={report} />
+                  <ResultsActionsFooter
+                    report={report}
+                    onReanalyse={() => {
+                      void reanalyseBypassCache();
+                    }}
+                  />
                 </div>
               </div>
             </motion.div>

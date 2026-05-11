@@ -334,7 +334,7 @@ def decide_from_signals(
             verdict=Verdict.SKIP,
             confidence="low",
             reasons=reasons,
-            warnings=[WarningItem(code="POLICY", message="Automated policy blocked further promotion to APPLY.")],
+            warnings=[WarningItem(code="POLICY", message="Policy stopped us from recommending apply here.")],
             signals=normalized,
             company_legitimacy_score=company_score,
             company_signals=[],
@@ -364,7 +364,7 @@ def decide_from_signals(
             verdict=Verdict.SKIP,
             confidence="low",
             reasons=reasons,
-            warnings=[WarningItem(code="LOW_TRUST_PATTERN", message="Text-only patterns are not conclusive; prefer an employer URL and verify again.")],
+            warnings=[WarningItem(code="LOW_TRUST_PATTERN", message="Text-only clues are not enough to be sure. Use a real employer URL and verify again.")],
             signals=normalized,
             company_legitimacy_score=company_score,
             company_signals=[],
@@ -383,15 +383,15 @@ def decide_from_signals(
     if _text_only_apply_combo(sorted_rows, url_provided=url_provided):
         reasons.extend(
             [
-                ReasonItem(code="TEXT_ONLY_APPLY", message="Description-only signals align under a strict combo; promoting to APPLY with capped confidence."),
-                ReasonItem(code="NO_URL_CORROBORATION", message="No URL was provided; corroboration against employer-controlled sources was not performed."),
+                ReasonItem(code="TEXT_ONLY_APPLY", message="From pasted text alone, signals looked okay under strict rules, so we allow apply with capped confidence."),
+                ReasonItem(code="NO_URL_CORROBORATION", message="No URL was given, so we could not cross-check employer-controlled sources."),
             ]
         )
         return DecisionResponse(
             verdict=Verdict.APPLY,
             confidence="medium",
             reasons=reasons,
-            warnings=[WarningItem(code="TEXT_ONLY_NOT_CORROBORATED", message="This is based on description text only; confirm on the employer's official careers page before applying.")],
+            warnings=[WarningItem(code="TEXT_ONLY_NOT_CORROBORATED", message="This is from pasted text only. Confirm on the employer careers page before you apply.")],
             signals=normalized,
             company_legitimacy_score=company_score,
             company_signals=[],
@@ -423,44 +423,44 @@ def decide_from_signals(
     verdict: Verdict = Verdict.VERIFY
     if hard_red_flag or (confidence_score <= 35 and verified_signal_count >= 3 and broad_coverage):
         verdict = Verdict.SKIP
-        reasons.append(ReasonItem(code="HARD_RED_FLAG", message="High-risk signals were detected, so this posting is not recommended."))
+        reasons.append(ReasonItem(code="HARD_RED_FLAG", message="We saw high-risk signals, so we do not recommend this posting."))
     elif insufficient_data:
         verdict = Verdict.VERIFY
-        reasons.append(ReasonItem(code="INSUFFICIENT_DATA", message="Insufficient data to assess, here is what we checked."))
+        reasons.append(ReasonItem(code="INSUFFICIENT_DATA", message="Not enough data to judge this one. Here is what we checked."))
     elif had_contradiction:
         verdict = Verdict.VERIFY
-        reasons.append(ReasonItem(code="CONTRADICTION", message="Fetch looked healthy but employer-domain alignment is missing; not promoting to APPLY."))
-        warnings.append(WarningItem(code="CONTRADICTION", message="Conflicting signals downgraded trust."))
+        reasons.append(ReasonItem(code="CONTRADICTION", message="The page looked reachable, but employer domain alignment was weak, so we are not calling apply."))
+        warnings.append(WarningItem(code="CONTRADICTION", message="Signals conflicted, so trust was pulled back."))
     elif fetch_weak and url_provided:
         verdict = Verdict.VERIFY
-        reasons.append(ReasonItem(code="FETCH_INSUFFICIENT", message="A URL was provided but fetch evidence is missing or too weak to trust the posting page."))
-        warnings.append(WarningItem(code="FETCH", message="Primary page evidence insufficient for a confident recommendation."))
+        reasons.append(ReasonItem(code="FETCH_INSUFFICIENT", message="We had a URL, but fetch evidence was missing or too thin to trust the posting page."))
+        warnings.append(WarningItem(code="FETCH", message="We could not lean on the posting page enough to be confident."))
     elif t3_only:
         verdict = Verdict.VERIFY
-        reasons.append(ReasonItem(code="T3_ONLY", message="We found general web mentions, but couldn't confirm this role directly with the employer's official channels or trusted job boards."))
-        warnings.append(WarningItem(code="SOURCES", message="Evidence relies mostly on unverified secondary sources."))
+        reasons.append(ReasonItem(code="T3_ONLY", message="We saw general web chatter, but could not tie this role to the employer's official channels or trusted boards."))
+        warnings.append(WarningItem(code="SOURCES", message="Most signals came from secondary sources we could not fully trust."))
     elif apply_ok and _apply_requires_url_corroboration(sorted_rows, url_provided) and (
         (confidence_score >= 75 and company_pass and posting_pass and freshness_pass)
         or (company_score == 0 and posting_score == 0 and freshness_score == 0)
     ):
         verdict = Verdict.APPLY
-        reasons.append(ReasonItem(code="GATES_PASSED", message="We found strong corroborating evidence from official employer channels or verified job boards."))
+        reasons.append(ReasonItem(code="GATES_PASSED", message="Employer or trusted job-board sources backed this listing well."))
     else:
-        reasons.append(ReasonItem(code="INSUFFICIENT_CORROBORATION", message="Not enough signals passed to confidently recommend applying. Some checks came back unclear."))
+        reasons.append(ReasonItem(code="INSUFFICIENT_CORROBORATION", message="Not enough checks lined up to say apply with confidence. Some items were unclear."))
 
     if (not url_provided) and (_sig_strength(sorted_rows, "jd_red_flags") in ("medium", "high") or _sig_strength(sorted_rows, "jd_content_farm_score") in ("medium", "high")):
-        reasons.append(ReasonItem(code="TEXT_RED_FLAGS", message="Description-only signals include risk patterns; add the posting URL for stronger cross-checks."))
+        reasons.append(ReasonItem(code="TEXT_RED_FLAGS", message="The pasted description alone shows some risk patterns. Add the posting URL for stronger cross-checks."))
 
     if len(reasons) < 2:
-        reasons.append(ReasonItem(code="INCOMPLETE_EVIDENCE", message="Evidence collection was partial. Unable to build a complete profile for this role."))
+        reasons.append(ReasonItem(code="INCOMPLETE_EVIDENCE", message="We only gathered part of the picture for this role."))
 
     honesty_forced_verify = False
     provisional_conf = _confidence_band(verdict, sorted_rows, had_contradiction=had_contradiction, honesty_forced_verify=False)
     if provisional_conf == "low" and verdict == Verdict.APPLY:
         verdict = Verdict.VERIFY
         honesty_forced_verify = True
-        warnings.append(WarningItem(code="HONESTY_GUARD", message="Low confidence would contradict an APPLY recommendation; defaulted to VERIFY."))
-        reasons.append(ReasonItem(code="HONESTY_LOW_CONFIDENCE", message="Confidence band was low; VERIFY is the safer output."))
+        warnings.append(WarningItem(code="HONESTY_GUARD", message="Confidence was too low for a strong apply call, so we switched to verify."))
+        reasons.append(ReasonItem(code="HONESTY_LOW_CONFIDENCE", message="Confidence was low, so verify is the safer label here."))
 
     final_conf = _confidence_band(verdict, sorted_rows, had_contradiction=had_contradiction, honesty_forced_verify=honesty_forced_verify)
     layer_data_present = (company_score > 0) or (posting_score > 0) or (freshness_score > 0)
@@ -478,8 +478,8 @@ def decide_from_signals(
             ReasonItem(
                 code="PREFER_POSTING_URL",
                 message=(
-                    "Paste the job posting URL when you can—we could not run listing-page checks without it. "
-                    "A direct link from the job board or employer careers site is recommended over pasted description text alone."
+                    "Paste the real job URL when you can. Without it, we cannot run listing-page checks. "
+                    "A direct board or employer careers link beats pasted text alone."
                 ),
             ),
         )

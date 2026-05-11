@@ -51,8 +51,8 @@ export function scoreToConfidenceLabel(score: number | null | undefined): string
   const n = Math.max(0, Math.min(100, Number(score)));
   if (n <= 0) return "Limited confidence";
   if (n < 34) return "Limited confidence";
-  if (n < 67) return "Cautious confidence";
-  return "High confidence";
+  if (n < 67) return "Mixed confidence";
+  return "Strong confidence";
 }
 
 export function sanitizeField(value: any, fallback: string): string {
@@ -166,8 +166,8 @@ export function buildSignalsSummaryLine(
     else inconclusive += 1;
   }
   const bits: string[] = [];
-  if (strong) bits.push(`${strong} aligned with trusted signals`);
+  if (strong) bits.push(`${strong} looked solid`);
   if (flagged) bits.push(`${flagged} raised concerns or conflicts`);
-  if (inconclusive) bits.push(`${inconclusive} could not be verified from public sources`);
-  return `At a glance: ${bits.join('; ')}.`;
+  if (inconclusive) bits.push(`${inconclusive} were unclear from public data`);
+  return `Quick read: ${bits.join('; ')}.`;
 }

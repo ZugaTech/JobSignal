@@ -124,9 +124,9 @@ def build_public_report(
     red_flags = [plain_reason_for_code(str(w.get("code", ""))) for w in warnings if str(w.get("code", "")).strip()]
 
     rec_map = {
-        "APPLY": "Corroboration looked solid from available checks—you can proceed while applying usual diligence.",
-        "VERIFY": "Evidence calls for a deliberate pause: confirm this posting on the employer's official careers site before you commit time.",
-        "SKIP": "Risk outweighs reward from what we could verify—we recommend moving on unless something material changes.",
+        "APPLY": "Checks looked good from what we could see. Still use normal caution before you apply.",
+        "VERIFY": "We could not lock this down from public sources alone. Confirm the posting on the employer careers site before you invest real time.",
+        "SKIP": "From what we verified, the risks look higher than the upside. We would move on unless something important changes.",
     }
     try:
         numeric_confidence = int(payload["confidence_score"]) if payload.get("confidence_score") is not None else 0

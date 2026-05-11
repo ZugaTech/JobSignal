@@ -24,16 +24,16 @@ export function groupDisplaySignals(rows: DisplaySignalRow[]): GroupedSignals {
 
 export const GROUP_LABELS: Record<TrustEvidenceBucket, { title: string; subtitle: string }> = {
   verified: {
-    title: 'Verified',
-    subtitle: 'Checks that aligned with employer-level or posting-level corroboration.',
+    title: 'Looks solid',
+    subtitle: 'These checks lined up with the employer or a trusted listing source.',
   },
   caution: {
-    title: 'Needs attention',
-    subtitle: 'Mixed, weak, or conflicting signals. Worth a closer look before you commit time.',
+    title: 'Worth a second look',
+    subtitle: 'Signals were mixed or thin. Slow down before you invest a lot of time.',
   },
   limited: {
-    title: 'Limited evidence',
-    subtitle: 'Could not be verified from reliable public sources for this run.',
+    title: 'Thin public proof',
+    subtitle: 'We could not back this up much from public sources on this run.',
   },
 };
 

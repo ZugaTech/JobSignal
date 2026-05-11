@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Gauge, Microscope } from 'lucide-react';
+import { ChevronDown, ChevronUp, Gauge, Globe, Microscope } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -25,11 +25,11 @@ function cn(...inputs: ClassValue[]) {
 export function verdictHeroSubtitle(verdict: string): string {
   switch (verdict) {
     case 'APPLY':
-      return 'Checks lined up with a real posting. Still use good judgment before you share personal data.';
+      return 'Public checks looked good for a real listing. Still protect your personal info until you are sure.';
     case 'SKIP':
-      return 'Risk signals justify walking away unless you uncover strong contradictory evidence.';
+      return 'We would walk away unless you find new facts that change the picture.';
     default:
-      return 'This verdict favors diligence over guessing. Confirm on the employer careers site before you invest real time.';
+      return 'We could not fully confirm this from public data alone. Peek at the employer careers site before you go deep on an application.';
   }
 }
 
@@ -120,7 +120,7 @@ export function TechnicalDetailsAccordion({ report }: { report: SanitizedVerifyR
           <div className="min-w-0">
             <p className="text-sm font-semibold text-neutral-200">Technical details</p>
             <p className="text-[11px] text-neutral-500 truncate">
-              Optional depth: scores, coverage, and reference IDs.
+              Extra depth if you want it: scores, coverage, request id.
             </p>
           </div>
         </div>
@@ -146,6 +146,66 @@ export function TechnicalDetailsAccordion({ report }: { report: SanitizedVerifyR
                   <p className="text-[11px] text-neutral-600">Result served from cache for this input.</p>
                 ) : null}
               </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
+/** Collapsed by default so mobile users reach reputation before a long evidence list. */
+export function EvidenceOverviewAccordion({
+  hideSignalsSection,
+  rows,
+  summaryLine,
+}: {
+  hideSignalsSection: boolean;
+  rows: DisplaySignalRow[];
+  summaryLine: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="rounded-2xl border border-border/50 bg-neutral-950/40 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-900/50 transition-colors min-h-[48px]"
+        aria-expanded={open}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <Globe className="w-4 h-4 text-neutral-500 shrink-0" aria-hidden />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-neutral-200">Evidence overview</p>
+            <p className="text-[11px] text-neutral-500 leading-snug">
+              {hideSignalsSection
+                ? 'Structured checks were not returned for this run.'
+                : 'Tap to expand how each public check landed.'}
+            </p>
+          </div>
+        </div>
+        {open ? (
+          <ChevronUp className="w-4 h-4 text-neutral-500 shrink-0" aria-hidden />
+        ) : (
+          <ChevronDown className="w-4 h-4 text-neutral-500 shrink-0" aria-hidden />
+        )}
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden border-t border-border/40"
+          >
+            <div className="px-4 pb-4 pt-2">
+              {hideSignalsSection ? (
+                <p className="text-sm text-neutral-500">
+                  No structured evidence rows were returned for this check.
+                </p>
+              ) : (
+                <GroupedEvidenceSections rows={rows} summaryLine={summaryLine} />
+              )}
             </div>
           </motion.div>
         )}
