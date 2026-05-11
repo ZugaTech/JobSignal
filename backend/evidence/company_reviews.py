@@ -617,9 +617,11 @@ def _parse_serper_item(item: Dict[str, Any], query_key: str, company_name: str) 
     elif "indeed.com" in link:
         platform = "Indeed"
         reliability = "high"
-    elif "linkedin.com" in link:
+    elif "linkedin.com/company/" in link:
         platform = "LinkedIn"
         reliability = "medium"
+    elif "linkedin.com" in link:
+        return None
     elif "trustpilot.com" in link:
         platform = "Trustpilot"
         reliability = "medium"

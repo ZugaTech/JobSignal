@@ -30,6 +30,15 @@ class EvidenceBundle:
 
 
 SUPPORTED_BOARDS = ("linkedin.com", "indeed.com", "glassdoor.com", "wellfound.com")
+SUPPORTED_REPUTATION_SOURCES = (
+    "glassdoor.com",
+    "indeed.com",
+    "trustpilot.com",
+    "reddit.com",
+    "x.com",
+    "twitter.com",
+    "linkedin.com/company/",
+)
 
 
 def _now_iso() -> str:
@@ -351,6 +360,10 @@ def build_evidence_bundle(
         warnings.append(rep_warning)
     rep_hits = 0
     for row in rep_rows:
+        link = str(row.get("link") or "").strip()
+        link_lower = link.lower()
+        if not any(token in link_lower for token in SUPPORTED_REPUTATION_SOURCES):
+            continue
         if not is_company_relevant(row, company):
             continue
         snippet = str(row.get("snippet") or "")
@@ -358,7 +371,6 @@ def build_evidence_bundle(
         blob = f"{title_text} {snippet}"
         if any(is_relevant_negative_hit(blob, k, company) for k in ("layoff", "scam", "fake recruiter")):
             rep_hits += 1
-        link = str(row.get("link") or "").strip()
         if link.startswith(("http://", "https://")):
             evidence_sources.append({"url": link, "type": "reputation", "found_at": _now_iso()})
     signals.append(
