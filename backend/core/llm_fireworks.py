@@ -48,7 +48,10 @@ def _client():
     base_url = _get("FIREWORKS_BASE_URL", "https://api.fireworks.ai/inference/v1")
     if not api_key:
         raise ValueError("Missing FIREWORKS_API_KEY (or fallback LLM_API_KEY)")
-    return OpenAI(api_key=api_key, base_url=base_url)
+    # ``max_retries=0``: callers already wrap requests in their own timeout + fallback path, and
+    # built-in 2-retry doubling silently exceeds tight pipeline budgets (reputation baseline /
+    # synthesis). We prefer one honest attempt with a fast fallback over silent retry storms.
+    return OpenAI(api_key=api_key, base_url=base_url, max_retries=0)
 
 
 def extract_job_fields_from_image_vision(
