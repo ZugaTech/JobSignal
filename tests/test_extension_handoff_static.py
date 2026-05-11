@@ -23,11 +23,7 @@ def test_react_handoff_hydrates_cached_result_before_verify():
     assert "return;" in app[app.index("if (data.cachedResult)") : app.index("if (data.text)")]
 
 
-def test_legacy_handoff_returns_before_runflow_for_cached_result():
-    app = (ROOT / "frontend-legacy" / "app.js").read_text(encoding="utf-8")
-    cached_idx = app.index('params.get("cached_result")')
-    run_idx = app.index("runFlow();", cached_idx)
-    branch = app[cached_idx:run_idx]
-    assert "populateModal(sanitizeApiResponse(decoded))" in branch
-    assert 'window.history.replaceState({}, "", window.location.pathname)' in branch
-    assert "return;" in branch
+# The legacy vanilla-JS frontend was retired in favor of the React app under ``src/``.
+# The original cached-handoff regression now lives in
+# ``test_react_handoff_hydrates_cached_result_before_verify`` above, which asserts the
+# same return-before-verify behavior on the supported code path.

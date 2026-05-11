@@ -382,6 +382,56 @@ def _parse_llm_json_object(text: str) -> Optional[Dict[str, Any]]:
             return None
 
 
+# In-process baseline cache: the LLM "what do you know about <employer>" answer changes
+# rarely (employer reputation in Kimi's knowledge cutoff is effectively static for our
+# purposes). Caching it shaves 20-35s off every repeat lookup for the same employer.
+_BASELINE_CACHE_TTL_S = 24 * 60 * 60  # 24 hours
+_BASELINE_CACHE_MAX = 512
+_baseline_cache: Dict[str, tuple[float, Optional[Dict[str, Any]]]] = {}
+
+
+def _baseline_cache_key(company_name: str) -> str:
+    return re.sub(r"\s+", " ", (company_name or "")).strip().lower()
+
+
+def _baseline_cache_get(company_name: str) -> Optional[Dict[str, Any]]:
+    import time as _time
+
+    key = _baseline_cache_key(company_name)
+    if not key:
+        return None
+    hit = _baseline_cache.get(key)
+    if not hit:
+        return None
+    ts, payload = hit
+    if _time.time() - ts > _BASELINE_CACHE_TTL_S:
+        _baseline_cache.pop(key, None)
+        return None
+    # Return a copy so callers cannot mutate the cached payload.
+    return dict(payload) if payload else payload
+
+
+def clear_baseline_cache() -> None:
+    """Test helper: reset the in-process baseline cache between scenarios."""
+    _baseline_cache.clear()
+
+
+def _baseline_cache_set(company_name: str, payload: Optional[Dict[str, Any]]) -> None:
+    import time as _time
+
+    key = _baseline_cache_key(company_name)
+    if not key:
+        return
+    if len(_baseline_cache) >= _BASELINE_CACHE_MAX:
+        # Evict the oldest entry — simple FIFO is fine at this scale.
+        try:
+            oldest = min(_baseline_cache.items(), key=lambda kv: kv[1][0])[0]
+            _baseline_cache.pop(oldest, None)
+        except ValueError:
+            pass
+    _baseline_cache[key] = (_time.time(), dict(payload) if payload else payload)
+
+
 async def get_llm_company_baseline(
     company_name: str,
     job_title: Optional[str] = None,
@@ -396,6 +446,13 @@ async def get_llm_company_baseline(
     # ``call_llm_safe`` — sync openai retries can otherwise blow the outer 45s pipeline budget.
     if under_pytest() and getattr(call_llm_safe, "__module__", "") == "backend.core.llm_safe":
         return None
+
+    # Warm-cache fast path: a known employer's baseline answer is good for 24h. This is the
+    # single biggest win for repeat lookups — same employer probed again returns instantly
+    # instead of waiting on Kimi K2.6 (20-35s on Fireworks).
+    cached = _baseline_cache_get(company_name)
+    if cached is not None:
+        return cached
 
     fallback = (
         '{"known":false,"company_type":"unknown","industry":null,"headquarters":null,'
@@ -450,10 +507,15 @@ async def get_llm_company_baseline(
         )
         data = _parse_llm_json_object(raw)
         if not data or not data.get("known"):
+            # Negative result is also cached so we don't keep retrying unknown employers
+            # within the 24h window — saves repeat 25-35s timeouts on niche names.
+            _baseline_cache_set(company_name, None)
             return None
         conf = str(data.get("confidence") or "").lower()
         if conf in ("none", ""):
+            _baseline_cache_set(company_name, None)
             return None
+        _baseline_cache_set(company_name, data)
         return data
     except Exception:  # noqa: BLE001
         logger.warning("llm_company_baseline_failed request_id=%s", request_id, exc_info=False)
