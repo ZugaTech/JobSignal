@@ -705,6 +705,8 @@ async def verify_job(
             "pipeline_steps": steps,
             "canonical_job_url": norm.canonical_url,
             "url_only_cache_eligible": url_only_cache,
+            "job_page_fetch_profile": fetch_profile,
+            "job_page_fetch_attempted": bool(getattr(page_fetch_outcome, "attempted", False)),
         },
         ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="live"),
         evidence_sources=evidence_sources,

@@ -18,3 +18,8 @@ def test_human_line_falls_back_when_message_has_jargon():
 def test_human_line_uses_catalog_when_no_message():
     out = human_reason_warning_line(code="PREFER_POSTING_URL", message="")
     assert "URL" in out or "url" in out
+
+
+def test_human_line_fetch_retry_browser_ua_catalog():
+    out = human_reason_warning_line(code="FETCH_RETRY_BROWSER_UA", message="")
+    assert "browser" in out.lower() or "profile" in out.lower()

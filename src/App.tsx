@@ -17,6 +17,7 @@ import {
   ConfidenceGaugeStrip,
   EpistemicSnapshotStrip,
   EvidenceOverviewAccordion,
+  PipelineAttemptLog,
   TechnicalDetailsAccordion,
   verdictHeroSubtitle,
 } from './components/TrustPresentation';
@@ -720,6 +721,8 @@ export default function App() {
                           </ul>
                         </div>
                       )}
+
+                      <PipelineAttemptLog report={report} />
                     </div>
 
                     <div className="glass rounded-3xl p-5 sm:p-6 md:p-8 border border-border/60 space-y-6">
