@@ -135,7 +135,14 @@ def call_llm_safe_chat_sync(
         if raw is None:
             logger.warning("llm_call_failed request_id=%s error=empty_message_content", request_id)
             return fallback[:max_chars]
-        text = _strip_llm_meta_preface(raw.strip())
+        # ``_strip_llm_meta_preface`` chops everything up to the first sentence terminator
+        # whenever it sees common task-paraphrase openings. That is correct for prose UI
+        # copy but corrupts JSON payloads (cuts the opening brace). In JSON mode we hand
+        # the raw text directly to the JSON parser instead.
+        if prose_mode:
+            text = _strip_llm_meta_preface(raw.strip())
+        else:
+            text = raw.strip()
         if prose_mode:
             too_short = len(text) < min_prose_len
             no_period = require_sentence_period and "." not in text
