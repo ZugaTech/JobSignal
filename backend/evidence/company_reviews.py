@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
 from backend.core.job_url_shortcuts import is_job_board_brand_label, is_known_job_platform_url
-from backend.core.structured_log import logger
+from backend.core.prompt_guard import is_prompt_leak
 
 @dataclass(frozen=True, slots=True)
 class ReviewSource:
@@ -239,7 +239,6 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
         # Wait up to 10s for the searches
         results_list = await asyncio.wait_for(asyncio.gather(*tasks.values()), timeout=8.0)
         results = dict(zip(tasks.keys(), results_list))
-        timeout_hit = False
     except asyncio.TimeoutError:
         return ReviewSummary(status="unavailable", message="Review pipeline timed out.", timeout=True, partial=True)
     except Exception as e:
@@ -624,6 +623,24 @@ async def _generate_llm_summary(
         f"{green_clause} {red_clause}"
     )
 
+    def _looks_like_meta_text(s: str) -> bool:
+        low = (s or "").strip().lower()
+        if not low:
+            return False
+        meta_markers = (
+            "i need to",
+            "i should",
+            "ignore any line",
+            "looking at the data",
+            "based on the data provided",
+            "here are",
+            "1.",
+            "2.",
+        )
+        if any(m in low for m in meta_markers):
+            return True
+        return False
+
     summary_text = await call_llm_safe(
         messages=[
             {
@@ -645,4 +662,9 @@ async def _generate_llm_summary(
     )
     if "Summary:" in summary_text:
         summary_text = summary_text.split("Summary:")[-1].strip()
-    return summary_text or None
+    summary_text = (summary_text or "").strip()
+    if not summary_text:
+        return None
+    if is_prompt_leak(summary_text) or _looks_like_meta_text(summary_text):
+        return fallback_txt
+    return summary_text
