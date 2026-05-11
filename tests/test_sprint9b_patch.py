@@ -35,17 +35,17 @@ def test_x_positive_mention_corroboration():
     assert "pays well" in res2["green_flags_found"]
 
 def test_plain_summary_template_new_format():
-    # New pattern: Based on {sources_found} sources, {company_name} has a {overall_sentiment} employer reputation. {top_green_flag if exists, else 'No strong positive signals were found.'}.
     res = _template_summary("Acme", 5, "mostly positive", "Great culture", None)
-    assert res == "Based on 5 sources, Acme has a mostly positive employer reputation. Great culture."
-    
-    # If red exists, it is appended
+    assert "Drawing on 5 public sources" in res
+    assert "Great culture" in res
+
     res_red = _template_summary("Acme", 5, "mostly negative", None, "High turnover")
-    assert res_red == "Based on 5 sources, Acme has a mostly negative employer reputation. No strong positive signals were found. High turnover."
-    
-    # If nothing exists, it uses the green fallback
+    assert "Drawing on 5 public sources" in res_red
+    assert "High turnover" in res_red
+
     res_none = _template_summary("Acme", 5, "mixed", None, None)
-    assert res_none == "Based on 5 sources, Acme has a mixed employer reputation. No strong positive signals were found."
+    assert "Drawing on 5 public sources" in res_none
+    assert "mixed" in res_none
 
 def test_fallback_green_flag():
     # Mostly positive sentiment but no triggers hit

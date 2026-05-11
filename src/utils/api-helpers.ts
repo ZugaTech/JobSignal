@@ -46,7 +46,7 @@ function normalizeTrustSignals(raw: unknown): TrustSignalRow[] {
     if (!name && !status) continue;
     out.push({
       name: name || 'Signal',
-      status: status || 'Not checked',
+      status: status || 'Insufficient evidence',
       detail: typeof r.detail === 'string' ? r.detail : undefined,
       source: typeof r.source === 'string' ? r.source : undefined,
     });

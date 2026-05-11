@@ -22,21 +22,21 @@ export const SIGNAL_LABEL_MAP: Record<string, string> = {
 
 /** Maps jd_specificity backend detail tokens to UI copy. */
 export const JD_SPECIFICITY_DETAIL_MAP: Record<string, string> = {
-  "specificity=low": "Low detail",
-  "specificity=medium": "Moderate detail",
-  "specificity=high": "High detail",
+  "specificity=low": "Posting detail is thin",
+  "specificity=medium": "Posting detail is moderate",
+  "specificity=high": "Posting detail is strong",
 };
 
 export const STATUS_LABEL_MAP: Record<string, string> = {
-  none: "Not checked",
-  null: "Not checked",
-  low: "Weak signal",
-  medium: "Partial signal",
-  high: "Confirmed",
-  pass: "Passed",
-  fail: "Flagged",
-  unknown: "Inconclusive",
-  unverified: "Unverified",
+  none: "Insufficient evidence",
+  null: "Insufficient evidence",
+  low: "Weak corroboration",
+  medium: "Partial corroboration",
+  high: "Strong corroboration",
+  pass: "Looks consistent",
+  fail: "Raised concerns",
+  unknown: "Unable to confirm",
+  unverified: "No reliable public match",
 };
 
 export const REASON_MAP: Record<string, string> = {
@@ -45,7 +45,7 @@ export const REASON_MAP: Record<string, string> = {
   INSUFFICIENT_DATA: "Not enough information was available to assess this posting.",
   REC_SEARCH_EMPTY: "No cross-platform results were found to compare against.",
   CONFIDENCE_LOW: "Evidence was too limited for a confident verdict.",
-  CONFIDENCE_MEDIUM: "Some signals were unclear. Treat this as a guide, not a guarantee.",
+  CONFIDENCE_MEDIUM: "Several signals were inconclusive—use this as guidance, not proof.",
 };
 
 export const LEAK_MARKERS = [

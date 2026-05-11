@@ -21,7 +21,7 @@ export function getSignalLabel(key: string): string {
 
 export function getStatusLabel(status: string): string {
   const s = String(status ?? "").trim().toLowerCase();
-  if (!s) return "Not checked";
+  if (!s) return "Insufficient evidence";
   if (STATUS_LABEL_MAP[s]) return STATUS_LABEL_MAP[s];
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -32,13 +32,14 @@ export function getReasonLabel(code: string): string {
   return c.replace(/_/g, " ").replace(/\b\w/g, (c2) => c2.toUpperCase()) + ".";
 }
 
+/** Product-facing confidence tier — avoids model-y “moderate/low” wording. */
 export function scoreToConfidenceLabel(score: number | null | undefined): string {
   if (score === null || score === undefined || Number.isNaN(Number(score))) return "";
   const n = Math.max(0, Math.min(100, Number(score)));
-  if (n <= 0) return "None";
-  if (n < 34) return "Low";
-  if (n < 67) return "Moderate";
-  return "High";
+  if (n <= 0) return "Limited confidence";
+  if (n < 34) return "Limited confidence";
+  if (n < 67) return "Cautious confidence";
+  return "High confidence";
 }
 
 export function sanitizeField(value: any, fallback: string): string {
@@ -125,7 +126,7 @@ export function isSafeHttpUrl(href: string | undefined | null): boolean {
 export function buildSignalsSummaryLine(
   rows: Array<{ kind: 'pipeline'; strength: string } | { kind: 'trust'; status: string }>,
 ): string {
-  if (!rows.length) return 'No verification rows were returned for this check.';
+  if (!rows.length) return 'No public checks were returned for this analysis.';
   let strong = 0;
   let flagged = 0;
   let inconclusive = 0;
@@ -135,9 +136,9 @@ export function buildSignalsSummaryLine(
     else if (bucket === 'red') flagged += 1;
     else inconclusive += 1;
   }
-  const parts: string[] = [];
-  if (strong) parts.push(`${strong} supportive`);
-  if (flagged) parts.push(`${flagged} flagged`);
-  if (inconclusive) parts.push(`${inconclusive} inconclusive or not checked`);
-  return `Signal overview: ${parts.join(', ')}.`;
+  const bits: string[] = [];
+  if (strong) bits.push(`${strong} aligned with trusted signals`);
+  if (flagged) bits.push(`${flagged} raised concerns or conflicts`);
+  if (inconclusive) bits.push(`${inconclusive} could not be verified from public sources`);
+  return `At a glance: ${bits.join('; ')}.`;
 }

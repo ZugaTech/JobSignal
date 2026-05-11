@@ -55,7 +55,8 @@ def test_company_name_extraction_safe_null():
 
 def test_plain_summary_template():
     res = _template_summary("Acme", 0, "unknown", None, None)
-    assert res == "Based on 0 sources, Acme has a unknown employer reputation. No strong positive signals were found. No major red flags were detected."
+    assert "sparse" in res.lower()
+    assert "Acme" in res
 
 @pytest.mark.asyncio
 async def test_full_verify_returns_200_on_review_timeout(monkeypatch):

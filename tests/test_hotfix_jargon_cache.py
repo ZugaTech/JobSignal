@@ -73,8 +73,7 @@ def test_llm_fallback_template_clean():
         "reasons": [{"code": "INSUFFICIENT_CORROBORATION", "message": "ignored"}],
     }
     s = build_fallback_llm_summary(report)
-    assert "We checked" in s
-    assert "passed" in s and "flagged" in s
+    assert "We checked" not in s
     assert not contains_internal_verdict_jargon(s)
 
 

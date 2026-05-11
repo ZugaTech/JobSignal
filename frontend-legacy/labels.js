@@ -24,15 +24,15 @@ const SIGNAL_LABEL_MAP = {
 };
 
 const STATUS_LABEL_MAP = {
-  none: "Not checked",
-  null: "Not checked",
-  low: "Weak signal",
-  medium: "Partial signal",
-  high: "Confirmed",
-  pass: "Passed",
-  fail: "Flagged",
-  unknown: "Inconclusive",
-  unverified: "Unverified",
+  none: "Insufficient evidence",
+  null: "Insufficient evidence",
+  low: "Weak corroboration",
+  medium: "Partial corroboration",
+  high: "Strong corroboration",
+  pass: "Looks consistent",
+  fail: "Raised concerns",
+  unknown: "Unable to confirm",
+  unverified: "No reliable public match",
 };
 
 const REASON_MAP = {
@@ -73,7 +73,7 @@ function getSignalLabel(key) {
 
 function getStatusLabel(status) {
   const s = String(status ?? "").trim().toLowerCase();
-  if (!s) return "Not checked";
+  if (!s) return "Insufficient evidence";
   if (STATUS_LABEL_MAP[s]) return STATUS_LABEL_MAP[s];
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }

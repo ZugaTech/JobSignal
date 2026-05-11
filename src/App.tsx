@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Search, FileText, Image as ImageIcon, Clipboard, X, Loader2, CheckCircle2, AlertCircle, ArrowRight, ShieldCheck, Globe, Building2, ExternalLink, ChevronDown, ChevronUp, Info, ListOrdered } from 'lucide-react';
+import { Search, FileText, Image as ImageIcon, Clipboard, X, Loader2, CheckCircle2, AlertCircle, ArrowRight, ShieldCheck, Globe, Building2, ExternalLink, Info, ListOrdered } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -12,94 +12,13 @@ function cn(...inputs: ClassValue[]) {
 import { useJobSignal } from './hooks/useJobSignal';
 import { useBatchVerify } from './hooks/useBatchVerify';
 import { useClipboardAndHandoff } from './hooks/useClipboardAndHandoff';
+import { rewriteMicrocopy, formatCachedAgo, isSafeHttpUrl } from './utils/formatters';
 import {
-  getSignalLabel,
-  getStatusLabel,
-  rewriteMicrocopy,
-  formatCachedAgo,
-  signalStrengthDotClass,
-  isSafeHttpUrl,
-} from './utils/formatters';
-import type { SanitizedVerifyReport } from './types/verify';
-
-// --- COMPONENTS ---
-
-function ScoreMetricBar({ label, value }: { label: string; value: number }) {
-  const v = Math.max(0, Math.min(100, Math.round(value)));
-  return (
-    <div className="space-y-1.5 min-w-0">
-      <div className="flex justify-between gap-2 text-[11px] text-neutral-400">
-        <span className="truncate">{label}</span>
-        <span className="tabular-nums text-neutral-300 shrink-0">{v}</span>
-      </div>
-      <div className="h-2 bg-neutral-800 rounded-full overflow-hidden">
-        <div className="h-full bg-brand/75 rounded-full transition-all" style={{ width: `${v}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function EvidenceScoresPanel({ report }: { report: SanitizedVerifyReport }) {
-  const band = report.verdict_confidence_band;
-  const bandLabel = band ? band.charAt(0).toUpperCase() + band.slice(1) : '—';
-  const hasLayers =
-    report.company_legitimacy_score > 0 ||
-    report.posting_authenticity_score > 0 ||
-    report.freshness_score > 0;
-
-  return (
-    <section
-      className="rounded-2xl border border-border/60 bg-neutral-900/35 p-4 sm:p-5 md:p-6 space-y-4"
-      aria-label="Evidence scores from verification engine"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 space-y-1">
-          <h3 className="text-sm font-bold text-white tracking-tight">Evidence scores</h3>
-          <p className="text-xs text-neutral-500 leading-snug max-w-xl">
-            Layer scores and composite strength from this run. Employer reputation (when available) is shown separately
-            in the right column.
-          </p>
-        </div>
-        <div className="text-right text-xs text-neutral-400 space-y-1 shrink-0">
-          <p>
-            <span className="text-neutral-500">Verdict band </span>
-            <span className="text-neutral-100 font-semibold">{bandLabel}</span>
-          </p>
-          <p>
-            <span className="text-neutral-500">Strength </span>
-            <span className="font-mono tabular-nums text-neutral-100">{report.confidence_score}/100</span>
-          </p>
-        </div>
-      </div>
-
-      {!hasLayers && report.total_signal_count === 0 ? (
-        <p className="text-sm text-neutral-500">No scored layers were returned for this check.</p>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <ScoreMetricBar label="Company signals" value={report.company_legitimacy_score} />
-          <ScoreMetricBar label="Posting signals" value={report.posting_authenticity_score} />
-          <ScoreMetricBar label="Freshness" value={report.freshness_score} />
-        </div>
-      )}
-
-      {report.staleness_flag ? (
-        <p className="text-xs text-amber-400/90 leading-snug">
-          Listing-age signal suggests possible staleness—use freshness as a weaker signal for this run.
-        </p>
-      ) : null}
-
-      {report.total_signal_count > 0 ? (
-        <p className="text-xs text-neutral-500 leading-snug">
-          {`Signal coverage: ${report.verified_signal_count}/${report.total_signal_count} checks resolved (${report.coverage_pct}%).`}
-        </p>
-      ) : null}
-
-      {report.scorer_version_display ? (
-        <p className="text-[10px] text-neutral-600 font-mono">Scorer {report.scorer_version_display}</p>
-      ) : null}
-    </section>
-  );
-}
+  ConfidenceGaugeStrip,
+  GroupedEvidenceSections,
+  TechnicalDetailsAccordion,
+  verdictHeroSubtitle,
+} from './components/TrustPresentation';
 
 const Header = () => (
   <header className="flex items-center justify-between gap-3 px-4 sm:px-6 pb-3 sm:pb-4 pt-[max(0.75rem,env(safe-area-inset-top,0px))] border-b border-border glass sticky top-0 z-50 min-w-0">
@@ -176,7 +95,6 @@ export default function App() {
   const [batchUrls, setBatchUrls] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [includeSimilar, setIncludeSimilar] = useState(false);
-  const [showSignals, setShowSignals] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { phase, report, error, loadingStep, elapsed, verify, reanalyseBypassCache, hydrateReport, reset } = useJobSignal();
@@ -723,7 +641,7 @@ export default function App() {
                       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                         <div className="min-w-0 flex-1">
                           <h2 className="text-sm font-medium text-neutral-500 uppercase tracking-widest mb-2">
-                            Final Verdict
+                            Recommendation
                           </h2>
                           <div
                             className={cn(
@@ -741,37 +659,24 @@ export default function App() {
                                 ? 'Skip'
                                 : 'Verify First'}
                           </div>
-                        </div>
-                        <div className="flex flex-col items-stretch md:items-end gap-2 w-full md:w-auto md:min-w-[180px] md:text-right">
-                          <p className="text-lg font-display font-bold text-white leading-tight">
-                            {report.confidence_label === 'None' || !report.confidence_label
-                              ? 'Strength unavailable'
-                              : `${report.confidence_label} confidence`}
+                          <p className="text-sm text-neutral-400 mt-3 leading-relaxed max-w-xl">
+                            {verdictHeroSubtitle(report.verdict)}
                           </p>
-                          <p className="text-xs text-neutral-500 tabular-nums">Composite {report.confidence_score}/100</p>
-                          <div className="w-full h-2 bg-neutral-800 rounded-full overflow-hidden mt-1">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${report.confidence_score}%` }}
-                              className={cn(
-                                'h-full rounded-full',
-                                report.confidence_score < 34
-                                  ? 'bg-[#DC2626]'
-                                  : report.confidence_score < 67
-                                    ? 'bg-[#D97706]'
-                                    : 'bg-[#16A34A]',
-                              )}
-                            />
-                          </div>
                         </div>
+                        <ConfidenceGaugeStrip
+                          score={report.confidence_score}
+                          labelText={
+                            report.confidence_label?.trim()
+                              ? report.confidence_label
+                              : 'Strength unavailable'
+                          }
+                        />
                       </div>
-
-                      <EvidenceScoresPanel report={report} />
 
                       <div className="space-y-4">
                         <h3 className="text-lg font-bold flex items-center gap-2">
                           <Info className="w-5 h-5 text-brand" />
-                          Analysis Summary
+                          Summary
                         </h3>
                         <p className="text-neutral-300 leading-relaxed text-base md:text-lg">
                           {rewriteMicrocopy(report.llm_summary)}
@@ -779,7 +684,7 @@ export default function App() {
                       </div>
 
                       <div className="space-y-4">
-                        <h3 className="text-lg font-bold">Why this verdict?</h3>
+                        <h3 className="text-lg font-bold">Why we landed here</h3>
                         <ul className="space-y-3">
                           {report.reasons.map((reason: string, i: number) => (
                             <li key={i} className="flex gap-3 text-neutral-400 leading-relaxed">
@@ -808,85 +713,29 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="glass rounded-3xl p-5 sm:p-6 md:p-8 border border-border/60">
-                      <button
-                        type="button"
-                        onClick={() => setShowSignals(!showSignals)}
-                        className="flex flex-col gap-2 w-full text-left group sm:flex-row sm:items-start sm:justify-between"
-                      >
-                        <div className="space-y-1 min-w-0">
-                          <h3 className="text-lg font-bold flex items-center gap-2">
-                            <Globe className="w-5 h-5 text-brand shrink-0" />
-                            Verification Signals
-                          </h3>
-                          {!report.hideSignalsSection && (
-                            <p className="text-sm text-neutral-500 leading-snug pr-2">
-                              {report.signals_summary_line}
-                            </p>
-                          )}
-                        </div>
-                        <div className="shrink-0 self-end sm:self-start pt-1">
-                          {showSignals ? (
-                            <ChevronUp className="text-neutral-600 group-hover:text-white" />
-                          ) : (
-                            <ChevronDown className="text-neutral-600 group-hover:text-white" />
-                          )}
-                        </div>
-                      </button>
+                    <div className="glass rounded-3xl p-5 sm:p-6 md:p-8 border border-border/60 space-y-6">
+                      <div className="space-y-1">
+                        <h3 className="text-lg font-bold flex items-center gap-2">
+                          <Globe className="w-5 h-5 text-brand shrink-0" />
+                          Evidence overview
+                        </h3>
+                        <p className="text-xs text-neutral-500 leading-snug">
+                          Grouped by how strongly each check supported this recommendation.
+                        </p>
+                      </div>
 
                       {report.hideSignalsSection ? (
-                        <p className="text-sm text-neutral-500 mt-4">No signal breakdown was returned for this check.</p>
+                        <p className="text-sm text-neutral-500">
+                          No structured evidence rows were returned for this check.
+                        </p>
                       ) : (
-                        <AnimatePresence>
-                          {showSignals && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="pt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {report.display_signal_rows.map((sig, i: number) => {
-                                  const bucket = signalStrengthDotClass(
-                                    sig.kind === 'pipeline' ? sig.strength : sig.status,
-                                  );
-                                  const dot =
-                                    bucket === 'green'
-                                      ? 'bg-[#16A34A] shadow-[0_0_8px] shadow-[#16A34A]/50'
-                                      : bucket === 'amber'
-                                        ? 'bg-[#D97706] shadow-[0_0_8px] shadow-[#D97706]/50'
-                                        : bucket === 'red'
-                                          ? 'bg-[#DC2626] shadow-[0_0_8px] shadow-[#DC2626]/50'
-                                          : 'bg-neutral-700 shadow-transparent';
-                                  const title =
-                                    sig.kind === 'pipeline' ? getSignalLabel(sig.id) : sig.name;
-                                  const statusText =
-                                    sig.kind === 'pipeline'
-                                      ? getStatusLabel(sig.strength)
-                                      : sig.status;
-                                  return (
-                                    <div
-                                      key={i}
-                                      className="bg-neutral-900/50 border border-border rounded-xl p-4 flex items-center justify-between gap-3"
-                                    >
-                                      <div className="space-y-1 min-w-0">
-                                        <p className="text-xs text-neutral-500 uppercase font-bold tracking-tighter truncate">
-                                          {title}
-                                        </p>
-                                        <p className="text-sm text-neutral-300">{statusText}</p>
-                                        {sig.detail ? (
-                                          <p className="text-xs text-neutral-600 line-clamp-3">{sig.detail}</p>
-                                        ) : null}
-                                      </div>
-                                      <div className={cn('w-2 h-2 rounded-full shrink-0', dot)} />
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
+                        <GroupedEvidenceSections
+                          rows={report.display_signal_rows}
+                          summaryLine={report.signals_summary_line}
+                        />
                       )}
+
+                      <TechnicalDetailsAccordion report={report} />
                     </div>
                   </div>
 
@@ -898,7 +747,8 @@ export default function App() {
                           Company trust
                         </h3>
                         <p className="text-sm text-neutral-400 leading-relaxed">
-                          Employer reputation data unavailable for this employer or query.
+                          Not enough reliable public reputation data was available to summarize employer sentiment for this
+                          run.
                         </p>
                       </div>
                     )}
@@ -947,7 +797,7 @@ export default function App() {
                                 : '—'}
                             </span>
                             <span className="text-[10px] uppercase font-semibold tracking-wide opacity-70 mt-1">
-                              Score
+                              Index
                             </span>
                           </div>
                           <div className="min-w-0 flex-1">
@@ -955,7 +805,9 @@ export default function App() {
                               Sentiment
                             </p>
                             <p className="text-xl sm:text-2xl font-display font-bold text-white capitalize">
-                              {(report.review_summary.overall_sentiment || 'unknown').replace('_', ' ')}
+                              {(report.review_summary.overall_sentiment || 'mixed or unclear')
+                                .replace(/_/g, ' ')
+                                .replace(/^unknown$/i, 'Mixed or unclear')}
                             </p>
                           </div>
                         </div>
@@ -1100,9 +952,9 @@ export default function App() {
                     )}
 
                     <div className="glass rounded-2xl px-4 py-3 md:px-5 flex flex-wrap items-center justify-between gap-3 border border-border/60">
-                      <div className="text-[11px] text-neutral-500 font-mono truncate max-w-[min(100%,14rem)]">
-                        ID: {report.request_id}
-                      </div>
+                      <p className="text-[11px] text-neutral-600 truncate max-w-[min(100%,16rem)]">
+                        Reference available under Technical details.
+                      </p>
                       <div className="flex flex-wrap items-center gap-2 shrink-0">
                         {report.cached ? (
                           <button

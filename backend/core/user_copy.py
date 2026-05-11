@@ -153,21 +153,24 @@ def call_to_action_for_verdict(verdict: str) -> str:
 
 
 def build_fallback_llm_summary(report: Mapping[str, Any]) -> str:
-    """Template fallback when LLM output is missing or unsafe — no internal jargon."""
+    """Template fallback when LLM output is missing or unsafe — calm, non-robotic, no signal arithmetic."""
 
     v = str(report.get("verdict") or "VERIFY").upper()
-    sig_n = len(report.get("trust_signals") or report.get("signals") or [])
-    passed, fail_count = signal_pass_fail_counts(report)
     reasons = report.get("reasons") or []
-    primary_plain = "Some checks were inconclusive."
+    primary_plain = "Public evidence did not fully corroborate this listing."
     if isinstance(reasons, list) and reasons:
         r0 = reasons[0]
         if isinstance(r0, dict):
             primary_plain = plain_reason_for_code(str(r0.get("code") or "").strip())
         elif isinstance(r0, str) and r0.strip():
-            primary_plain = scrub_internal_jargon(r0.strip(), replacement="Some checks were inconclusive.")
-    primary_plain = scrub_internal_jargon(primary_plain, replacement="Some checks were inconclusive.")
+            primary_plain = scrub_internal_jargon(r0.strip(), replacement="Public evidence did not fully corroborate this listing.")
+    primary_plain = scrub_internal_jargon(primary_plain, replacement="Public evidence did not fully corroborate this listing.")
+    base = primary_plain.rstrip(".")
+    if v == "APPLY":
+        return f"{base}. Cross-check title and location on the employer's official posting before you share personal details."
+    if v == "SKIP":
+        return f"{base}. Unless new facts surface, we would not invest further effort here."
     return (
-        f"We checked {sig_n} signals for this posting. {passed} passed, {fail_count} flagged. "
-        f"{primary_plain.rstrip('.')}. {call_to_action_for_verdict(v)}"
+        f"{base}. This cautious stance is deliberate—confirm the role on the company's official careers channel "
+        "before you spend meaningful time on an application."
     )

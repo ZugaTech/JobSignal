@@ -327,12 +327,18 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
 
 def _template_summary(company: str, count: int, sentiment: str, green: Optional[str], red: Optional[str]) -> str:
     """Template fallback when reputation LLM output is unavailable or invalid (never assign raw prompts here)."""
-    green_text = green if green else "No strong positive signals were found"
-    summary = f"Based on {count} sources, {company} has a {sentiment} employer reputation. {green_text}."
+    green_text = green if green else "No standout positive themes appeared in the snippets we saw."
+    if count == 0:
+        base = (
+            f"Public employer reputation data was sparse for {company}, so we could not summarize sentiment reliably. "
+            "That usually means independent reviews were hard to find—not that the employer is problematic."
+        )
+        if red:
+            return f"{base} Note: {red}."
+        return base
+    summary = f"Drawing on {count} public sources, {company} skews toward a {sentiment} employer reputation. {green_text}."
     if red:
         summary += f" {red}."
-    elif count == 0:
-        summary += " No major red flags were detected."
     return summary
 
 def _process_reddit(results: List[ReviewSource]) -> Optional[Dict[str, Any]]:
