@@ -188,6 +188,6 @@ def build_fallback_llm_summary(report: Mapping[str, Any]) -> str:
     if v == "SKIP":
         return f"{base}. Unless new facts surface, we would not invest further effort here."
     return (
-        f"{base}. This cautious stance is deliberate—confirm the role on the company's official careers channel "
+        f"{base}. This cautious stance is deliberate - confirm the role on the company's official careers channel "
         "before you spend meaningful time on an application."
     )
