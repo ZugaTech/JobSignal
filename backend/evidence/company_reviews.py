@@ -345,8 +345,11 @@ def build_template_fallback(
     red_flags: List[str],
     sources_found: int,
 ) -> str:
-    g0 = green_flags[0] if green_flags else "No strong positives identified."
-    r0 = red_flags[0] if red_flags else "No major concerns detected."
+    def _clean(line: str) -> str:
+        return (line or "").strip().rstrip(".") + "."
+
+    g0 = _clean(green_flags[0] if green_flags else "No strong positives identified")
+    r0 = _clean(red_flags[0] if red_flags else "No major concerns detected")
     return (
         f"Based on {sources_found} source(s), {company_name} has a {overall_sentiment} employer reputation. "
         f"{g0} {r0}"
@@ -1119,19 +1122,22 @@ def _template_summary(
     green_flags: List[str],
 ) -> str:
     """Template fallback when reputation LLM output is unavailable or invalid."""
-    top_green = green_flags[0] if green_flags else "No strong positive signals were found."
-    top_red = red_flags[0] if red_flags else "No major concerns detected."
+    def _clean(line: str) -> str:
+        return (line or "").strip().rstrip(".") + "."
+
+    top_green = _clean(green_flags[0] if green_flags else "No strong positive signals were found")
+    top_red = _clean(red_flags[0] if red_flags else "No major concerns detected")
     if count == 0:
         base = (
             f"Public employer reputation data was sparse for {company}, so we could not summarize sentiment reliably. "
             "That usually means independent reviews were hard to find—not that the employer is problematic."
         )
         if red_flags:
-            return f"{base} Note: {top_red}."
+            return f"{base} Note: {top_red}"
         return base
     return (
         f"Based on {count} sources, {company} has a {sentiment} employer reputation. "
-        f"{top_green}. {top_red}"
+        f"{top_green} {top_red}"
     )
 
 def _process_reddit(results: List[ReviewSource]) -> Optional[Dict[str, Any]]:
