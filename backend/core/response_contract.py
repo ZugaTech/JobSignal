@@ -212,29 +212,24 @@ def validate_and_repair_response(report: Dict[str, Any], *, request_id: str) -> 
     if sj is not None and not isinstance(sj, list):
         out["similar_jobs"] = None
 
-    # Evidence completeness (distinct from verdict confidence): how much structured signal
-    # surface area the response carries, not whether the job is trustworthy.
-    _internal_ids = frozenset({"url_canonical", "input_text_only"})
-    sigs_raw = out.get("signals")
-    sigs: List[Any] = sigs_raw if isinstance(sigs_raw, list) else []
-    visible_pipe = 0
-    for item in sigs:
-        if not isinstance(item, dict):
-            continue
-        sid = str(item.get("id") or "")
-        if sid and sid not in _internal_ids:
-            visible_pipe += 1
-    ts_raw = out.get("trust_signals")
-    ts_len = len(ts_raw) if isinstance(ts_raw, list) else 0
-    v_total = int(out.get("verified_signal_count") or 0)
-    t_total = int(out.get("total_signal_count") or 0)
-    if t_total > 0:
-        ratio = min(1.0, max(0.0, v_total / t_total))
-        from_scorer = int(round(100 * ratio))
+    # Evidence completeness must match the scorer's coverage math (verified ÷ total), not a
+    # separate row-count heuristic — otherwise Technical details showed "strong" breadth while
+    # coverage stayed low, and cached vs live could disagree with the same signal payload.
+    cr_raw = out.get("coverage_ratio")
+    try:
+        cr_f = float(cr_raw) if cr_raw is not None else None
+    except (TypeError, ValueError):
+        cr_f = None
+    if cr_f is not None and cr_f >= 0.0:
+        ecs = int(round(100 * min(1.0, max(0.0, cr_f))))
     else:
-        from_scorer = 0
-    from_rows = min(100, visible_pipe * 14 + ts_len * 10)
-    out["evidence_completeness_score"] = max(from_scorer, from_rows) if (from_scorer or from_rows) else from_rows
+        v_total = int(out.get("verified_signal_count") or 0)
+        t_total = int(out.get("total_signal_count") or 0)
+        if t_total > 0:
+            ecs = int(round(100 * min(1.0, max(0.0, v_total / t_total))))
+        else:
+            ecs = 0
+    out["evidence_completeness_score"] = max(0, min(100, ecs))
 
     return out
 
