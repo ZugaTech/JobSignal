@@ -3,8 +3,8 @@
 ## Live app
 
 - **Public URL:** `https://jobsignal.up.railway.app`
-- **Health:** `GET /health` → `{"status":"ok",...}`
-- **Readiness:** `GET /ready` (set `PROBE_PROVIDERS_ON_READY=0` in production to avoid burning provider quota on every probe)
+- **Liveness (`/health`):** lightweight process-up check. Railway’s default Docker health check uses this path; it does **not** prove Redis, cache parity, or API keys are configured.
+- **Readiness (`/ready`):** dependency and configuration summary (`checks.*`). Use it for deploy gates, uptime monitors that should alert on **degraded** / **unavailable**, or manual verification. Set `PROBE_PROVIDERS_ON_READY=0` in production so `/ready` does not burn Serper/Fireworks quota on every request unless you intentionally enable live probes.
 
 ## How this repo deploys
 
@@ -18,7 +18,8 @@
 |----------|--------|
 | `PORT` | Set by Railway; do not override. |
 | `NODE_ENV` | For **production**, set to `production` only after **Redis** is attached (see below). Until then, leaving it unset uses the app default and avoids the `CACHE_URL` requirement. |
-| `CACHE_URL` | **Required** when `NODE_ENV` is `production` or `staging`. Use the Redis connection URL from a Railway **Redis** plugin (same value as `REDIS_URL` on the Redis service, or a variable reference in the dashboard). |
+| `CACHE_URL` | **Required** when `NODE_ENV` is `production` or `staging`. Use the Redis connection URL from a Railway **Redis** plugin (same value as `REDIS_URL` on the Redis service, or a variable reference in the dashboard). Also required when **`JOBSIGNAL_REQUIRE_SHARED_CACHE=1`** (see below). |
+| `JOBSIGNAL_REQUIRE_SHARED_CACHE` | When `1`/`true`, `/ready` treats missing **`CACHE_URL`** as **fail** (Redis expected) even if `NODE_ENV` is still `development`. Use on Railway when you run **multiple instances** but leave `NODE_ENV` unset—otherwise each replica keeps an in-memory cache and users can see divergent results for the same job check. |
 | `ALLOWED_ORIGINS` | e.g. `https://jobsignal.up.railway.app` or `*` for demos. |
 | `SERPER_API_KEY` | Primary Serper.dev key for search-backed evidence and recommendations. If unset, `/ready` reports `checks.serp_key` **fail** and the API is **degraded** (unless `SERPAPI_API_KEY` alone is set). |
 | `SERPAPI_API_KEY` | Optional **SerpApi** key. Used when Serper returns errors or when only SerpApi is configured. Coexists with Serper; Serper is tried first when both are set. |
@@ -42,7 +43,7 @@ See **`.env.example`** for the full contract (`backend/core/config.py` → `ENV_
 3. Set **`NODE_ENV=production`** on the JobSignal service.
 4. Redeploy if needed.
 
-Until **`CACHE_URL`** is set, `/ready` reports **`checks.redis`: `skip`** (in-memory cache per instance). That matches **`NODE_ENV=development`** and is fine for demos; for **consistent cache across replicas**, Redis is required.
+Until **`CACHE_URL`** is set, `/ready` reports **`checks.redis`: `skip`** (in-memory cache per instance) when shared cache is not required. That matches **`NODE_ENV=development`** and is fine for single-instance demos; for **consistent cache across replicas**, attach Redis and set **`CACHE_URL`**. If `NODE_ENV` stays `development` on a multi-instance service, set **`JOBSIGNAL_REQUIRE_SHARED_CACHE=1`** so `/ready` fails fast until Redis is wired—otherwise health can look green while replicas diverge.
 
 ### Clearing in-memory cache without Redis
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
 from collections import defaultdict
@@ -25,6 +26,13 @@ from backend.core.structured_log import configure_logging
 APP_CFG = fail_fast_startup()
 configure_logging(str(APP_CFG.get("LOG_LEVEL") or "info"))
 logger = logging.getLogger("jobsignal")
+
+if os.environ.get("RAILWAY_ENVIRONMENT") and not str(os.environ.get("CACHE_URL") or "").strip():
+    logger.warning(
+        "RAILWAY_ENVIRONMENT is set but CACHE_URL is empty: each instance uses isolated memory cache. "
+        "Attach Redis (CACHE_URL) for consistent verification across replicas; set JOBSIGNAL_REQUIRE_SHARED_CACHE=1 "
+        "so /ready fails until Redis is configured."
+    )
 
 
 def create_app() -> FastAPI:

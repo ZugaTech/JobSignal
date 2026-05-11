@@ -94,6 +94,17 @@ def extract_company_name_hardened(url: Optional[str], text: Optional[str], *, re
             pass
 
     if text:
+        for m in re.finditer(
+            r"(?:About\s+([A-Za-z][A-Za-z0-9&.\- ]+)|Company:\s*([A-Za-z][A-Za-z0-9&.\- ]+))",
+            text,
+        ):
+            for g in (m.group(1), m.group(2)):
+                if g:
+                    cand = g.strip()
+                    if cand and not is_job_board_brand_label(cand):
+                        return cand
+
+    if text:
         from backend.core.llm_fireworks import _get, llm_enabled
         from backend.core.llm_safe import call_llm_safe_chat_sync
 
@@ -125,17 +136,6 @@ def extract_company_name_hardened(url: Optional[str], text: Optional[str], *, re
                         return res_clean
             except Exception:
                 pass
-
-    if text:
-        for m in re.finditer(
-            r"(?:About\s+([A-Za-z][A-Za-z0-9&.\- ]+)|Company:\s*([A-Za-z][A-Za-z0-9&.\- ]+))",
-            text,
-        ):
-            for g in (m.group(1), m.group(2)):
-                if g:
-                    cand = g.strip()
-                    if cand and not is_job_board_brand_label(cand):
-                        return cand
 
     return None
 

@@ -42,6 +42,12 @@ ENV_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("SOURCE_PIPELINE_VERSION", str, "1", "Pipeline contract version"),
     EnvVarSpec("SCORER_VERSION", str, "1", "Scoring ruleset version"),
     EnvVarSpec("CACHE_URL", str, None, "Optional Redis URL; when absent, in-memory cache is used"),
+    EnvVarSpec(
+        "JOBSIGNAL_REQUIRE_SHARED_CACHE",
+        _as_bool,
+        False,
+        "When true, /ready fails without CACHE_URL+Redis ping (multi-instance safety when NODE_ENV is not production)",
+    ),
     EnvVarSpec("FETCH_MAX_BYTES", _as_int, 2_097_152, "Max bytes to read from remote fetched posting pages"),
     EnvVarSpec(
         "FETCH_BODY_TEXT_MAX_CHARS",

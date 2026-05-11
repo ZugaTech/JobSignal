@@ -8,6 +8,7 @@ import type { DisplaySignalRow, SanitizedVerifyReport } from '../types/verify';
 import {
   getStatusLabel,
   rewriteMicrocopy,
+  sanitizeEvidenceDetailForDisplay,
   signalStrengthDotClass,
 } from '../utils/formatters';
 import {
@@ -59,12 +60,12 @@ function EvidenceScoresInner({ report }: { report: SanitizedVerifyReport }) {
     <div className="space-y-4 pt-2 border-t border-border/40">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <p className="text-xs text-neutral-500 leading-snug max-w-xl">
-          Layer scores summarize how strongly employer, posting, and freshness checks lined up. They are one input to
-          your verdict—not a guarantee.
+          Layer scores summarize how strongly employer, posting, and freshness checks lined up. They inform the
+          recommendation—they do not replace your judgment.
         </p>
         <div className="text-right text-xs text-neutral-400 space-y-1 shrink-0">
           <p>
-            <span className="text-neutral-500">Rule-engine band </span>
+            <span className="text-neutral-500">Confidence band </span>
             <span className="text-neutral-100 font-semibold">{bandLabel}</span>
           </p>
           <p>
@@ -91,14 +92,14 @@ function EvidenceScoresInner({ report }: { report: SanitizedVerifyReport }) {
       ) : null}
 
       {report.total_signal_count > 0 ? (
-        <p className="text-xs text-neutral-500 leading-snug font-mono">
-          Internal coverage: {report.verified_signal_count}/{report.total_signal_count} checks resolved (
+        <p className="text-xs text-neutral-500 leading-snug">
+          Supporting metric: {report.verified_signal_count}/{report.total_signal_count} checks resolved (
           {report.coverage_pct}%).
         </p>
       ) : null}
 
       {report.scorer_version_display ? (
-        <p className="text-[10px] text-neutral-600 font-mono">Scoring ruleset {report.scorer_version_display}</p>
+        <p className="text-[10px] text-neutral-600 font-mono">Rules version {report.scorer_version_display}</p>
       ) : null}
     </div>
   );
@@ -119,7 +120,7 @@ export function TechnicalDetailsAccordion({ report }: { report: SanitizedVerifyR
           <div className="min-w-0">
             <p className="text-sm font-semibold text-neutral-200">Technical details</p>
             <p className="text-[11px] text-neutral-500 truncate">
-              Scores, coverage, and engine metadata for support or auditing.
+              Optional depth for support—scores, coverage, and reference IDs.
             </p>
           </div>
         </div>
@@ -191,6 +192,12 @@ export function GroupedEvidenceSections({
                       : chroma === 'red'
                         ? 'bg-[#DC2626]'
                         : 'bg-neutral-700';
+                const detailText =
+                  sig.detail &&
+                  sanitizeEvidenceDetailForDisplay(
+                    sig.kind === 'pipeline' ? sig.id : undefined,
+                    rewriteMicrocopy(sig.detail),
+                  );
                 return (
                   <div
                     key={`${bucket}-${i}-${title}`}
@@ -199,11 +206,11 @@ export function GroupedEvidenceSections({
                     <div className="space-y-1 min-w-0">
                       <p className="text-xs text-neutral-500 uppercase font-semibold tracking-tight truncate">{title}</p>
                       <p className="text-sm text-neutral-200">{statusText}</p>
-                      {sig.detail ? (
-                        <p className="text-xs text-neutral-500 line-clamp-4">{rewriteMicrocopy(sig.detail)}</p>
+                      {detailText ? (
+                        <p className="text-xs text-neutral-500 line-clamp-4">{detailText}</p>
                       ) : null}
                     </div>
-                    <div className={cn('w-2 h-2 rounded-full shrink-0 mt-1', dot)} title={chroma} />
+                    <div className={cn('w-2 h-2 rounded-full shrink-0 mt-1', dot)} aria-hidden />
                   </div>
                 );
               })}

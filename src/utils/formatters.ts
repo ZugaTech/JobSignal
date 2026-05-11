@@ -12,6 +12,19 @@ export function formatPipelineSignalDetail(signalId: string, detail: string | un
   return d;
 }
 
+/** Strip engineering-only fragments from evidence detail shown in primary UI. */
+const INTERNAL_DETAIL_HINT = /specificity=|registrable|fingerprint|bytes\s+fetched|scorer\s*v|pipeline\s*v|canonical\s+domain\s+hash/i;
+
+export function sanitizeEvidenceDetailForDisplay(
+  signalId: string | undefined,
+  detail: string | undefined,
+): string | undefined {
+  const formatted = formatPipelineSignalDetail(signalId || '', detail);
+  if (!formatted) return undefined;
+  if (INTERNAL_DETAIL_HINT.test(formatted)) return undefined;
+  return formatted;
+}
+
 export function getSignalLabel(key: string): string {
   const k = String(key ?? "").trim();
   if (!k) return "Signal";

@@ -7,6 +7,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
 from backend.core.coordinator import EvidenceCoordinator
+from backend.core.job_discovery_urls import is_job_posting_discovery_candidate
 from backend.core.extraction import ExtractionResult, extract_entities
 from backend.core.image_ingest import ExtractedVisionFields
 from backend.core.normalization import NormalizationResult, normalize_job_url
@@ -181,6 +182,8 @@ async def build_recommendations(
         for c in candidates:
             raw_link = c.get("url")
             if not raw_link:
+                continue
+            if not is_job_posting_discovery_candidate(str(raw_link)):
                 continue
             nu = _canonical_url_string(str(raw_link))
             if not nu or nu in seen_urls:

@@ -37,6 +37,7 @@ def _sample_env(**overrides):
 def test_health_always_ok():
     h = build_health_payload()
     assert h["status"] == "ok"
+    assert h["readiness"]["path"] == "/ready"
 
 
 def test_ready_dev_without_cache_still_ready(monkeypatch):
@@ -49,11 +50,23 @@ def test_ready_dev_without_cache_still_ready(monkeypatch):
     assert r["live_probe"] is False
 
 
-def test_ready_staging_without_cache_not_ready():
+def test_ready_staging_without_shared_cache_is_unavailable():
     cfg = _sample_env(node_env="staging", cache_url=None)
     r = build_ready_payload(cfg)
-    assert r["status"] in ("ready", "degraded")
-    assert r["http"] == 200
+    assert r["status"] == "unavailable"
+    assert r["checks"]["redis"] == "fail"
+    assert r["features"]["shared_cache_required"] is True
+    assert r["http"] == 503
+
+
+def test_ready_require_shared_cache_env_without_redis_is_unavailable(monkeypatch):
+    monkeypatch.setenv("JOBSIGNAL_REQUIRE_SHARED_CACHE", "1")
+    monkeypatch.delenv("CACHE_URL", raising=False)
+    cfg = _sample_env(node_env="development", cache_url=None)
+    r = build_ready_payload(cfg, cache_ping_ok=None)
+    assert r["checks"]["redis"] == "fail"
+    assert r["status"] == "unavailable"
+    assert r["features"]["shared_cache_required"] is True
 
 
 def test_ready_fails_when_cache_ping_false():

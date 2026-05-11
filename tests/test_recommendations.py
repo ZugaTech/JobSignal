@@ -111,7 +111,7 @@ async def test_build_recommendations_url_only_emits_discovery_query(monkeypatch)
             return [
                 {
                     "title": "Other role",
-                    "link": "https://jobs.other.com/listing/99",
+                    "link": "https://jobs.other.com/jobs/listing/99",
                     "snippet": "",
                     "source": "other",
                 }
@@ -136,7 +136,7 @@ async def test_build_recommendations_uses_page_hints_as_keywords(monkeypatch):
             return [
                 {
                     "title": "Backend Engineer",
-                    "link": "https://jobs.example.com/backend-engineer",
+                    "link": "https://jobs.example.com/jobs/backend-engineer",
                     "snippet": "",
                     "source": "example",
                 }
