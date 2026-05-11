@@ -76,6 +76,7 @@ function resolveReputationVariant(rs: Record<string, unknown> | null): Reputatio
   if (!rs || typeof rs !== 'object') return null;
   const st = String(rs.status ?? '').toLowerCase();
   if (st === 'unavailable') return 'unavailable';
+  if (st === 'employer_unconfirmed') return 'unconfirmed';
   if (st === 'company_not_identified') return 'no_company';
 
   const ps = sanitizeField(rs.plain_summary, '');

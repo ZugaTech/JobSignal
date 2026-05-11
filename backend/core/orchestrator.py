@@ -41,7 +41,7 @@ from backend.core.image_ingest import (
     merge_description_with_extraction,
 )
 from backend.core.inputs import InputValidationError, validate_verify_inputs
-from backend.core.job_url_shortcuts import is_known_job_platform_url, pick_employer_display_name, is_scam_domain_url
+from backend.core.job_url_shortcuts import is_known_job_platform_url, is_scam_domain_url, resolve_employer_identity
 from backend.core.llm_fireworks import build_llm_signals
 from backend.core.normalization import NormalizationResult, normalize_job_input, materialize_url_result_cache_key
 from backend.core.quick_url_probe import probe_http_status_head
@@ -602,10 +602,16 @@ async def verify_job(
 
         fetch_norm = _norm_with_fetch_hints(norm, fx)
         ext_for_search = extract_entities(fetch_norm) if fetch_norm is not norm else ext_local
-        employer_for_queries = pick_employer_display_name(
-            hardened_company,
-            ext_for_search.company_hint,
+        structured_company = sanitize_company_name(getattr(merged_fields, "company_name", None)) if merged_fields else None
+        is_board_url = bool(norm.canonical_url and is_known_job_platform_url(norm.canonical_url))
+        employer_identity = resolve_employer_identity(
+            is_job_board_url=is_board_url,
+            url_domain_candidate=ext_local.company_hint if norm.canonical_url and not is_board_url else None,
+            structured_candidate=structured_company,
+            hardened_candidate=hardened_company,
+            heuristic_candidate=ext_for_search.company_hint,
         )
+        employer_for_queries = employer_identity.name if employer_identity.confirmed else None
         company = employer_for_queries or ""
         title = ext_for_search.title_hint or ""
         base_query = f"{company} {title}".strip() or (norm.canonical_url or "")
@@ -628,6 +634,14 @@ async def verify_job(
                     }
                 )
 
+        if not employer_identity.confirmed:
+            warnings.append(
+                {
+                    "code": "employer_identity_unconfirmed",
+                    "message": "Employer identity was not confirmed, so company reputation lookup was skipped.",
+                }
+            )
+
         evidence_task = asyncio.create_task(
             _collect_serper_queries(coord_evidence, base_query, company, title, quick=depth_quick)
         )
@@ -637,6 +651,7 @@ async def verify_job(
                 employer_for_queries,
                 request_id=request_id,
                 quick=depth_quick,
+                employer_confirmed=employer_identity.confirmed,
             )
         )
         serp_results, review_summary = await asyncio.gather(evidence_task, review_task)
@@ -736,6 +751,14 @@ async def verify_job(
             "job_page_fetch_profile": fetch_profile,
             "job_page_fetch_attempted": bool(getattr(page_fetch_outcome, "attempted", False)),
             "verify_depth": verify_depth_out,
+            "employer_identity_confirmed": bool(
+                review_summary and getattr(review_summary, "status", "") not in ("company_not_identified", "employer_unconfirmed")
+            ),
+            "employer_confidence": (
+                "confirmed"
+                if review_summary and getattr(review_summary, "status", "") not in ("company_not_identified", "employer_unconfirmed")
+                else "unconfirmed"
+            ),
         },
         ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="live"),
         evidence_sources=evidence_sources,

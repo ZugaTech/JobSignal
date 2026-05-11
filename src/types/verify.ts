@@ -40,7 +40,7 @@ export type DisplaySignalRow =
   | { kind: 'pipeline'; id: string; strength: string; detail?: string }
   | { kind: 'trust'; name: string; status: string; detail?: string };
 
-export type ReputationPanelVariant = null | 'full' | 'unavailable' | 'no_company';
+export type ReputationPanelVariant = null | 'full' | 'unavailable' | 'no_company' | 'unconfirmed';
 
 /** Fields added or normalized by sanitizeApiResponse(). */
 export interface SanitizedVerifyExtensions {

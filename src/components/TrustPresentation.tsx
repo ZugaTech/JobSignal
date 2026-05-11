@@ -50,6 +50,8 @@ export function EpistemicSnapshotStrip({ report }: { report: SanitizedVerifyRepo
   let employerLine: string;
   if (variant === 'full') {
     employerLine = 'Employer shows up clearly enough to sanity-check from public sources.';
+  } else if (variant === 'unconfirmed') {
+    employerLine = 'Employer identity: not confirmed, so reputation was not summarized.';
   } else if (variant === 'no_company') {
     employerLine = 'Employer name: not pinned from public data alone.';
   } else if (variant === 'unavailable') {
@@ -62,7 +64,10 @@ export function EpistemicSnapshotStrip({ report }: { report: SanitizedVerifyRepo
 
   const ecs = report.evidence_completeness_score;
   const tier = evidenceCoverageTier(ecs);
-  const evidenceLine = `Structured evidence coverage: ${tier} (${ecs}/100).`;
+  const evidenceLine =
+    variant === 'unconfirmed' || variant === 'no_company'
+      ? `Structured posting evidence coverage: ${tier} (${ecs}/100); employer identity is separate and unconfirmed.`
+      : `Structured evidence coverage: ${tier} (${ecs}/100).`;
 
   let timingLine: string;
   if (report.staleness_flag) {
@@ -185,8 +190,8 @@ function EvidenceScoresInner({ report }: { report: SanitizedVerifyReport }) {
     <div className="space-y-4 pt-2 border-t border-border/40">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <p className="text-xs text-neutral-500 leading-snug max-w-xl">
-          Layer scores summarize how strongly employer, posting, and freshness checks lined up. They inform the
-          recommendation; they do not replace your judgment.
+          Layer scores summarize how strongly employer, posting, and freshness checks lined up. Employer alignment only
+          reflects identity when the employer was confirmed; they do not replace your judgment.
         </p>
         <div className="text-right text-xs text-neutral-400 space-y-1 shrink-0">
           <p>

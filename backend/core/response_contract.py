@@ -179,8 +179,24 @@ def validate_and_repair_response(report: Dict[str, Any], *, request_id: str) -> 
         if not isinstance(rs, dict):
             out["review_summary"] = None
         else:
+            status = str(rs.get("status") or "").strip().lower()
+            employer_unconfirmed = status in ("employer_unconfirmed", "company_not_identified")
+            if employer_unconfirmed:
+                rs = dict(rs)
+                rs["review_confidence_score"] = None
+                rs["overall_sentiment"] = "unknown"
+                rs["plain_summary"] = ""
+                rs["message"] = "Employer identity not confirmed."
+                out["review_summary"] = rs
+                out["company_legitimacy_score"] = min(int(out.get("company_legitimacy_score") or 0), 44)
+                meta = dict(out.get("meta") or {}) if isinstance(out.get("meta"), dict) else {}
+                meta["employer_identity_confirmed"] = False
+                meta["employer_confidence"] = "unconfirmed"
+                out["meta"] = meta
             ps = rs.get("plain_summary")
-            if isinstance(ps, str) and ps.strip():
+            if employer_unconfirmed:
+                pass
+            elif isinstance(ps, str) and ps.strip():
                 if is_prompt_leak(ps) or contains_internal_verdict_jargon(ps):
                     logger.warning("response_contract_review_summary_leak request_id=%s", rid)
                     rs = dict(rs)

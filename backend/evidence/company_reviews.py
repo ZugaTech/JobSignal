@@ -201,7 +201,19 @@ async def get_company_reviews(
     *,
     request_id: str = "unknown",
     quick: bool = False,
+    employer_confirmed: bool = True,
 ) -> ReviewSummary:
+    if not employer_confirmed:
+        return ReviewSummary(
+            status="employer_unconfirmed",
+            message="Employer identity not confirmed.",
+            review_confidence_score=None,
+            overall_sentiment="unknown",
+            sources_checked=0,
+            sources_found=0,
+            plain_summary="",
+        )
+
     if (
         not company_name
         or company_name.lower() in ("unknown", "n/a", "none", "null")
