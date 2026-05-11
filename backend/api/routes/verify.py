@@ -5,7 +5,7 @@ import json
 import logging
 import re
 import uuid
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -55,6 +55,13 @@ class VerifyRequest(BaseModel):
         default=False,
         description="Skip cache reads and run a fresh verification (same inputs).",
     )
+    verify_depth: Literal["full", "quick"] = Field(
+        default="full",
+        description=(
+            "full: default pipeline (all configured Serper + LLM signals + recommendations when requested). "
+            "quick: fewer searches, no LLM text signals, no similar-job recommendations (faster, less thorough)."
+        ),
+    )
 
 
 class ValidateUrlsRequest(BaseModel):
@@ -69,6 +76,10 @@ class VerifyBatchOptions(BaseModel):
         description="If set, request similar-job recommendations where supported.",
     )
     force_refresh: bool = Field(default=False, description="Skip cache reads for each URL.")
+    verify_depth: Literal["full", "quick"] = Field(
+        default="full",
+        description="Same as single /v1/verify verify_depth (quick skips LLM signals and recommendations).",
+    )
 
 
 class VerifyBatchRequest(BaseModel):
@@ -128,7 +139,8 @@ async def _finalize_verify_response(report: dict) -> dict:
     cfg = EnvConfig.load(strict=False)
     meta = report.get("meta") or {}
     if bool(meta.get("url_only_cache_eligible")) and should_store_url_result_cache(report):
-        rk = materialize_url_result_cache_key(meta.get("canonical_job_url"))
+        vd = str(meta.get("verify_depth") or "full").strip().lower()
+        rk = materialize_url_result_cache_key(meta.get("canonical_job_url"), verify_depth=vd)
         if rk:
             ttl = url_result_ttl_seconds(report)
             payload = wrap_stored_payload(
@@ -231,6 +243,9 @@ async def verify(request: Request) -> dict:
         rec_opt = _coerce_optional_bool(rec_raw)
         fr_raw = form.get("force_refresh")
         force_refresh = bool(_coerce_optional_bool(fr_raw))
+        vd_raw = form.get("verify_depth") or form.get("depth")
+        vd_s = str(vd_raw or "full").strip().lower()
+        verify_depth_mp: Literal["full", "quick"] = "quick" if vd_s == "quick" else "full"
 
         report = await _verify_or_http_exc(
             job_url=url_s,
@@ -240,6 +255,7 @@ async def verify(request: Request) -> dict:
             include_similar_jobs=rec_opt,
             force_refresh=force_refresh,
             request_id=getattr(request.state, "request_id", "unknown"),
+            verify_depth=verify_depth_mp,
         )
         public_rep = await _finalize_verify_response(report)
         METRICS.record_verification(str(public_rep.get("verdict", "VERIFY")), cache_hit=_cache_hit_metric(public_rep))
@@ -266,6 +282,7 @@ async def verify(request: Request) -> dict:
         include_similar_jobs=req.include_similar_jobs,
         force_refresh=req.force_refresh,
         request_id=getattr(request.state, "request_id", "unknown"),
+        verify_depth=req.verify_depth,
     )
     public_rep = await _finalize_verify_response(report)
     METRICS.record_verification(str(public_rep.get("verdict", "VERIFY")), cache_hit=_cache_hit_metric(public_rep))
@@ -301,6 +318,7 @@ async def verify_batch(body: VerifyBatchRequest) -> StreamingResponse:
                     include_similar_jobs=opts.include_similar_jobs,
                     force_refresh=opts.force_refresh,
                     request_id=rid,
+                    verify_depth=opts.verify_depth,
                 )
                 repaired = validate_and_repair_response(raw, request_id=str(raw.get("request_id") or rid))
                 public = await _finalize_verify_response(repaired)
@@ -335,7 +353,13 @@ async def get_report_detail(request_id: str) -> dict:
 
 
 @router.delete("/v1/cache")
-async def bust_url_cache(url: str = Query(..., min_length=8, max_length=4096)) -> dict:
+async def bust_url_cache(
+    url: str = Query(..., min_length=8, max_length=4096),
+    verify_depth: Literal["full", "quick"] = Query(
+        "full",
+        description="Which URL-result cache row to clear (quick vs full use different keys).",
+    ),
+) -> dict:
     """Hackathon/admin helper: clear URL-only cached verdict for a given URL string."""
 
     cfg = EnvConfig.load(strict=False)
@@ -343,8 +367,8 @@ async def bust_url_cache(url: str = Query(..., min_length=8, max_length=4096)) -
     u = url.strip()
     if not u.lower().startswith(("http://", "https://")):
         u = "https://" + u
-    rk = materialize_url_result_cache_key(u)
+    rk = materialize_url_result_cache_key(u, verify_depth=verify_depth)
     if not rk:
         raise HTTPException(status_code=400, detail="Could not normalize URL for cache key.")
     cache.delete(RESULT_CACHE_KEY_PREFIX + rk)
-    return {"ok": True, "cleared_key_suffix": rk[:16]}
+    return {"ok": True, "cleared_key_suffix": rk[:16], "verify_depth": verify_depth}

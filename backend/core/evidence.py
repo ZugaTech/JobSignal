@@ -178,15 +178,29 @@ def _mk_signal(
     }
 
 
-async def _collect_serper_queries(coordinator: Any, base_query: str, company: str, title: str) -> Dict[str, Any]:
-    tasks = {
-        "careers": coordinator.search(f"{base_query} careers".strip(), num=8),
-        "board": coordinator.search(f"\"{title}\" \"{company}\" job".strip(), num=10),
-        "rep": coordinator.search(f"\"{company}\" layoffs OR scam OR \"fake recruiter\"".strip(), num=8),
-        "linkedin": coordinator.search(f"{company} LinkedIn company page official".strip(), num=8),
-        "registry": coordinator.search(f"\"{company}\" (crunchbase OR \"companies house\")".strip(), num=8),
-        "duplicates": coordinator.search(f"\"{title}\" \"{company}\"".strip(), num=10),
-    }
+async def _collect_serper_queries(
+    coordinator: Any,
+    base_query: str,
+    company: str,
+    title: str,
+    *,
+    quick: bool = False,
+) -> Dict[str, Any]:
+    if quick:
+        tasks = {
+            "careers": coordinator.search(f"{base_query} careers".strip(), num=6),
+            "board": coordinator.search(f"\"{title}\" \"{company}\" job".strip(), num=6),
+            "duplicates": coordinator.search(f"\"{title}\" \"{company}\"".strip(), num=6),
+        }
+    else:
+        tasks = {
+            "careers": coordinator.search(f"{base_query} careers".strip(), num=8),
+            "board": coordinator.search(f"\"{title}\" \"{company}\" job".strip(), num=10),
+            "rep": coordinator.search(f"\"{company}\" layoffs OR scam OR \"fake recruiter\"".strip(), num=8),
+            "linkedin": coordinator.search(f"{company} LinkedIn company page official".strip(), num=8),
+            "registry": coordinator.search(f"\"{company}\" (crunchbase OR \"companies house\")".strip(), num=8),
+            "duplicates": coordinator.search(f"\"{title}\" \"{company}\"".strip(), num=10),
+        }
     keys = list(tasks.keys())
     values = await asyncio.gather(*tasks.values())
     

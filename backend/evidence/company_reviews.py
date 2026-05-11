@@ -195,7 +195,13 @@ def _dedup_flags(flags: List[str], max_flags: int = 4) -> List[str]:
                 break
     return res
 
-async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, request_id: str = "unknown") -> ReviewSummary:
+async def get_company_reviews(
+    coordinator: Any,
+    company_name: Optional[str],
+    *,
+    request_id: str = "unknown",
+    quick: bool = False,
+) -> ReviewSummary:
     if (
         not company_name
         or company_name.lower() in ("unknown", "n/a", "none", "null")
@@ -218,6 +224,12 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
         "x_watchouts": f'"{company_name}" toxic workplace OR scam job OR fake recruiter',
         "x_positive": f'"{company_name}" great employer OR recommend working OR good culture',
     }
+    if quick:
+        queries = {
+            "reviews_aggregate": queries["reviews_aggregate"],
+            "reddit_culture": queries["reddit_culture"],
+            "x_watchouts": queries["x_watchouts"],
+        }
 
     try:
         tasks = {k: coordinator.search(q, num=5) for k, q in queries.items()}

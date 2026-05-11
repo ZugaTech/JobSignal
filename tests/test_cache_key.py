@@ -38,3 +38,12 @@ def test_fetch_profile_live_changes_key():
     k1 = build_public_cache_key(n, "1", "a", fetch_profile="live")
     assert k0.materialized != k1.materialized
     assert "fetch:live" in k1.materialized
+
+
+def test_verify_depth_quick_changes_key():
+    n = normalize_job_input("https://example.com/job", "Hello")
+    k_full = build_public_cache_key(n, "1", "a", verify_depth="full")
+    k_quick = build_public_cache_key(n, "1", "a", verify_depth="quick")
+    assert k_full.materialized != k_quick.materialized
+    assert "vd:quick" in k_quick.materialized
+    assert "vd:quick" not in k_full.materialized

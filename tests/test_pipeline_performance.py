@@ -9,7 +9,7 @@ import pytest
 async def test_verify_pipeline_completes_under_15_seconds_with_mocked_sources(monkeypatch):
     orchestrator._MEM_CACHE._data.clear()
 
-    async def _fake_collect_serper_queries(_coordinator, base_query: str, company: str, title: str):
+    async def _fake_collect_serper_queries(_coordinator, base_query: str, company: str, title: str, **_kwargs):
         return {
             "careers": ([], "verified", None),
             "board": ([], "verified", None),

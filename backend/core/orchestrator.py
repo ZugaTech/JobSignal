@@ -255,6 +255,7 @@ async def verify_job(
     include_similar_jobs: Optional[bool] = None,
     request_id: str = "unknown",
     force_refresh: bool = False,
+    verify_depth: str = "full",
 ) -> Dict[str, Any]:
     t0 = time.perf_counter()
     cfg = EnvConfig.load(strict=False)
@@ -368,6 +369,11 @@ async def verify_job(
 
     image_sha = hashlib.sha256(image_bytes).hexdigest() if has_image and image_bytes else None
     fetch_profile = "live" if job_fetch_enabled() else "off"
+    depth_quick = str(verify_depth or "full").strip().lower() == "quick"
+    verify_depth_out: str = "quick" if depth_quick else "full"
+    skip_recommendations_eff = bool(skip_recommendations or depth_quick)
+    include_similar_eff: Optional[bool] = None if depth_quick else include_similar_jobs
+
     cache_key = build_public_cache_key(
         norm,
         pipeline_version=cfg.source_pipeline_version,
@@ -375,21 +381,27 @@ async def verify_job(
         image_bytes_sha256=image_sha,
         image_ingest_version=IMAGE_INGEST_VERSION if has_image else None,
         fetch_profile=fetch_profile,
+        verify_depth=verify_depth_out if depth_quick else None,
     )
 
     steps: List[Dict[str, Any]] = [{"id": "normalize", "label": "Normalized input"}]
+    if depth_quick:
+        steps.append({"id": "verify_depth", "label": "Quick verify (reduced search depth)"})
 
     serper_key = (os.environ.get("SERPER_API_KEY") or os.environ.get("SEARCH_API_KEY") or "").strip()
     serpapi_key = (os.environ.get("SERPAPI_API_KEY") or "").strip()
     endpoint = (cfg.search_api_endpoint or "").strip() or "https://google.serper.dev/search"
     serpapi_ep = (cfg.serpapi_search_endpoint or "").strip() or "https://serpapi.com/search.json"
     timeout_s = float(cfg.search_timeout_s)
+    ev_calls = 4 if depth_quick else cfg.search_max_calls_evidence
+    rep_calls = 4 if depth_quick else cfg.search_max_calls_reputation
+    rec_calls = 2 if depth_quick else cfg.search_max_calls_recommendations
     coord_evidence = EvidenceCoordinator(
         serper_key,
         serpapi_api_key=serpapi_key,
         serpapi_endpoint=serpapi_ep,
         search_timeout_s=timeout_s,
-        max_calls=cfg.search_max_calls_evidence,
+        max_calls=ev_calls,
         search_endpoint=endpoint,
     )
     coord_reputation = EvidenceCoordinator(
@@ -397,7 +409,7 @@ async def verify_job(
         serpapi_api_key=serpapi_key,
         serpapi_endpoint=serpapi_ep,
         search_timeout_s=timeout_s,
-        max_calls=cfg.search_max_calls_reputation,
+        max_calls=rep_calls,
         search_endpoint=endpoint,
     )
     coord_rec = EvidenceCoordinator(
@@ -405,7 +417,7 @@ async def verify_job(
         serpapi_api_key=serpapi_key,
         serpapi_endpoint=serpapi_ep,
         search_timeout_s=timeout_s,
-        max_calls=cfg.search_max_calls_recommendations,
+        max_calls=rec_calls,
         search_endpoint=endpoint,
     )
 
@@ -414,7 +426,7 @@ async def verify_job(
     url_only_cache = bool(norm.canonical_url) and not has_image and not (effective_text or "").strip()
 
     if url_only_cache and not force_refresh:
-        rk = materialize_url_result_cache_key(norm.canonical_url)
+        rk = materialize_url_result_cache_key(norm.canonical_url, verify_depth=verify_depth_out)
         if rk:
             url_cache_key = RESULT_CACHE_KEY_PREFIX + rk
             hit_raw = cache.get(url_cache_key)
@@ -442,24 +454,26 @@ async def verify_job(
                 log_stage(request_id=request_id, stage="url_result_cache_hit", duration_ms=(time.perf_counter() - t0) * 1000)
                 # Cached payload may omit similar jobs or reflect an older request flag.
                 # Honor the current request: attach fresh recommendations when asked; strip when not.
-                if include_similar_jobs:
+                if include_similar_eff:
                     rec_norm = await _fetch_hints_for_recommendations(norm, cfg)
                     await _maybe_attach_recommendations(
                         out,
                         norm=rec_norm,
                         merged_fields=merged_fields,
-                        skip_recommendations=skip_recommendations,
+                        skip_recommendations=skip_recommendations_eff,
                         include_similar_jobs=True,
                         coordinator=coord_rec,
                     )
                     out["similar_jobs"] = list(out.get("recommendations") or [])
                     meta_m = dict(out.get("meta") or {})
                     meta_m["similar_jobs_requested"] = True
+                    meta_m["verify_depth"] = verify_depth_out
                     out["meta"] = meta_m
                 else:
                     out["similar_jobs"] = None
                     meta_m = dict(out.get("meta") or {})
                     meta_m.pop("similar_jobs_requested", None)
+                    meta_m["verify_depth"] = verify_depth_out
                     out["meta"] = meta_m
                 await _shutdown_serp_coords(coord_evidence, coord_reputation, coord_rec)
                 log_stage(
@@ -486,6 +500,7 @@ async def verify_job(
                     "pipeline_steps": steps,
                     "canonical_job_url": norm.canonical_url,
                     "url_only_cache_eligible": False,
+                    "verify_depth": verify_depth_out,
                 },
                 ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="cache"),
                 data_freshness=data_freshness,
@@ -503,13 +518,13 @@ async def verify_job(
             log_stage(request_id=request_id, stage="cache_hit", duration_ms=(time.perf_counter() - t0) * 1000)
             await _maybe_attach_recommendations(
                 report,
-                norm=await _fetch_hints_for_recommendations(norm, cfg) if include_similar_jobs else norm,
+                norm=await _fetch_hints_for_recommendations(norm, cfg) if include_similar_eff else norm,
                 merged_fields=merged_fields,
-                skip_recommendations=skip_recommendations,
-                include_similar_jobs=include_similar_jobs,
+                skip_recommendations=skip_recommendations_eff,
+                include_similar_jobs=include_similar_eff,
                 coordinator=coord_rec,
             )
-            if include_similar_jobs:
+            if include_similar_eff:
                 report["similar_jobs"] = list(report.get("recommendations") or [])
                 meta_m = dict(report.get("meta") or {})
                 meta_m["similar_jobs_requested"] = True
@@ -613,9 +628,16 @@ async def verify_job(
                     }
                 )
 
-        evidence_task = asyncio.create_task(_collect_serper_queries(coord_evidence, base_query, company, title))
+        evidence_task = asyncio.create_task(
+            _collect_serper_queries(coord_evidence, base_query, company, title, quick=depth_quick)
+        )
         review_task = asyncio.create_task(
-            get_company_reviews(coord_reputation, employer_for_queries, request_id=request_id)
+            get_company_reviews(
+                coord_reputation,
+                employer_for_queries,
+                request_id=request_id,
+                quick=depth_quick,
+            )
         )
         serp_results, review_summary = await asyncio.gather(evidence_task, review_task)
         bundle = build_evidence_bundle(norm, ext_local, serp_results, page_fetch=fx)
@@ -630,18 +652,24 @@ async def verify_job(
     log_stage(request_id=request_id, stage="evidence_gathered", duration_ms=(time.perf_counter() - t0) * 1000)
 
     steps.append({"id": "evidence", "label": "Evidence collection"})
-    steps.append({"id": "llm", "label": "AI-assisted signals"})
+    steps.append(
+        {
+            "id": "llm",
+            "label": "AI-assisted signals skipped (quick)" if depth_quick else "AI-assisted signals",
+        }
+    )
     llm_text_parts: List[str] = []
     if (norm.description_text or "").strip():
         llm_text_parts.append(norm.description_text.strip())
     if page_fetch_outcome and (page_fetch_outcome.extracted_job_text or "").strip():
         llm_text_parts.append(page_fetch_outcome.extracted_job_text.strip())
     merged_llm_job_text = "\n\n".join(llm_text_parts)
-    llm = build_llm_signals(job_text=merged_llm_job_text)
-    if llm.signals:
-        signals.extend(llm.signals)
-    if llm.warnings:
-        warnings.extend(llm.warnings)
+    if not depth_quick:
+        llm = build_llm_signals(job_text=merged_llm_job_text)
+        if llm.signals:
+            signals.extend(llm.signals)
+        if llm.warnings:
+            warnings.extend(llm.warnings)
 
     steps.append({"id": "score", "label": "Scoring engine"})
     decision = decide_from_signals(signals, url_provided=bool(norm.canonical_url))
@@ -707,6 +735,7 @@ async def verify_job(
             "url_only_cache_eligible": url_only_cache,
             "job_page_fetch_profile": fetch_profile,
             "job_page_fetch_attempted": bool(getattr(page_fetch_outcome, "attempted", False)),
+            "verify_depth": verify_depth_out,
         },
         ingestion=_ingestion_payload(has_image, merged_fields, detected_mime, source="live"),
         evidence_sources=evidence_sources,
@@ -719,11 +748,11 @@ async def verify_job(
         report,
         norm=_norm_with_fetch_hints(norm, page_fetch_outcome),
         merged_fields=merged_fields,
-        skip_recommendations=skip_recommendations,
-        include_similar_jobs=include_similar_jobs,
+        skip_recommendations=skip_recommendations_eff,
+        include_similar_jobs=include_similar_eff,
         coordinator=coord_rec,
     )
-    if include_similar_jobs:
+    if include_similar_eff:
         report["similar_jobs"] = list(report.get("recommendations") or [])
         meta_m = dict(report.get("meta") or {})
         meta_m["similar_jobs_requested"] = True

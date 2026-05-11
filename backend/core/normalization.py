@@ -85,16 +85,26 @@ def strip_trailing_slash_url(url: str) -> str:
     return urlunparse((parsed.scheme, parsed.netloc, path, "", query, ""))
 
 
-def materialize_url_result_cache_key(raw_url: Optional[str]) -> Optional[str]:
-    """Return sha256 hex of cleaned URL for URL-only result cache (tracking stripped, slash trimmed)."""
+def materialize_url_result_cache_key(
+    raw_url: Optional[str],
+    *,
+    verify_depth: str = "full",
+) -> Optional[str]:
+    """Return sha256 hex for URL-only result cache (tracking stripped, slash trimmed).
+
+    ``verify_depth="quick"`` uses a distinct key so quick vs full runs never overwrite
+    each other for the same cleaned URL.
+    """
 
     canonical, sha = normalize_job_url(raw_url)
     if not canonical or not sha:
         return None
     cleaned = strip_trailing_slash_url(canonical)
-    if cleaned != canonical:
-        return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()
-    return sha
+    base_hex = hashlib.sha256(cleaned.encode("utf-8")).hexdigest() if cleaned != canonical else sha
+    d = (verify_depth or "full").strip().lower()
+    if d == "quick":
+        return hashlib.sha256(f"depth:quick|{base_hex}".encode("utf-8")).hexdigest()
+    return base_hex
 
 
 def normalize_job_url(raw: Optional[str]) -> tuple[Optional[str], Optional[str]]:

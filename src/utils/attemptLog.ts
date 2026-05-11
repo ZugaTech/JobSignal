@@ -32,6 +32,14 @@ export function buildAttemptLogLines(report: SanitizedVerifyReport): string[] {
     add('This result was loaded from cache for the same normalized input, not a full live re-run.');
   }
 
+  const vd =
+    typeof meta.verify_depth === 'string' ? meta.verify_depth.trim().toLowerCase() : 'full';
+  if (vd === 'quick') {
+    add(
+      'Quick depth: fewer public searches, no AI text signals on the posting, and no similar-job recommendations.',
+    );
+  }
+
   if (fp === 'off' && hasUrl) {
     add(
       'Live download of the posting page was turned off; we relied more on search and other public checks instead of HTML from the listing.',

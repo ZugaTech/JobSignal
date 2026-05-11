@@ -23,6 +23,7 @@ def build_public_cache_key(
     image_bytes_sha256: str | None = None,
     image_ingest_version: str | None = None,
     fetch_profile: str | None = None,
+    verify_depth: str | None = None,
 ) -> PublicCacheKey:
     """Build stable cache key string.
 
@@ -54,6 +55,8 @@ def build_public_cache_key(
         parts.append(f"imgv:{image_ingest_version}")
     if fetch_profile and fetch_profile != "off":
         parts.append(f"fetch:{fetch_profile}")
+    if verify_depth and str(verify_depth).strip().lower() == "quick":
+        parts.append("vd:quick")
     materialized = "|".join(parts)
     preview = fingerprint[:16] + ("" if len(fingerprint) <= 16 else "…")
     return PublicCacheKey(materialized=materialized, fingerprint_preview=preview)

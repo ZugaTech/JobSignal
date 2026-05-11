@@ -26,6 +26,13 @@ def test_materialize_cache_key_differs_for_distinct_urls():
     assert materialize_url_result_cache_key(a) != materialize_url_result_cache_key(b)
 
 
+def test_materialize_quick_differs_from_full():
+    u = "https://www.indeed.com/viewjob?jk=abc"
+    assert materialize_url_result_cache_key(u, verify_depth="full") != materialize_url_result_cache_key(
+        u, verify_depth="quick"
+    )
+
+
 def test_in_memory_cache_uses_exact_keys_only():
     from backend.core.cache_store import InMemoryCache
 
