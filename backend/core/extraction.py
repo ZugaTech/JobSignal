@@ -32,13 +32,31 @@ _LOCATIONISH = re.compile(
 _DATE_REGEX = re.compile(r"\b(posted|published)\s+on\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|[A-Z][a-z]+\s+\d{1,2},?\s+\d{4})\b", re.I)
 _RECRUITER_REGEX = re.compile(r"(?:recruiter|hiring manager)\s*:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})", re.I)
 _COMPANY_LINE = re.compile(r"\b(company|employer|organization)\s*:\s*([^\n\r|•]{2,120})", re.I)
+_WEAK_DOMAIN_LABELS = {
+    "www",
+    "careers",
+    "jobs",
+    "job",
+    "apply",
+    "app",
+    "co",
+    "com",
+    "org",
+    "net",
+    "ac",
+    "go",
+    "gov",
+}
 
 
 def _company_from_domain(domain: Optional[str]) -> Optional[str]:
     if not domain:
         return None
-    label = domain.split(".")[0]
-    if label in ("www", "careers", "jobs"):
+    labels = [p for p in domain.lower().strip(".").split(".") if p]
+    if not labels:
+        return None
+    label = labels[0]
+    if label in _WEAK_DOMAIN_LABELS or len(label) < 3:
         return None
     return label.replace("-", " ").title() or None
 

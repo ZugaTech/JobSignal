@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 from backend.core.extraction import ExtractionResult
 from backend.core.fetch_job_page import JobPageFetchOutcome
+from backend.core.job_url_shortcuts import is_job_board_registrable_domain, is_known_job_platform_url
 from backend.core.normalization import NormalizationResult, registrable_domain_naive
 from backend.evidence.company_reviews import count_relevant_negative_hits, is_company_relevant
 
@@ -100,6 +101,9 @@ def _resolve_official_careers_url(
 
     posting_host = _posting_hostname(norm)
     posting_reg = registrable_domain_naive(posting_host) if posting_host else None
+    posting_is_board = is_job_board_registrable_domain(posting_reg) or (
+        bool(norm.canonical_url) and is_known_job_platform_url(norm.canonical_url)
+    )
 
     tier_same_reg: List[str] = []
     tier_company: List[str] = []
@@ -110,7 +114,7 @@ def _resolve_official_careers_url(
             if not h:
                 continue
             reg = registrable_domain_naive(h)
-            if posting_reg and reg and posting_reg == reg:
+            if posting_reg and reg and posting_reg == reg and not posting_is_board:
                 tier_same_reg.append(link)
             elif ext.company_hint and _is_official_domain(h, ext.company_hint):
                 tier_company.append(link)
@@ -131,7 +135,7 @@ def _resolve_official_careers_url(
         return picked, "job_page_company_match"
     if serp_official_url:
         return serp_official_url, "search_careers"
-    if norm.canonical_url and posting_host and _is_official_domain(posting_host, ext.company_hint):
+    if norm.canonical_url and posting_host and not posting_is_board and _is_official_domain(posting_host, ext.company_hint):
         return norm.canonical_url.strip(), "posting_on_company_domain"
     return None, ""
 

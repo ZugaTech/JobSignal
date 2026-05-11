@@ -588,8 +588,8 @@ async def verify_job(
         fetch_norm = _norm_with_fetch_hints(norm, fx)
         ext_for_search = extract_entities(fetch_norm) if fetch_norm is not norm else ext_local
         employer_for_queries = pick_employer_display_name(
-            ext_for_search.company_hint,
             hardened_company,
+            ext_for_search.company_hint,
         )
         company = employer_for_queries or ""
         title = ext_for_search.title_hint or ""

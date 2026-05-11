@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+from backend.core.evidence import _resolve_official_careers_url
 from backend.core.extraction import extract_entities
+from backend.core.fetch_job_page import JobPageFetchOutcome
 from backend.core.fetch_job_page import extract_job_text_hints_from_html
-from backend.core.job_url_shortcuts import is_job_board_brand_label, pick_employer_display_name
+from backend.core.job_url_shortcuts import is_job_board_brand_label, is_known_job_platform_url, pick_employer_display_name
 from backend.core.normalization import normalize_job_input
 from backend.evidence.company_reviews import extract_company_name_hardened
 
 
 def test_board_hostname_not_used_as_company_name():
     assert extract_company_name_hardened("https://ng.indeed.com/viewjob?jk=abc", None) is None
+
+
+def test_brightermonday_hostname_not_used_as_company_name():
+    url = "https://www.brightermonday.co.ke/jobs/software-engineer"
+    assert is_known_job_platform_url(url)
+    assert extract_company_name_hardened(url, None) is None
 
 
 def test_board_url_still_allows_text_company_line():
@@ -25,11 +33,23 @@ def test_extract_entities_skips_job_board_registrable_domain():
     assert ext.company_hint is None
 
 
+def test_extract_entities_skips_brightermonday_board_domain():
+    norm = normalize_job_input("https://www.brightermonday.co.ke/jobs/software-engineer", None)
+    ext = extract_entities(norm)
+    assert ext.company_hint is None
+
+
 def test_extract_entities_keeps_real_employer_domain():
     norm = normalize_job_input("https://careers.example.com/jobs/123", None)
     assert norm.registrable_domain == "example.com"
     ext = extract_entities(norm)
     assert ext.company_hint == "Example"
+
+
+def test_extract_entities_rejects_cctld_shortcut_domain_hint():
+    norm = normalize_job_input("https://www.co.ke/jobs/software-engineer", None)
+    ext = extract_entities(norm)
+    assert ext.company_hint is None
 
 
 def test_linkedin_og_site_name_not_emitted_as_company_hint():
@@ -39,7 +59,7 @@ def test_linkedin_og_site_name_not_emitted_as_company_hint():
     <meta property="og:title" content="Full Stack Developer | hackajob | LinkedIn" />
     </head><body></body></html>
     """
-    title, desc, site_name, extracted = extract_job_text_hints_from_html(html)
+    title, _desc, site_name, extracted = extract_job_text_hints_from_html(html)
     assert site_name == "LinkedIn"
     assert extracted is not None
     assert "Company: LinkedIn" not in extracted
@@ -60,6 +80,7 @@ def test_brand_label_detection():
 def test_pick_employer_prefers_non_board():
     assert pick_employer_display_name("LinkedIn", "hackajob") == "hackajob"
     assert pick_employer_display_name("LinkedIn", None) is None
+    assert pick_employer_display_name("Acme Ltd", "BrighterMonday") == "Acme Ltd"
 
 
 def test_json_ld_jobposting_surfaces_in_extracted_text():
@@ -69,8 +90,22 @@ def test_json_ld_jobposting_surfaces_in_extracted_text():
 "hiringOrganization":{"@type":"Organization","name":"Deloitte Consulting LLP"},
 "jobLocation":{"@type":"Place","address":{"addressRegion":"VA","addressCountry":"US"}}}
 </script></head><body><p>Extra body text for minimum length requirements here.</p></body></html>"""
-    title, desc, site, extracted = extract_job_text_hints_from_html(html, body_text_max_chars=4000)
+    title, _desc, _site, extracted = extract_job_text_hints_from_html(html, body_text_max_chars=4000)
     assert extracted
     assert "340395" in extracted
     assert "GenAI" in extracted or "GenAI Engineer" in extracted
     assert "Deloitte" in extracted
+
+
+def test_board_url_does_not_self_promote_as_official_careers_page():
+    norm = normalize_job_input("https://www.brightermonday.co.ke/jobs/software-engineer", None)
+    ext = extract_entities(norm)
+    fx = JobPageFetchOutcome(
+        attempted=True,
+        employer_page_urls=("https://www.brightermonday.co.ke/listings/software-engineer",),
+    )
+
+    official_url, reason = _resolve_official_careers_url(norm, ext, None, fx)
+
+    assert official_url is None
+    assert reason == ""
