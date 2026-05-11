@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from backend.evidence.company_reviews import _generate_llm_summary, get_company_reviews
+from backend.evidence.company_reviews import (
+    _generate_llm_summary,
+    build_reputation_summary_messages,
+    get_company_reviews,
+    is_raw_snippet,
+)
 
 
 @pytest.mark.asyncio
@@ -58,5 +63,29 @@ async def test_plain_summary_fallback_does_not_echo_raw_review_snippet(monkeypat
     out = await get_company_reviews(DummyCoordinator(), "Deloitte")
     low = out.plain_summary.lower()
     assert "113,693 company reviews on glassdoor" not in low
+    assert "out of 5 stars" not in low
     assert "deloitte" in low
+
+
+def test_is_raw_snippet_flags_review_count_style_text():
+    assert is_raw_snippet(
+        "Deloitte has an employee rating of 3.8 out of 5 stars, based on 113,693 company reviews on Glassdoor."
+    )
+
+
+def test_reputation_summary_prompt_keeps_instructions_in_system_only():
+    messages = build_reputation_summary_messages(
+        company="Deloitte",
+        overall_sentiment="mostly positive",
+        avg_rating=3.8,
+        green_flags=["Work-life balance"],
+        red_flags=["High workload"],
+        sources_found=4,
+    )
+    assert messages[0]["role"] == "system"
+    assert "respond with the summary only" in messages[0]["content"].lower()
+    assert "start directly with the advice" in messages[0]["content"].lower()
+    assert messages[1]["role"] == "user"
+    assert "write a" not in messages[1]["content"].lower()
+    assert "respond with" not in messages[1]["content"].lower()
 
