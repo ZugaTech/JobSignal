@@ -2,8 +2,8 @@
 
 from backend.evidence.company_reviews import (
     _parse_serper_item,
+    count_relevant_negative_hits,
     is_company_relevant,
-    is_relevant_negative_hit,
 )
 
 
@@ -46,8 +46,15 @@ def test_is_company_relevant_filters_absent_company_name():
     assert is_company_relevant(result, "Deloitte") is False
 
 
-def test_is_relevant_negative_hit_requires_company_proximity():
-    near = "Deloitte announced layoffs in one regional division during restructuring."
-    far = "Deloitte hiring update. " + ("x" * 220) + " layoffs were discussed in the broader tech market."
-    assert is_relevant_negative_hit(near, "layoffs", "Deloitte") is True
-    assert is_relevant_negative_hit(far, "layoffs", "Deloitte") is False
+def test_count_relevant_negative_hits_skips_results_without_company_name():
+    results = [
+        {
+            "title": "Deloitte review roundup",
+            "snippet": "Deloitte layoffs were discussed by former employees.",
+        },
+        {
+            "title": "Generic scam alert",
+            "snippet": "Job seekers warned about recruiter scam messages.",
+        },
+    ]
+    assert count_relevant_negative_hits(results, ["layoffs", "scam"], "Deloitte") == 1

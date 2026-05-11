@@ -57,101 +57,42 @@ GLOBAL_RED_TRIGGERS = [
     "sinking ship", "bankrupt", "hostile workplace", "workplace harassment", "unpaid overtime"
 ]
 
-_CORPORATE_STOPWORDS = frozenset(
-    {
-        "company",
-        "corporation",
-        "corp",
-        "inc",
-        "llc",
-        "ltd",
-        "gmbh",
-        "plc",
-        "sa",
-        "nv",
-        "bv",
-        "ag",
-        "kg",
-        "limited",
-        "group",
-        "holdings",
-        "co",
-        "the",
-    }
-)
-
-
-def _company_aliases(company_name: str) -> List[str]:
-    raw = (company_name or "").strip().lower()
-    if not raw:
-        return []
-    aliases = [raw]
-    tokens = _significant_company_tokens(company_name)
-    if tokens:
-        compact = " ".join(tokens).strip()
-        if compact and compact not in aliases:
-            aliases.append(compact)
-        aliases.extend(t for t in tokens if t not in aliases)
-    return aliases
-
-
-def _significant_company_tokens(company_name: str) -> List[str]:
-    """Tokens used to reject unrelated SERP rows (e.g. NBC News about Twitter when verifying Sofatutor)."""
-
-    raw = re.sub(r"[^\w\s&]", " ", company_name.lower())
-    parts = [p for p in raw.split() if p]
-    tokens: List[str] = []
-    for p in parts:
-        if p in _CORPORATE_STOPWORDS:
-            continue
-        if len(p) >= 4:
-            tokens.append(p)
-        elif len(parts) == 1 and len(p) >= 2:
-            tokens.append(p)
-    if not tokens:
-        for p in parts:
-            if p not in _CORPORATE_STOPWORDS and len(p) >= 2:
-                tokens.append(p)
-                break
-    return tokens
-
-
 def is_company_relevant(result: Dict[str, Any], company_name: str) -> bool:
     text = f"{result.get('snippet', '')} {result.get('title', '')}".lower()
-    aliases = _company_aliases(company_name)
-    if not aliases:
-        return False
-    return any(alias in text for alias in aliases)
+    company_lower = (company_name or "").strip().lower()
+    return bool(company_lower) and company_lower in text
 
 
-def is_relevant_negative_hit(snippet: str, keyword: str, company: str) -> bool:
-    snippet_lower = (snippet or "").lower()
-    keyword_lower = (keyword or "").lower()
-    if not snippet_lower or not keyword_lower:
-        return False
-    aliases = _company_aliases(company)
-    if not aliases:
-        return False
-    keyword_positions = []
-    start = 0
-    while True:
-        idx = snippet_lower.find(keyword_lower, start)
-        if idx == -1:
-            break
-        keyword_positions.append(idx)
-        start = idx + 1
-    if not keyword_positions:
-        return False
-    for alias in aliases:
-        start = 0
-        while True:
-            company_pos = snippet_lower.find(alias, start)
-            if company_pos == -1:
+def count_relevant_negative_hits(
+    results: List[Dict[str, Any]],
+    keywords: List[str],
+    company_name: str,
+) -> int:
+    count = 0
+    company_lower = (company_name or "").strip().lower()
+    if not company_lower:
+        return 0
+    for result in results:
+        text = f"{result.get('snippet', '')} {result.get('title', '')}".lower()
+        if company_lower not in text:
+            continue
+        for kw in keywords:
+            if kw.lower() in text:
+                count += 1
                 break
-            if any(abs(company_pos - keyword_pos) < 200 for keyword_pos in keyword_positions):
-                return True
-            start = company_pos + 1
-    return False
+    return count
+
+
+def is_raw_snippet(text: str) -> bool:
+    markers = [
+        "based on",
+        "out of 5 stars",
+        "company reviews on",
+        "...",
+        "indicating that most",
+    ]
+    text_lower = (text or "").lower()
+    return sum(1 for marker in markers if marker in text_lower) >= 2
 
 
 GLOBAL_GREEN_TRIGGERS = [
@@ -331,7 +272,7 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
             overall_sentiment="unknown",
             sources_checked=len(queries),
             sources_found=0,
-            plain_summary=_template_summary(company_name, 0, "unknown", None, [], []),
+            plain_summary=_template_summary(company_name, 0, "unknown", [], []),
             sources_unavailable=["Glassdoor", "Indeed", "Trustpilot", "LinkedIn", "Reddit", "X/Twitter"]
         )
 
@@ -402,24 +343,15 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
     # Keep narrative anchored to curated platform highlights; social channels still influence
     # score/flags via reddit_data and x_data, but raw snippets are too noisy for primary prose.
     avg_rating = _average_rating(all_highlights)
-    plain_summary = await _generate_llm_summary(
+    # Candidate-facing reputation copy is deterministic for now. Live traffic still showed
+    # prompt scaffolding echoed back by the model, so prefer stable structured prose.
+    plain_summary = _template_summary(
         company_name,
-        overall_sentiment=overall_sentiment,
-        avg_rating=avg_rating,
-        green_flags=green_dedup,
-        red_flags=red_dedup,
-        sources_found=len(platforms_found),
-        request_id=request_id,
+        len(platforms_found),
+        overall_sentiment,
+        red_dedup,
+        green_dedup,
     )
-    if not plain_summary:
-        plain_summary = _template_summary(
-            company_name,
-            len(platforms_found),
-            overall_sentiment,
-            avg_rating,
-            red_dedup,
-            green_dedup,
-        )
 
     sources_unavailable = [p for p in ["Glassdoor", "Indeed", "Trustpilot", "LinkedIn", "Reddit", "X/Twitter"] if p not in platforms_found]
 
@@ -451,16 +383,51 @@ def _average_rating(highlights: List[ReviewSource]) -> Optional[float]:
     return round(sum(vals) / len(vals), 1)
 
 
+def build_reputation_summary_messages(
+    *,
+    company: str,
+    overall_sentiment: str,
+    avg_rating: Optional[float],
+    green_flags: List[str],
+    red_flags: List[str],
+    sources_found: int,
+) -> List[Dict[str, str]]:
+    green_text = "; ".join(green_flags[:3]) if green_flags else "No strong positive signals were found."
+    red_text = "; ".join(red_flags[:3]) if red_flags else "No major concerns were detected."
+    rating_text = f"{avg_rating}/5" if avg_rating is not None else "unknown"
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are JobSignal. Write a concise 2-3 sentence employer reputation summary for a job seeker using "
+                "only the structured data provided. Respond with the summary only. Start directly with the advice. "
+                "No preamble. Use natural prose, not field labels, bullets, or planning notes. Do not quote or "
+                "paste source snippets."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"company={company}\n"
+                f"overall_sentiment={overall_sentiment}\n"
+                f"average_rating={rating_text}\n"
+                f"sources_found={sources_found}\n"
+                f"green_flags={green_text}\n"
+                f"red_flags={red_text}"
+            ),
+        },
+    ]
+
+
 def _template_summary(
     company: str,
     count: int,
     sentiment: str,
-    avg_rating: Optional[float],
     red_flags: List[str],
     green_flags: List[str],
 ) -> str:
     """Template fallback when reputation LLM output is unavailable or invalid."""
-    top_green = green_flags[0] if green_flags else "No standout positive themes appeared in the public review signals."
+    top_green = green_flags[0] if green_flags else "No strong positive signals were found."
     top_red = red_flags[0] if red_flags else "No major concerns detected."
     if count == 0:
         base = (
@@ -470,11 +437,6 @@ def _template_summary(
         if red_flags:
             return f"{base} Note: {top_red}."
         return base
-    if avg_rating is not None:
-        return (
-            f"Based on {count} sources, {company} has a {sentiment} employer reputation with an average rating of "
-            f"{avg_rating}/5. {top_green}. {top_red}"
-        )
     return (
         f"Based on {count} sources, {company} has a {sentiment} employer reputation. "
         f"{top_green}. {top_red}"
@@ -682,23 +644,10 @@ async def _generate_llm_summary(
     if not api_key or not llm_enabled_flag:
         return None
 
-    green_text = "; ".join(green_flags[:3]) if green_flags else "No standout positive themes appeared in public reviews."
-    red_text = "; ".join(red_flags[:3]) if red_flags else "No major concerns detected."
-    rating_text = f"{avg_rating}/5" if avg_rating is not None else "limited published ratings"
-    user_content = (
-        f"Company: {company}\n"
-        "Write a concise recruiter-style reputation note using ONLY this structured data.\n"
-        f"overall_sentiment: {overall_sentiment}\n"
-        f"average_rating: {rating_text}\n"
-        f"sources_found: {sources_found}\n"
-        f"green_flags: {green_text}\n"
-        f"red_flags: {red_text}\n"
-    )
     fallback_txt = _template_summary(
         company.strip() if company.strip() else "The employer behind this posting",
         sources_found,
         overall_sentiment,
-        avg_rating,
         red_flags,
         green_flags,
     )
@@ -722,17 +671,14 @@ async def _generate_llm_summary(
         return False
 
     summary_text = await call_llm_safe(
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a recruiter briefing a candidate. Write a 2-3 sentence employer reputation briefing "
-                    "for the named company only. If the data lines refer to a different employer, omit them. "
-                    "No jargon. Output ONLY the briefing text."
-                ),
-            },
-            {"role": "user", "content": user_content},
-        ],
+        messages=build_reputation_summary_messages(
+            company=company,
+            overall_sentiment=overall_sentiment,
+            avg_rating=avg_rating,
+            green_flags=green_flags,
+            red_flags=red_flags,
+            sources_found=sources_found,
+        ),
         fallback=fallback_txt,
         request_id=request_id,
         model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
@@ -745,6 +691,6 @@ async def _generate_llm_summary(
     summary_text = (summary_text or "").strip()
     if not summary_text:
         return None
-    if is_prompt_leak(summary_text) or _looks_like_meta_text(summary_text):
+    if is_prompt_leak(summary_text) or _looks_like_meta_text(summary_text) or is_raw_snippet(summary_text):
         return fallback_txt
     return summary_text

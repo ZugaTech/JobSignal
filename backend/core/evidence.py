@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from backend.core.extraction import ExtractionResult
 from backend.core.fetch_job_page import JobPageFetchOutcome
 from backend.core.normalization import NormalizationResult, registrable_domain_naive
-from backend.evidence.company_reviews import is_company_relevant, is_relevant_negative_hit
+from backend.evidence.company_reviews import count_relevant_negative_hits, is_company_relevant
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,8 +211,6 @@ def build_evidence_bundle(
     recruiter_verified = False
 
     company = ext.company_hint or ""
-    title = ext.title_hint or ""
-    base_query = f"{company} {title}".strip() or (norm.canonical_url or "")
 
     careers_rows, careers_status, careers_warning = serp_results.get("careers", ([], "unverified", None))
     if careers_warning:
@@ -358,7 +356,7 @@ def build_evidence_bundle(
     rep_rows, rep_status, rep_warning = serp_results.get("rep", ([], "unverified", None))
     if rep_warning:
         warnings.append(rep_warning)
-    rep_hits = 0
+    filtered_rep_rows: List[Dict[str, Any]] = []
     for row in rep_rows:
         link = str(row.get("link") or "").strip()
         link_lower = link.lower()
@@ -366,13 +364,10 @@ def build_evidence_bundle(
             continue
         if not is_company_relevant(row, company):
             continue
-        snippet = str(row.get("snippet") or "")
-        title_text = str(row.get("title") or "")
-        blob = f"{title_text} {snippet}"
-        if any(is_relevant_negative_hit(blob, k, company) for k in ("layoff", "scam", "fake recruiter")):
-            rep_hits += 1
+        filtered_rep_rows.append(row)
         if link.startswith(("http://", "https://")):
             evidence_sources.append({"url": link, "type": "reputation", "found_at": _now_iso()})
+    rep_hits = count_relevant_negative_hits(filtered_rep_rows, ["layoff", "scam", "fake recruiter"], company)
     signals.append(
         _mk_signal(
             sid="company_reputation_signal",
