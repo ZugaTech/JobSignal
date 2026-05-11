@@ -219,6 +219,17 @@ export function SimilarJobsPanel({ report }: { report: SanitizedVerifyReport }) 
   );
 }
 
+function verdictNextStepLine(verdict: string): string {
+  switch (verdict) {
+    case 'APPLY':
+      return 'Next: confirm the role on the employer careers site before you share IDs, bank details, or pay any fee.';
+    case 'SKIP':
+      return 'Next: avoid this listing for applications unless independent facts change the picture.';
+    default:
+      return 'Next: open the employer careers site (or the board application link) and confirm the posting matches before you apply.';
+  }
+}
+
 export function ResultsActionsFooter({
   report,
   onReanalyse,
@@ -227,23 +238,26 @@ export function ResultsActionsFooter({
   onReanalyse: () => void;
 }) {
   return (
-    <div className="glass rounded-2xl px-4 py-3 md:px-5 flex flex-wrap items-center justify-between gap-3 border border-border/60">
-      <p className="text-[11px] text-neutral-600 truncate max-w-[min(100%,16rem)]">
-        Request id and scores live under Technical details.
-      </p>
-      <div className="flex flex-wrap items-center gap-2 shrink-0">
-        {report.cached ? (
-          <button
-            type="button"
-            onClick={onReanalyse}
-            className="text-xs font-semibold min-h-[36px] px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors border border-border/60"
-          >
-            Re-analyse (bypass cache)
+    <div className="glass rounded-2xl px-4 py-3 md:px-5 flex flex-col gap-2 border border-border/60">
+      <p className="text-xs text-neutral-300 leading-snug">{verdictNextStepLine(report.verdict)}</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[11px] text-neutral-600 truncate max-w-[min(100%,16rem)]">
+          Request id and scores live under Technical details.
+        </p>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {report.cached ? (
+            <button
+              type="button"
+              onClick={onReanalyse}
+              className="text-xs font-semibold min-h-[36px] px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors border border-border/60"
+            >
+              Re-analyse (bypass cache)
+            </button>
+          ) : null}
+          <button type="button" className="text-xs text-brand font-semibold hover:underline shrink-0">
+            Report issue
           </button>
-        ) : null}
-        <button type="button" className="text-xs text-brand font-semibold hover:underline shrink-0">
-          Report issue
-        </button>
+        </div>
       </div>
     </div>
   );

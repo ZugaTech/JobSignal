@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Gauge, Globe, Microscope } from 'lucide-react';
+import { ChevronDown, ChevronUp, Gauge, Globe, LayoutList, Microscope } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -25,12 +25,80 @@ function cn(...inputs: ClassValue[]) {
 export function verdictHeroSubtitle(verdict: string): string {
   switch (verdict) {
     case 'APPLY':
-      return 'Public checks looked good for a real listing. Still protect your personal info until you are sure.';
+      return 'Public checks looked good for a real listing. Still confirm the role on the employer careers site, and protect personal info until you are sure.';
     case 'SKIP':
       return 'We would walk away unless you find new facts that change the picture.';
     default:
-      return 'We could not fully confirm this from public data alone. Peek at the employer careers site before you go deep on an application.';
+      return 'We could not fully confirm this from public data alone. Open the employer careers site to confirm the posting before you invest time in an application.';
   }
+}
+
+const EVIDENCE_COVERAGE_TOOLTIP =
+  'Evidence coverage is how many structured checks we could attach to this result. It is separate from how safe the job feels: you can see strong verdict language with thinner public evidence, or the opposite.';
+
+function evidenceCoverageTier(score: number): 'Limited' | 'Mixed' | 'Strong' {
+  const s = Math.max(0, Math.min(100, Math.round(score)));
+  if (s >= 67) return 'Strong';
+  if (s >= 34) return 'Mixed';
+  return 'Limited';
+}
+
+/** Three short lines: employer visibility, evidence coverage (≠ verdict), timing hints. */
+export function EpistemicSnapshotStrip({ report }: { report: SanitizedVerifyReport }) {
+  const variant = report.reputationPanelVariant;
+  let employerLine: string;
+  if (variant === 'full') {
+    employerLine = 'Employer shows up clearly enough to sanity-check from public sources.';
+  } else if (variant === 'no_company') {
+    employerLine = 'Employer name: not pinned from public data alone.';
+  } else if (variant === 'unavailable') {
+    employerLine = 'Employer reputation data was unavailable for this check.';
+  } else if (report.company_legitimacy_score >= 45) {
+    employerLine = 'Employer alignment: some supporting public signals.';
+  } else {
+    employerLine = 'Employer picture: only partly visible from what we could check.';
+  }
+
+  const ecs = report.evidence_completeness_score;
+  const tier = evidenceCoverageTier(ecs);
+  const evidenceLine = `Structured evidence coverage: ${tier} (${ecs}/100).`;
+
+  let timingLine: string;
+  if (report.staleness_flag) {
+    timingLine = 'Listing-age hints suggest the post may be older than ideal.';
+  } else if (report.freshness_score >= 45) {
+    timingLine = 'Freshness from public hints looks unremarkable (not a guarantee it is new).';
+  } else {
+    timingLine = 'Freshness is hard to read from public data alone.';
+  }
+
+  return (
+    <div className="rounded-2xl border border-border/50 bg-neutral-950/35 px-4 py-3 sm:px-5 space-y-3">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-neutral-500">
+        <LayoutList className="w-4 h-4 shrink-0 text-brand/90" aria-hidden />
+        At a glance
+      </div>
+      <ul className="space-y-2 text-sm text-neutral-300 leading-snug">
+        <li className="flex gap-2">
+          <span className="text-brand shrink-0">•</span>
+          <span>{employerLine}</span>
+        </li>
+        <li className="flex gap-2">
+          <span className="text-brand shrink-0">•</span>
+          <span>
+            {evidenceLine}{' '}
+            <abbr title={EVIDENCE_COVERAGE_TOOLTIP} className="cursor-help underline decoration-dotted decoration-neutral-500 underline-offset-2">
+              What this means
+            </abbr>
+          </span>
+        </li>
+        <li className="flex gap-2">
+          <span className="text-brand shrink-0">•</span>
+          <span>{timingLine}</span>
+        </li>
+      </ul>
+    </div>
+  );
 }
 
 function ScoreMetricBar({ label, value }: { label: string; value: number }) {
@@ -97,6 +165,12 @@ function EvidenceScoresInner({ report }: { report: SanitizedVerifyReport }) {
           {report.coverage_pct}%).
         </p>
       ) : null}
+
+      <p className="text-xs text-neutral-500 leading-snug">
+        Evidence completeness (breadth of structured checks attached):{' '}
+        <span className="tabular-nums text-neutral-300">{report.evidence_completeness_score}/100</span>. This is
+        separate from the overall strength score above.
+      </p>
 
       {report.scorer_version_display ? (
         <p className="text-[10px] text-neutral-600 font-mono">Rules version {report.scorer_version_display}</p>

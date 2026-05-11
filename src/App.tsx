@@ -15,6 +15,7 @@ import { useClipboardAndHandoff } from './hooks/useClipboardAndHandoff';
 import { rewriteMicrocopy, formatCachedAgo, isSafeHttpUrl } from './utils/formatters';
 import {
   ConfidenceGaugeStrip,
+  EpistemicSnapshotStrip,
   EvidenceOverviewAccordion,
   TechnicalDetailsAccordion,
   verdictHeroSubtitle,
@@ -673,6 +674,7 @@ export default function App() {
                           }
                         />
                       </div>
+                      <EpistemicSnapshotStrip report={report} />
                     </div>
 
                     <div className="lg:hidden">
