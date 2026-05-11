@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
@@ -387,28 +388,102 @@ def _parse_llm_json_object(text: str) -> Optional[Dict[str, Any]]:
 # purposes). Caching it shaves 20-35s off every repeat lookup for the same employer.
 _BASELINE_CACHE_TTL_S = 24 * 60 * 60  # 24 hours
 _BASELINE_CACHE_MAX = 512
-_baseline_cache: Dict[str, tuple[float, Optional[Dict[str, Any]]]] = {}
+# Sentinel marks an explicit negative cache hit (LLM said unknown / confidence none).
+_BASELINE_NEGATIVE_SENTINEL = object()
+_baseline_cache: Dict[str, tuple[float, Any]] = {}
+_BASELINE_REDIS_PREFIX = "jobsignal:rep_baseline:v1:"
+_redis_baseline_store: Any = None  # None | False | RedisCache instance
 
 
 def _baseline_cache_key(company_name: str) -> str:
     return re.sub(r"\s+", " ", (company_name or "")).strip().lower()
 
 
-def _baseline_cache_get(company_name: str) -> Optional[Dict[str, Any]]:
+def _ensure_redis_baseline_client():
+    global _redis_baseline_store  # noqa: PLW0603
+    if _redis_baseline_store is False:
+        return None
+    if _redis_baseline_store is not None:
+        return _redis_baseline_store
+    try:
+        from backend.core.cache_store import RedisCache
+        from backend.core.env import EnvConfig
+
+        cfg = EnvConfig.load(strict=False)
+        url = (cfg.cache_url or "").strip()
+        if not url:
+            _redis_baseline_store = False
+            return None
+        _redis_baseline_store = RedisCache(url)
+        return _redis_baseline_store
+    except Exception:  # noqa: BLE001
+        _redis_baseline_store = False
+        return None
+
+
+def _baseline_redis_key(norm_key: str) -> str:
+    digest = hashlib.sha256(norm_key.encode("utf-8")).hexdigest()
+    return _BASELINE_REDIS_PREFIX + digest
+
+
+def _baseline_redis_read(norm_key: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """Return (hit, payload). hit=False means miss; hit=True with payload=None means negative cache."""
+    client = _ensure_redis_baseline_client()
+    if not client:
+        return False, None
+    raw = client.get(_baseline_redis_key(norm_key))
+    if raw is None:
+        return False, None
+    try:
+        obj = json.loads(raw)
+        if obj.get("neg"):
+            return True, None
+        data = obj.get("data")
+        return True, dict(data) if isinstance(data, dict) else None
+    except Exception:  # noqa: BLE001
+        return False, None
+
+
+def _baseline_redis_write(norm_key: str, payload: Optional[Dict[str, Any]]) -> None:
+    client = _ensure_redis_baseline_client()
+    if not client:
+        return
+    if payload is None:
+        body = json.dumps({"v": 1, "neg": True})
+    else:
+        body = json.dumps({"v": 1, "neg": False, "data": payload}, ensure_ascii=False)
+    try:
+        client.set(_baseline_redis_key(norm_key), body, ttl_seconds=_BASELINE_CACHE_TTL_S)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _peek_baseline_cache(company_name: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """Return (hit, payload). miss -> (False, None). hit with unknown employer -> (True, None)."""
     import time as _time
 
     key = _baseline_cache_key(company_name)
     if not key:
-        return None
+        return False, None
+
+    # 1) Same-process memory (fastest)
     hit = _baseline_cache.get(key)
-    if not hit:
-        return None
-    ts, payload = hit
-    if _time.time() - ts > _BASELINE_CACHE_TTL_S:
-        _baseline_cache.pop(key, None)
-        return None
-    # Return a copy so callers cannot mutate the cached payload.
-    return dict(payload) if payload else payload
+    if hit:
+        ts, payload = hit
+        if _time.time() - ts > _BASELINE_CACHE_TTL_S:
+            _baseline_cache.pop(key, None)
+        else:
+            if payload is _BASELINE_NEGATIVE_SENTINEL:
+                return True, None
+            return True, dict(payload) if isinstance(payload, dict) else None
+
+    # 2) Shared Redis (other replicas / cold restart warm-through)
+    rhit, rpayload = _baseline_redis_read(key)
+    if rhit:
+        _baseline_cache[key] = (_time.time(), _BASELINE_NEGATIVE_SENTINEL if rpayload is None else rpayload)
+        return True, rpayload
+
+    return False, None
 
 
 def clear_baseline_cache() -> None:
@@ -422,14 +497,15 @@ def _baseline_cache_set(company_name: str, payload: Optional[Dict[str, Any]]) ->
     key = _baseline_cache_key(company_name)
     if not key:
         return
+    store_val: Any = _BASELINE_NEGATIVE_SENTINEL if payload is None else dict(payload)
     if len(_baseline_cache) >= _BASELINE_CACHE_MAX:
-        # Evict the oldest entry — simple FIFO is fine at this scale.
         try:
             oldest = min(_baseline_cache.items(), key=lambda kv: kv[1][0])[0]
             _baseline_cache.pop(oldest, None)
         except ValueError:
             pass
-    _baseline_cache[key] = (_time.time(), dict(payload) if payload else payload)
+    _baseline_cache[key] = (_time.time(), store_val)
+    _baseline_redis_write(key, payload)
 
 
 async def get_llm_company_baseline(
@@ -447,12 +523,12 @@ async def get_llm_company_baseline(
     if under_pytest() and getattr(call_llm_safe, "__module__", "") == "backend.core.llm_safe":
         return None
 
-    # Warm-cache fast path: a known employer's baseline answer is good for 24h. This is the
-    # single biggest win for repeat lookups — same employer probed again returns instantly
-    # instead of waiting on Kimi K2.6 (20-35s on Fireworks).
-    cached = _baseline_cache_get(company_name)
-    if cached is not None:
-        return cached
+    # Warm-cache fast path: a known employer's baseline answer is good for 24h (memory +
+    # optional Redis when CACHE_URL is set for multi-replica consistency). Negative results
+    # are cached too so niche employers do not re-trigger the same LLM timeout on every refresh.
+    hit, cached_payload = _peek_baseline_cache(company_name)
+    if hit:
+        return cached_payload
 
     fallback = (
         '{"known":false,"company_type":"unknown","industry":null,"headquarters":null,'

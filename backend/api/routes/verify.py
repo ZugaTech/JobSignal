@@ -33,12 +33,27 @@ logger = logging.getLogger("jobsignal")
 _BATCH_VERIFY_CONCURRENCY = 4
 
 
+# Heuristic URL hints only — covers major ATS / boards used in production traffic.
+# Host patterns align loosely with ``job_url_shortcuts.is_known_job_platform_url``.
 _JOB_URL_PATTERNS = {
-    "linkedin": re.compile(r"linkedin\.com/jobs", re.I),
-    "indeed": re.compile(r"indeed\.com/(viewjob|jobs)", re.I),
-    "greenhouse": re.compile(r"greenhouse\.io", re.I),
-    "lever": re.compile(r"lever\.co", re.I),
-    "workday": re.compile(r"workday\.(com|jobs)", re.I),
+    "linkedin": re.compile(r"linkedin\.com/(jobs|job)", re.I),
+    "indeed": re.compile(r"indeed\.com/(viewjob|jobs|cmp)", re.I),
+    "glassdoor": re.compile(r"glassdoor\.com/(job|Interview)", re.I),
+    "greenhouse": re.compile(r"greenhouse\.io|boards\.greenhouse\.io", re.I),
+    "lever": re.compile(r"jobs\.lever\.co|lever\.co", re.I),
+    "workday": re.compile(r"myworkdayjobs\.com|workday\.com", re.I),
+    "ashby": re.compile(r"ashbyhq\.com", re.I),
+    "smartrecruiters": re.compile(r"smartrecruiters\.com", re.I),
+    "jobvite": re.compile(r"jobvite\.com", re.I),
+    "icims": re.compile(r"icims\.com", re.I),
+    "taleo": re.compile(r"taleo\.net", re.I),
+    "successfactors": re.compile(r"successfactors\.com", re.I),
+    "bamboohr": re.compile(r"bamboohr\.com", re.I),
+    "teamtailor": re.compile(r"teamtailor\.com", re.I),
+    "workable": re.compile(r"workable\.com", re.I),
+    "recruitee": re.compile(r"recruitee\.com", re.I),
+    "personio": re.compile(r"personio\.com", re.I),
+    "ziprecruiter": re.compile(r"ziprecruiter\.com", re.I),
 }
 
 _JOB_HINT_PATTERN = re.compile(r"(job|jobs|career|careers|position|apply|hiring)", re.I)

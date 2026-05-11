@@ -214,3 +214,36 @@ async def test_get_llm_company_baseline_caches_positive_result(monkeypatch):
     assert second is not None and second.get("known") is True
     assert third is not None
     assert calls["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_llm_company_baseline_negative_cached_skips_second_llm(monkeypatch):
+    """Unknown employer (known:false) must cache so we do not call Fireworks twice."""
+    from backend.evidence import company_reviews as cr
+
+    monkeypatch.setenv("ENABLE_LLM_SIGNALS", "1")
+    monkeypatch.setenv("FIREWORKS_API_KEY", "k")
+    cr.clear_baseline_cache()
+
+    calls = {"n": 0}
+
+    async def fake_call(*_a, **_kw):
+        calls["n"] += 1
+        return json.dumps(
+            {
+                "known": False,
+                "reputation_summary": "",
+                "known_positives": [],
+                "known_concerns": [],
+                "confidence": "none",
+            }
+        )
+
+    monkeypatch.setattr("backend.core.llm_safe.call_llm_safe", fake_call)
+
+    first = await cr.get_llm_company_baseline("TotallyUnknownEmployerXYZ999")
+    second = await cr.get_llm_company_baseline("TotallyUnknownEmployerXYZ999")
+
+    assert first is None
+    assert second is None
+    assert calls["n"] == 1

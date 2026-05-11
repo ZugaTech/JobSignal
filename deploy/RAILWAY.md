@@ -30,7 +30,7 @@
 | `FETCH_MAX_BYTES` | Cap on raw HTML bytes read from the posting URL. |
 | `FETCH_BODY_TEXT_MAX_CHARS` | Max characters of cleaned **main-body** text merged into fetch extraction (default `16000`). |
 | `SEARCH_MAX_CALLS_EVIDENCE` | Serper POST budget for careers / boards / registry / duplicate queries. Pipeline issues **6** parallel searches — set **≥ 8** (default in repo `8`). |
-| `SEARCH_MAX_CALLS_REPUTATION` | Serper budget for employer reputation. Code runs **6** parallel plain queries — set **≥ 6** (default `8`). Lower values silently skip searches and show “0 sources”. |
+| `SEARCH_MAX_CALLS_REPUTATION` | Serper budget for employer reputation. Code runs **4** parallel queries (full depth) or **3** (quick) — set **≥ 4** (default `8`). Lower values silently skip searches and show “0 sources”. |
 | `SEARCH_MAX_CALLS_RECOMMENDATIONS` | Serper budget when **similar jobs** are requested (default `8`). |
 | `SCORER_VERSION` | Bump when scoring rules change (invalidates client expectations / docs only; cache keys use `SOURCE_PIPELINE_VERSION` too). |
 
@@ -44,6 +44,8 @@ See **`.env.example`** for the full contract (`backend/core/config.py` → `ENV_
 4. Redeploy if needed.
 
 Until **`CACHE_URL`** is set, `/ready` reports **`checks.redis`: `skip`** (in-memory cache per instance) when shared cache is not required. That matches **`NODE_ENV=development`** and is fine for single-instance demos; for **consistent cache across replicas**, attach Redis and set **`CACHE_URL`**. If `NODE_ENV` stays `development` on a multi-instance service, set **`JOBSIGNAL_REQUIRE_SHARED_CACHE=1`** so `/ready` fails fast until Redis is wired—otherwise health can look green while replicas diverge.
+
+**Employer reputation LLM baseline:** when **`CACHE_URL`** is set, hybrid reputation also writes Kimi baseline answers to Redis keys `jobsignal:rep_baseline:v1:<sha256(normalized_name)>` (24h TTL). Without Redis, each replica keeps only an in-process LRU—after deploy or scale-out, the first request per employer per instance still pays the full LLM latency.
 
 ### Clearing in-memory cache without Redis
 
