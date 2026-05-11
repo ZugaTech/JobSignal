@@ -33,3 +33,7 @@ __pycache__/
 
 # Build output (Vite)
 dist/
+
+# Local scratch / generated (not source of truth for the app)
+deck_extracted.txt
+local-session-archive.md
