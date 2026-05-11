@@ -38,6 +38,31 @@ def test_job_board_requires_confirmed_employer_before_reputation():
     assert resolved.confirmed is False
 
 
+def test_job_board_confirms_when_structured_company_from_pasted_text():
+    """Explicit employer in pasted body (same signal we now feed as structured_company)."""
+    resolved = resolve_employer_identity(
+        is_job_board_url=True,
+        structured_candidate="Contoso Robotics",
+        hardened_candidate=None,
+        heuristic_candidate="Contoso Robotics",
+    )
+    assert resolved.confirmed is True
+    assert resolved.name == "Contoso Robotics"
+
+
+def test_job_board_confirms_hardened_name_when_only_extraction_signal():
+    """LinkedIn/Indeed pages often yield a single LLM-hardened employer name — still run reputation."""
+    resolved = resolve_employer_identity(
+        is_job_board_url=True,
+        structured_candidate=None,
+        url_domain_candidate=None,
+        hardened_candidate="Contoso Robotics",
+        heuristic_candidate=None,
+    )
+    assert resolved.confirmed is True
+    assert resolved.name == "Contoso Robotics"
+
+
 @pytest.mark.asyncio
 async def test_reputation_hidden_when_employer_unconfirmed():
     coord = CountingCoordinator(

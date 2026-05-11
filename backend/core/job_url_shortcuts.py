@@ -235,6 +235,19 @@ def pick_employer_display_name(*candidates: Optional[str]) -> Optional[str]:
     return None
 
 
+def _hardened_solo_safe_for_reputation(name: str) -> bool:
+    """Reject generic chrome strings that sometimes survive extraction (see employer gate tests)."""
+
+    low = name.strip().lower()
+    if not low:
+        return False
+    if low.startswith("example ") or low.startswith("sample "):
+        return False
+    if low.endswith(" careers") or low.endswith(" jobs"):
+        return False
+    return True
+
+
 def resolve_employer_identity(
     *,
     is_job_board_url: bool,
@@ -285,6 +298,19 @@ def resolve_employer_identity(
         if conflicting:
             return EmployerIdentityResolution(None, False, "ambiguous", "Multiple employer candidates differ.")
         return EmployerIdentityResolution(primary[1], True, "confirmed", "Structured company field.")
+
+    # Job boards rarely expose a registrable-domain employer hint; LLM/fetch extraction is often the
+    # only usable signal. A single hardened name is sufficient to run reputation (still conservative:
+    # weak/generic strings are filtered by ``_clean_employer_candidate``).
+    if is_job_board_url:
+        hardened_only = [r for r in cleaned if r[0] == "hardened"]
+        if len(cleaned) == 1 and len(hardened_only) == 1 and _hardened_solo_safe_for_reputation(hardened_only[0][1]):
+            return EmployerIdentityResolution(
+                hardened_only[0][1],
+                True,
+                "confirmed",
+                "Employer name derived from posting text (job board listing).",
+            )
 
     by_key: dict[str, list[tuple[str, str, str]]] = {}
     for row in cleaned:

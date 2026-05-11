@@ -58,9 +58,20 @@ GLOBAL_RED_TRIGGERS = [
 ]
 
 def is_company_relevant(result: Dict[str, Any], company_name: str) -> bool:
+    """Snippets often omit the legal entity string; allow token overlap for known employer names."""
+
     text = f"{result.get('snippet', '')} {result.get('title', '')}".lower()
     company_lower = (company_name or "").strip().lower()
-    return bool(company_lower) and company_lower in text
+    if not company_lower:
+        return False
+    if company_lower in text:
+        return True
+    tokens = [t for t in re.split(r"[^a-z0-9]+", company_lower) if len(t) >= 3]
+    if not tokens:
+        return False
+    matches = sum(1 for t in tokens if t in text)
+    need = max(1, (len(tokens) + 1) // 2)
+    return matches >= need
 
 
 def count_relevant_negative_hits(

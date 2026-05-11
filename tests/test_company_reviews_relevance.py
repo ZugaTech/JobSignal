@@ -46,6 +46,15 @@ def test_is_company_relevant_filters_absent_company_name():
     assert is_company_relevant(result, "Deloitte") is False
 
 
+def test_is_company_relevant_accepts_distinctive_tokens_when_snippet_abbreviates():
+    """Organic snippets often drop legal suffixes; token overlap keeps employer-specific rows."""
+    result = {
+        "title": "sofatutor employee reviews",
+        "snippet": "sofatutor employees mention structured onboarding and mentorship.",
+    }
+    assert is_company_relevant(result, "sofatutor GmbH") is True
+
+
 def test_count_relevant_negative_hits_skips_results_without_company_name():
     results = [
         {
