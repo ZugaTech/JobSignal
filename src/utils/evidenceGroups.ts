@@ -1,7 +1,7 @@
 import type { DisplaySignalRow } from '../types/verify';
 import { getSignalLabel, signalStrengthDotClass } from './formatters';
 
-/** UX-facing buckets — maps engineering strengths to calm presentation groups. */
+/** UX-facing buckets: maps engineering strengths to calm presentation groups. */
 export type TrustEvidenceBucket = 'verified' | 'caution' | 'limited';
 
 export function classifySignalBucket(row: DisplaySignalRow): TrustEvidenceBucket {
@@ -29,7 +29,7 @@ export const GROUP_LABELS: Record<TrustEvidenceBucket, { title: string; subtitle
   },
   caution: {
     title: 'Needs attention',
-    subtitle: 'Mixed, weak, or conflicting signals—worth a closer look before you commit time.',
+    subtitle: 'Mixed, weak, or conflicting signals. Worth a closer look before you commit time.',
   },
   limited: {
     title: 'Limited evidence',

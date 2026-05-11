@@ -22,10 +22,6 @@ body {
   min-width: 0;
 }
 
-.font-display {
-  font-family: 'Geist', sans-serif;
-}
-
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

@@ -45,7 +45,7 @@ export function getReasonLabel(code: string): string {
   return c.replace(/_/g, " ").replace(/\b\w/g, (c2) => c2.toUpperCase()) + ".";
 }
 
-/** Product-facing confidence tier — avoids model-y “moderate/low” wording. */
+/** Product-facing confidence tier: avoids model-y "moderate/low" wording. */
 export function scoreToConfidenceLabel(score: number | null | undefined): string {
   if (score === null || score === undefined || Number.isNaN(Number(score))) return "";
   const n = Math.max(0, Math.min(100, Number(score)));
@@ -101,13 +101,19 @@ export function formatReasonForDisplay(entry: any): string {
 /** Warnings use the same { code, message } contract as reasons. */
 export const formatWarningForDisplay = formatReasonForDisplay;
 
+/** Normalize typographic dashes in user-facing copy (API strings may still use them). */
+export function normalizeDisplayDashes(text: string): string {
+  if (!text) return "";
+  return text.replace(/\u2014/g, " - ").replace(/\u2013/g, "-");
+}
+
 export function rewriteMicrocopy(text: string): string {
   if (!text) return "";
-  let out = text;
+  let out = normalizeDisplayDashes(text);
   for (const [old, replacement] of Object.entries(COPY_REWRITE_MAP)) {
     out = out.replace(old, replacement);
   }
-  return out;
+  return normalizeDisplayDashes(out);
 }
 
 export function formatCachedAgo(iso: string): string {

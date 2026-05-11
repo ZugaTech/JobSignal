@@ -17,8 +17,8 @@ export default {
         border: '#262626',
       },
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
-        display: ['Geist', 'sans-serif'],
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        display: ['Geist', 'Inter', 'system-ui', 'sans-serif'],
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',

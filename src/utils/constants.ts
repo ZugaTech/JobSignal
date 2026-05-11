@@ -45,7 +45,7 @@ export const REASON_MAP: Record<string, string> = {
   INSUFFICIENT_DATA: "Not enough information was available to assess this posting.",
   REC_SEARCH_EMPTY: "No cross-platform results were found to compare against.",
   CONFIDENCE_LOW: "Evidence was too limited for a confident verdict.",
-  CONFIDENCE_MEDIUM: "Several signals were inconclusive—use this as guidance, not proof.",
+  CONFIDENCE_MEDIUM: "Several signals were inconclusive. Use this as guidance, not proof.",
 };
 
 export const LEAK_MARKERS = [
@@ -69,7 +69,7 @@ export const LEAK_MARKERS = [
 ];
 
 export const COPY_REWRITE_MAP: Record<string, string> = {
-  "Limited certainty — verify on the employer's official careers page.": "We found mixed signals. Verify directly before applying.",
+  "Limited certainty - verify on the employer's official careers page.": "We found mixed signals. Verify directly before applying.",
   "Primary page evidence insufficient for a confident recommendation.": "We could not fully confirm this listing through official sources.",
   "Live page fetch successful.": "The job page is accessible and active.",
   "Treat this output as advisory; verify on official channels when unsure.": "Use this as a guide. Always verify on the company's official site.",

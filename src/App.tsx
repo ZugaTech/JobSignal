@@ -220,12 +220,12 @@ export default function App() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-10 sm:mb-12 px-1"
         >
-          <h1 className="text-3xl sm:text-5xl md:text-6xl font-display font-bold mb-4 tracking-tight leading-tight">
+          <h1 className="text-3xl sm:text-5xl md:text-6xl font-display font-bold mb-4 tracking-tight leading-[1.15] sm:leading-tight text-balance">
             Verify any job <span className="text-brand">instantly</span>
           </h1>
           <p className="text-base sm:text-lg text-neutral-400 max-w-2xl mx-auto leading-relaxed">
-            Multi-source checks on URLs, pasted text, and screenshots—flag ghost listings, stale posts, and low-trust
-            patterns before you invest time.
+            Cross-check URLs, pasted text, and screenshots against public signals so you spot ghost listings, stale posts,
+            and low-trust patterns before you invest time.
           </p>
         </motion.div>
 
@@ -434,11 +434,11 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
-              className="fixed inset-0 z-[101] overflow-y-auto overscroll-y-contain bg-background/95 backdrop-blur-md px-4 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:px-6 md:p-8 min-h-[100dvh]"
+              className="fixed inset-0 z-[101] min-h-0 overflow-y-auto overscroll-y-contain bg-background/95 backdrop-blur-md px-4 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:px-6 md:p-8 min-h-[100dvh]"
               onClick={handleCloseResults}
             >
               <div
-                className="max-w-7xl mx-auto space-y-6 pb-24 max-md:min-h-[100dvh] min-w-0"
+                className="max-w-7xl mx-auto min-h-0 space-y-6 pb-24 max-md:min-h-[100dvh] min-w-0"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between gap-4 glass px-4 py-3 md:px-6 rounded-2xl sticky top-[max(0.5rem,env(safe-area-inset-top,0px))] z-10 border border-border/80">
@@ -597,11 +597,11 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
-              className="fixed inset-0 z-[100] overflow-y-auto overscroll-y-contain bg-background/95 backdrop-blur-md px-4 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:px-6 md:p-8 min-h-[100dvh]"
+              className="fixed inset-0 z-[100] min-h-0 overflow-y-auto overscroll-y-contain bg-background/95 backdrop-blur-md px-4 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:px-6 md:p-8 min-h-[100dvh]"
               onClick={handleCloseResults}
             >
               <div
-                className="max-w-7xl mx-auto space-y-6 pb-24 max-md:min-h-[100dvh] min-w-0"
+                className="max-w-7xl mx-auto min-h-0 space-y-6 pb-24 max-md:min-h-[100dvh] min-w-0"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between gap-4 glass px-4 py-3 md:px-6 rounded-2xl sticky top-[max(0.5rem,env(safe-area-inset-top,0px))] z-10 border border-border/80 shadow-lg shadow-black/20">
@@ -773,7 +773,7 @@ export default function App() {
                             Company trust
                           </h3>
                           <p className="text-xs text-neutral-500 mt-1.5 leading-snug">
-                            Public employer signals — separate from this posting&apos;s job confidence.
+                            Public sentiment about the employer. This is separate from posting confidence for this role.
                           </p>
                         </div>
 
@@ -794,7 +794,7 @@ export default function App() {
                               {typeof report.review_summary.review_confidence_score === 'number' &&
                               !Number.isNaN(report.review_summary.review_confidence_score)
                                 ? report.review_summary.review_confidence_score
-                                : '—'}
+                                : 'N/A'}
                             </span>
                             <span className="text-[10px] uppercase font-semibold tracking-wide opacity-70 mt-1">
                               Index
@@ -816,7 +816,7 @@ export default function App() {
                           {(report.review_summary.green_flags || []).map((f: string, i: number) => (
                             <span
                               key={`g-${i}`}
-                              className="px-3 py-1.5 bg-green-500/10 text-green-400 text-xs font-medium rounded-xl border border-green-500/25 leading-snug"
+                              className="max-w-full px-3 py-1.5 bg-green-500/10 text-green-400 text-xs font-medium rounded-xl border border-green-500/25 leading-snug break-words text-left"
                             >
                               <span className="mr-1 opacity-90">✓</span>
                               {f}
@@ -825,7 +825,7 @@ export default function App() {
                           {(report.review_summary.red_flags || []).map((f: string, i: number) => (
                             <span
                               key={`r-${i}`}
-                              className="px-3 py-1.5 bg-red-500/10 text-red-400 text-xs font-medium rounded-xl border border-red-500/25 leading-snug"
+                              className="max-w-full px-3 py-1.5 bg-red-500/10 text-red-400 text-xs font-medium rounded-xl border border-red-500/25 leading-snug break-words text-left"
                             >
                               <span className="mr-1 opacity-90">⚠</span>
                               {f}

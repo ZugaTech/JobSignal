@@ -25,11 +25,11 @@ function cn(...inputs: ClassValue[]) {
 export function verdictHeroSubtitle(verdict: string): string {
   switch (verdict) {
     case 'APPLY':
-      return 'Checks lined up with a real posting—still use good judgment before you share personal data.';
+      return 'Checks lined up with a real posting. Still use good judgment before you share personal data.';
     case 'SKIP':
       return 'Risk signals justify walking away unless you uncover strong contradictory evidence.';
     default:
-      return 'This verdict favors diligence over guessing. Confirm on the employer’s official careers site before you invest real time.';
+      return 'This verdict favors diligence over guessing. Confirm on the employer careers site before you invest real time.';
   }
 }
 
@@ -50,7 +50,7 @@ function ScoreMetricBar({ label, value }: { label: string; value: number }) {
 
 function EvidenceScoresInner({ report }: { report: SanitizedVerifyReport }) {
   const band = report.verdict_confidence_band;
-  const bandLabel = band ? band.charAt(0).toUpperCase() + band.slice(1) : '—';
+  const bandLabel = band ? band.charAt(0).toUpperCase() + band.slice(1) : 'N/A';
   const hasLayers =
     report.company_legitimacy_score > 0 ||
     report.posting_authenticity_score > 0 ||
@@ -61,7 +61,7 @@ function EvidenceScoresInner({ report }: { report: SanitizedVerifyReport }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <p className="text-xs text-neutral-500 leading-snug max-w-xl">
           Layer scores summarize how strongly employer, posting, and freshness checks lined up. They inform the
-          recommendation—they do not replace your judgment.
+          recommendation; they do not replace your judgment.
         </p>
         <div className="text-right text-xs text-neutral-400 space-y-1 shrink-0">
           <p>
@@ -87,7 +87,7 @@ function EvidenceScoresInner({ report }: { report: SanitizedVerifyReport }) {
 
       {report.staleness_flag ? (
         <p className="text-xs text-amber-400/90 leading-snug">
-          Listing-age hints suggest the post may be older than ideal—treat timing as a softer signal.
+          Listing-age hints suggest the post may be older than ideal. Treat timing as a softer signal.
         </p>
       ) : null}
 
@@ -120,7 +120,7 @@ export function TechnicalDetailsAccordion({ report }: { report: SanitizedVerifyR
           <div className="min-w-0">
             <p className="text-sm font-semibold text-neutral-200">Technical details</p>
             <p className="text-[11px] text-neutral-500 truncate">
-              Optional depth for support—scores, coverage, and reference IDs.
+              Optional depth: scores, coverage, and reference IDs.
             </p>
           </div>
         </div>
@@ -141,7 +141,7 @@ export function TechnicalDetailsAccordion({ report }: { report: SanitizedVerifyR
             <div className="px-4 pb-4 pt-2 space-y-4">
               <EvidenceScoresInner report={report} />
               <div className="rounded-xl bg-neutral-900/60 border border-border/60 px-3 py-2.5 space-y-1">
-                <p className="text-[11px] text-neutral-500 font-mono break-all">Request {report.request_id || '—'}</p>
+                <p className="text-[11px] text-neutral-500 font-mono break-all">Request {report.request_id || 'N/A'}</p>
                 {report.cached ? (
                   <p className="text-[11px] text-neutral-600">Result served from cache for this input.</p>
                 ) : null}
@@ -204,10 +204,12 @@ export function GroupedEvidenceSections({
                     className="bg-neutral-900/45 border border-border/70 rounded-xl p-4 flex items-start justify-between gap-3"
                   >
                     <div className="space-y-1 min-w-0">
-                      <p className="text-xs text-neutral-500 uppercase font-semibold tracking-tight truncate">{title}</p>
-                      <p className="text-sm text-neutral-200">{statusText}</p>
+                      <p className="text-xs text-neutral-500 uppercase font-semibold tracking-tight line-clamp-2 break-words">
+                        {title}
+                      </p>
+                      <p className="text-sm text-neutral-200 break-words">{statusText}</p>
                       {detailText ? (
-                        <p className="text-xs text-neutral-500 line-clamp-4">{detailText}</p>
+                        <p className="text-xs text-neutral-500 line-clamp-4 break-words">{detailText}</p>
                       ) : null}
                     </div>
                     <div className={cn('w-2 h-2 rounded-full shrink-0 mt-1', dot)} aria-hidden />
@@ -222,7 +224,7 @@ export function GroupedEvidenceSections({
   );
 }
 
-/** Compact gauge strip for hero — avoids shouting “Composite” in primary UX. */
+/** Compact gauge strip for hero (avoids shouting "Composite" in primary UX). */
 export function ConfidenceGaugeStrip({
   score,
   labelText,
