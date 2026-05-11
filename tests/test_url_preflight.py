@@ -37,6 +37,17 @@ def test_normalization_strips_linkedin_tracking_params():
 
 
 @pytest.mark.asyncio
+async def test_brightermonday_listings_url_proceeds_when_job_fetch_disabled(monkeypatch):
+    """Board listing paths like ``/listings/…`` are not in ``_JOB_PATH_RE``; host must still preflight as a job URL."""
+    monkeypatch.setenv("ENABLE_JOB_FETCH", "0")
+    cfg = EnvConfig.load(strict=False)
+    url = "https://www.brightermonday.co.ke/listings/business-development-manager-vdm99p"
+    result = await evaluate_job_url_preflight(url, None, cfg=cfg)
+    assert result.outcome == "proceed"
+    assert result.plain_reason == ""
+
+
+@pytest.mark.asyncio
 async def test_known_job_platform_does_not_depend_on_head(monkeypatch):
     async def fail_head(_url: str):
         raise AssertionError("known job platforms should not require HEAD preflight")

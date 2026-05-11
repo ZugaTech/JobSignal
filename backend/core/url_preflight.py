@@ -13,6 +13,7 @@ import httpx
 
 from backend.core.env import EnvConfig
 from backend.core.fetch_job_page import job_fetch_enabled, run_job_page_fetch
+from backend.core.job_url_shortcuts import is_known_job_platform_url
 from backend.core.llm_safe import under_pytest
 
 _JOB_PATH_RE = re.compile(
@@ -199,7 +200,13 @@ async def head_domain_root(url: str) -> Literal["ok", "unknown"]:
 
 
 def _url_matches_job_heuristic(url: str) -> bool:
-    parsed = urlparse(url.strip())
+    u = url.strip()
+    # Keep in sync with ``job_url_shortcuts`` (boards/ATS hosts), not only the smaller
+    # ``_KNOWN_JOB_PLATFORMS`` set below — otherwise valid board URLs (e.g. BrighterMonday
+    # ``/listings/…``) fail preflight when ``ENABLE_JOB_FETCH`` is off.
+    if is_known_job_platform_url(u):
+        return True
+    parsed = urlparse(u)
     host = (parsed.hostname or "").lower().strip(".")
     path = parsed.path or ""
     if is_known_job_platform(host):
