@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
@@ -14,6 +15,34 @@ class InputValidationError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+# Scheme-less host/path (e.g. ``linkedin.com/jobs/view/…``) — deterministic first step before any LLM.
+_COERCE_SCHEMELESS = re.compile(
+    r"^[a-zA-Z0-9](?:[a-zA-Z0-9._-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}(?:[/:\?#]|$)",
+)
+
+
+def coerce_http_job_url(url: str) -> str:
+    """Strip wrappers and add ``https://`` when the string is clearly host-shaped but scheme-less."""
+
+    s = (url or "").strip()
+    if not s:
+        return s
+    if s.startswith("<") and s.endswith(">"):
+        s = s[1:-1].strip()
+    if len(s) >= 2 and ((s[0] == s[-1] == '"') or (s[0] == s[-1] == "'")):
+        s = s[1:-1].strip()
+    low = s.lower()
+    if low.startswith(("javascript:", "data:", "vbscript:")):
+        return s
+    if s.startswith("//"):
+        return "https:" + s
+    if "://" in s:
+        return s
+    if _COERCE_SCHEMELESS.match(s):
+        return "https://" + s
+    return s
 
 
 def validate_verify_inputs(
@@ -40,6 +69,7 @@ def validate_verify_inputs(
         raise InputValidationError("EMPTY", "Provide a job URL and/or pasted job description.")
 
     if url is not None:
+        url = coerce_http_job_url(url)
         if len(url) > MAX_URL_CHARS:
             raise InputValidationError("URL_TOO_LONG", f"URL exceeds {MAX_URL_CHARS} characters.")
         if "\x00" in url:

@@ -128,6 +128,7 @@
 ## 10) Known risks (carried)
 
 - 🟢 **Registrable domains** — `registrable_domain` applies a frozen multi-label suffix list (`co.uk`, `com.ng`, `com.au`, …); exotic ccTLDs may still need suffix entries.
+- 🟢 **Job URL input** — `coerce_http_job_url` (scheme-less / `//` / wrappers) runs in validation first; with `ENABLE_LLM_URL_NORMALIZE=1`, Kimi runs **only** if validation or `normalize_job_url` still cannot produce a canonical URL (structured JSON + hard re-validate).
 - 🟡 **Live browser E2E / Playwright** — not automated in CI; rely on pytest + manual mobile/desktop checks.
 - 🟡 **Sustained load / abuse harness** — no in-repo torture tests; per-IP limits provide baseline protection.
 - 🟡 **Prompt guard is heuristic** and must not be treated as proof of safety.

@@ -62,7 +62,7 @@ ENV_SPECS: tuple[EnvVarSpec, ...] = (
         "ENABLE_LLM_URL_NORMALIZE",
         _as_bool,
         False,
-        "Optional Kimi JSON pass to refine messy job URLs before Serper (adds latency/cost; off by default)",
+        "When true, Kimi runs only as a fallback if deterministic URL validation/normalization fails (adds latency/cost)",
     ),
     EnvVarSpec("ENABLE_IMAGE_VERIFY", _as_bool, False, "Enable screenshot OCR/vision flow"),
     EnvVarSpec("RECOMMENDATIONS_ENABLED", _as_bool, False, "Enable similar-job recommendation flow by default"),

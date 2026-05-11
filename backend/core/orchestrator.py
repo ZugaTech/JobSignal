@@ -40,11 +40,11 @@ from backend.core.image_ingest import (
     ingest_job_image,
     merge_description_with_extraction,
 )
-from backend.core.inputs import InputValidationError, validate_verify_inputs
+from backend.core.inputs import InputValidationError, coerce_http_job_url, validate_verify_inputs
 from backend.core.job_url_shortcuts import is_known_job_platform_url, is_scam_domain_url, resolve_employer_identity
 from backend.core.llm_fireworks import build_llm_signals
 from backend.core.normalization import NormalizationResult, normalize_job_input, materialize_url_result_cache_key
-from backend.core.url_normalize_llm import maybe_refine_job_url_with_llm
+from backend.core.url_normalize_llm import llm_url_normalize_enabled, recover_job_url_with_llm_fallback
 from backend.core.quick_url_probe import probe_http_status_head
 from backend.core.report import build_public_report
 from backend.core.response_contract import (
@@ -267,14 +267,29 @@ async def verify_job(
     try:
         url, text = validate_verify_inputs(job_url, job_description, has_image=has_image)
     except InputValidationError as e:
+        if (
+            llm_url_normalize_enabled()
+            and job_url
+            and str(job_url).strip()
+            and e.code in ("URL_SCHEME", "URL_HOST")
+        ):
+            rec = await recover_job_url_with_llm_fallback(str(job_url).strip(), request_id=request_id)
+            if rec.canonical_url:
+                try:
+                    url, text = validate_verify_inputs(rec.canonical_url, job_description, has_image=has_image)
+                except InputValidationError as e2:
+                    return build_preflight_verify_job_uncertain_report(
+                        reason=rec.user_message or f"{e2.code}: {e2}",
+                        request_id=request_id,
+                    )
+            elif rec.outcome == "not_job_url":
+                return build_preflight_verify_job_uncertain_report(reason=rec.user_message, request_id=request_id)
+            elif rec.outcome in ("uncertain", "error"):
+                return build_preflight_verify_job_uncertain_report(
+                    reason=rec.user_message or str(e),
+                    request_id=request_id,
+                )
         raise ValueError(f"{e.code}: {e}") from e
-
-    if url:
-        pf = await evaluate_job_url_preflight(url, text, cfg=cfg)
-        if pf.outcome == "skip":
-            return build_preflight_skip_report(reason=pf.plain_reason, request_id=request_id)
-        if pf.outcome == "verify_weak":
-            return build_preflight_verify_job_uncertain_report(reason=pf.plain_reason, request_id=request_id)
 
     user_supplied_url_or_text = bool(url or text)
     ingest_warnings: List[Dict[str, str]] = []
@@ -352,16 +367,42 @@ async def verify_job(
             request_id=request_id,
         )
 
-    url_for_normalization = effective_url
-    if effective_url:
-        refined = await maybe_refine_job_url_with_llm(effective_url, request_id=request_id)
-        if refined:
-            url_for_normalization = refined
-            log_stage(request_id=request_id, stage="llm_url_normalize_applied", duration_ms=0.0)
-
-    norm = normalize_job_input(url_for_normalization, effective_text)
+    # Canonical URL: deterministic coercion + ``normalize_job_url`` first; Kimi only on failure
+    # (see ``recover_job_url_with_llm_fallback``). Preflight runs on the URL we will actually verify.
+    url_work = (effective_url or "").strip() or None
+    if url_work:
+        url_try = coerce_http_job_url(url_work)
+        norm = normalize_job_input(url_try, effective_text)
+        if not norm.canonical_url and llm_url_normalize_enabled():
+            rec2 = await recover_job_url_with_llm_fallback(url_work, request_id=request_id)
+            if rec2.canonical_url:
+                norm = normalize_job_input(rec2.canonical_url, effective_text)
+                log_stage(request_id=request_id, stage="llm_url_recovered_after_normalize", duration_ms=0.0)
+            elif rec2.outcome == "not_job_url":
+                return build_preflight_verify_job_uncertain_report(reason=rec2.user_message, request_id=request_id)
+            elif rec2.outcome in ("uncertain", "error"):
+                return build_preflight_verify_job_uncertain_report(
+                    reason=rec2.user_message
+                    or "We could not interpret that as a job posting web address. Paste a direct https link.",
+                    request_id=request_id,
+                )
+        if not norm.canonical_url:
+            return build_preflight_verify_job_uncertain_report(
+                reason=(
+                    "We could not parse that as a web address. Check for typos or paste the full https job link."
+                ),
+                request_id=request_id,
+            )
+    else:
+        norm = normalize_job_input(None, effective_text)
 
     if norm.canonical_url:
+        pf = await evaluate_job_url_preflight(norm.canonical_url, effective_text, cfg=cfg)
+        if pf.outcome == "skip":
+            return build_preflight_skip_report(reason=pf.plain_reason, request_id=request_id)
+        if pf.outcome == "verify_weak":
+            return build_preflight_verify_job_uncertain_report(reason=pf.plain_reason, request_id=request_id)
+
         if is_scam_domain_url(norm.canonical_url):
             return build_preflight_skip_report(
                 reason="This domain has been associated with fraudulent job postings.",
