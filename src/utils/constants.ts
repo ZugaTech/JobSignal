@@ -66,6 +66,10 @@ export const LEAK_MARKERS = [
   "based on the following evidence",
   "write a",
   "generate a",
+  "let me look",
+  "provided text",
+  "chain of thought",
+  "as a language model",
 ];
 
 export const COPY_REWRITE_MAP: Record<string, string> = {

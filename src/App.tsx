@@ -12,7 +12,7 @@ function cn(...inputs: ClassValue[]) {
 import { useJobSignal } from './hooks/useJobSignal';
 import { useBatchVerify } from './hooks/useBatchVerify';
 import { useClipboardAndHandoff } from './hooks/useClipboardAndHandoff';
-import { rewriteMicrocopy, formatCachedAgo, isSafeHttpUrl } from './utils/formatters';
+import { rewriteMicrocopy, formatCachedAgo, isSafeHttpUrl, filterReasonsAgainstSummary } from './utils/formatters';
 import {
   ConfidenceGaugeStrip,
   EvidenceOverviewAccordion,
@@ -730,7 +730,10 @@ export default function App() {
                           {rewriteMicrocopy(report.llm_summary)}
                         </p>
                         <ul className="space-y-3 pt-1 border-t border-border/40">
-                          {report.reasons.map((reason: string, i: number) => (
+                          {(report.verdict === 'VERIFY'
+                            ? filterReasonsAgainstSummary(String(report.llm_summary || ''), report.reasons || [])
+                            : report.reasons || []
+                          ).map((reason: string, i: number) => (
                             <li key={i} className="flex gap-3 text-neutral-400 leading-relaxed">
                               <div className="mt-2 w-1.5 h-1.5 rounded-full bg-brand shrink-0" />
                               <span>{rewriteMicrocopy(reason)}</span>

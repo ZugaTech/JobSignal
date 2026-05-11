@@ -241,6 +241,55 @@ BAD_REPUTATION_PLACEHOLDER_NAMES = frozenset(
     }
 )
 
+# Model / paste garbage that must never be used as the employer string in templates or Serper.
+_EMPLOYER_LLM_NOISE_MARKERS: tuple[str, ...] = (
+    "let me look",
+    "let me read",
+    "provided text",
+    "carefully, so",
+    "i'll analyze",
+    "i will analyze",
+    "chain of thought",
+    "looking at the",
+    "based on my analysis",
+    "first, i need",
+    "as a language model",
+    "i should note",
+    "step-by-step",
+    "the assistant",
+    "here is the",
+    "wait,",
+)
+
+
+def _employer_label_is_llm_noise(name: str) -> bool:
+    if not name or not str(name).strip():
+        return False
+    s = str(name).strip()
+    if len(s) > 140:
+        return True
+    low = s.lower()
+    if low.startswith("let me ") or low.startswith("i'll ") or low.startswith("i will "):
+        return True
+    if any(m in low for m in _EMPLOYER_LLM_NOISE_MARKERS):
+        return True
+    if is_prompt_leak(s):
+        return True
+    return False
+
+
+def _safe_reputation_company_label(company: str, job_url: Optional[str]) -> str:
+    """User-visible employer name for templates; never inject instruction-like strings."""
+
+    if company and not _employer_label_is_llm_noise(company):
+        return company
+    if job_url:
+        dom = extract_company_from_domain(job_url)
+        if dom and not is_job_board_brand_label(dom):
+            return dom
+    return "this employer"
+
+
 _SKIP_DOMAIN_LABELS = frozenset(
     {
         "www",
@@ -326,15 +375,18 @@ def resolve_reputation_query_name(
     company_name: Optional[str],
     job_url: Optional[str],
 ) -> Optional[str]:
-    raw = (company_name or "").strip()
+    raw_in = (company_name or "").strip()
+    if _employer_label_is_llm_noise(raw_in):
+        raw_in = ""
+    raw = raw_in
     low = raw.lower()
     usable = bool(raw) and low not in BAD_REPUTATION_PLACEHOLDER_NAMES and not is_job_board_brand_label(raw)
     if usable:
         return _maybe_humanize_compound_token(raw)
-    if job_url and not is_known_job_platform_url(job_url):
+    if job_url:
         dom = extract_company_from_domain(job_url)
-        if dom:
-            return dom
+        if dom and not is_job_board_brand_label(dom):
+            return _maybe_humanize_compound_token(dom)
     if raw and low not in BAD_REPUTATION_PLACEHOLDER_NAMES and not is_job_board_brand_label(raw):
         return _maybe_humanize_compound_token(raw)
     return None
@@ -925,6 +977,7 @@ async def get_company_reviews(
         )
 
     company_name_eff = resolved
+    summary_company = _safe_reputation_company_label(company_name_eff, job_url)
 
     query_templates_full = [
         f"{company_name_eff} employee reviews rating",
@@ -1109,13 +1162,13 @@ async def get_company_reviews(
                     overall_sentiment="unknown",
                     sources_checked=len(query_templates),
                     sources_found=0,
-                    plain_summary=_template_summary(company_name_eff, 0, "unknown", [], []),
+                    plain_summary=_template_summary(summary_company, 0, "unknown", [], []),
                     sources_unavailable=["Glassdoor", "Indeed", "Trustpilot", "LinkedIn", "Reddit", "X/Twitter"],
                     data_sources=[],
                     reliability_report="",
                 )
             tpl_plain = _template_summary(
-                company_name_eff,
+                summary_company,
                 len(platforms_found),
                 overall_sentiment,
                 red_dedup,
@@ -1144,7 +1197,7 @@ async def get_company_reviews(
                 overall_sentiment="unknown",
                 sources_checked=len(query_templates),
                 sources_found=0,
-                plain_summary=_template_summary(company_name_eff, 0, "unknown", [], []),
+                plain_summary=_template_summary(summary_company, 0, "unknown", [], []),
                 sources_unavailable=["Glassdoor", "Indeed", "Trustpilot", "LinkedIn", "Reddit", "X/Twitter"],
                 data_sources=[],
                 reliability_report="",
@@ -1183,7 +1236,7 @@ async def get_company_reviews(
                 sources_checked=len(query_templates),
                 sources_found=len(platforms_found),
                 highlights=highlights_payload,
-                plain_summary=_template_summary(company_name_eff, 0, "unknown", [], []),
+                plain_summary=_template_summary(summary_company, 0, "unknown", [], []),
                 sources_unavailable=sources_unavailable,
                 reddit=reddit_data,
                 x_twitter=x_data,
@@ -1202,9 +1255,9 @@ async def get_company_reviews(
         except Exception:  # noqa: BLE001
             rcs_int = final_score
 
-        if contains_raw_snippet(plain):
+        if is_prompt_leak(plain) or contains_raw_snippet(plain):
             plain = build_template_fallback(
-                company_name_eff,
+                summary_company,
                 osent,
                 gfs or green_dedup,
                 rfs or red_dedup,

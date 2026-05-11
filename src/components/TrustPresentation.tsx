@@ -28,7 +28,8 @@ export function verdictHeroSubtitle(verdict: string): string {
     case 'SKIP':
       return 'We would walk away unless you find new facts that change the picture.';
     default:
-      return 'We could not fully confirm this from public data alone. Open the employer careers site to confirm the posting before you invest time in an application.';
+      // One tight line — detailed guidance lives under “What we found” to avoid repetition.
+      return 'Public data alone was not enough to confirm this listing. Check the official careers page before you apply.';
   }
 }
 

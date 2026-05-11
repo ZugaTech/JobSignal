@@ -116,6 +116,35 @@ export function rewriteMicrocopy(text: string): string {
   return normalizeDisplayDashes(out);
 }
 
+/** Drop bullet reasons that mostly repeat the narrative summary (VERIFY copy bloat). */
+export function filterReasonsAgainstSummary(summary: string, reasons: string[]): string[] {
+  const s = String(summary || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  if (!s || !reasons.length) return reasons;
+  return reasons.filter((r) => {
+    const t = String(r || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+    if (!t || t.length < 24) return true;
+    if (s.includes(t)) return false;
+    if (t.length >= 40 && s.slice(0, Math.min(120, s.length)).includes(t.slice(0, 48))) return false;
+    return true;
+  });
+}
+
+/** Reputation panel body: strip instruction-echo and model monologue before display. */
+export function sanitizeReputationPlainSummary(text: string | undefined | null): string {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  if (containsLeakMarker(raw)) {
+    return "Public employer reviews did not surface clearly enough for a clean summary here.";
+  }
+  return rewriteMicrocopy(raw);
+}
+
 export function formatCachedAgo(iso: string): string {
   try {
     const t = new Date(iso).getTime();

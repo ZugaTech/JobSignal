@@ -4,7 +4,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 import type { SanitizedVerifyReport } from '../types/verify';
-import { rewriteMicrocopy, isSafeHttpUrl } from '../utils/formatters';
+import { rewriteMicrocopy, isSafeHttpUrl, sanitizeReputationPlainSummary } from '../utils/formatters';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -134,7 +134,7 @@ export function ReputationSection({ report }: { report: SanitizedVerifyReport })
 
           <div className="rounded-2xl bg-neutral-900/40 border border-border/80 p-4 md:p-5">
             <p className="text-[13px] sm:text-sm text-neutral-300 leading-[1.65]">
-              {rewriteMicrocopy(report.review_summary.plain_summary || '')}
+              {sanitizeReputationPlainSummary(report.review_summary.plain_summary)}
             </p>
             {reputationSourcesLine ? (
               <p className="text-[11px] mt-3 leading-snug text-[#525252]">{reputationSourcesLine}</p>

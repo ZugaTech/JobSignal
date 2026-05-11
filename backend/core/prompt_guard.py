@@ -135,6 +135,20 @@ def is_prompt_leak(text: str) -> bool:
         "apply gate",
         "medium+ with",
         "high with support",
+        "let me look",
+        "let me read",
+        "provided text",
+        "carefully, so",
+        "i'll analyze",
+        "i will analyze",
+        "chain of thought",
+        "looking at the",
+        "based on my analysis",
+        "first, i need",
+        "as a language model",
+        "i should note",
+        "step-by-step",
+        "the assistant",
     )
     if any(m in tl for m in leak_markers):
         return True
