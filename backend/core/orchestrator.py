@@ -346,23 +346,31 @@ async def verify_job(
 
     steps: List[Dict[str, Any]] = [{"id": "normalize", "label": "Normalized input"}]
 
-    api_key = os.environ.get("SERPER_API_KEY") or os.environ.get("SEARCH_API_KEY") or ""
+    serper_key = (os.environ.get("SERPER_API_KEY") or os.environ.get("SEARCH_API_KEY") or "").strip()
+    serpapi_key = (os.environ.get("SERPAPI_API_KEY") or "").strip()
     endpoint = (cfg.search_api_endpoint or "").strip() or "https://google.serper.dev/search"
+    serpapi_ep = (cfg.serpapi_search_endpoint or "").strip() or "https://serpapi.com/search.json"
     timeout_s = float(cfg.search_timeout_s)
     coord_evidence = EvidenceCoordinator(
-        api_key=api_key,
+        serper_key,
+        serpapi_api_key=serpapi_key,
+        serpapi_endpoint=serpapi_ep,
         search_timeout_s=timeout_s,
         max_calls=cfg.search_max_calls_evidence,
         search_endpoint=endpoint,
     )
     coord_reputation = EvidenceCoordinator(
-        api_key=api_key,
+        serper_key,
+        serpapi_api_key=serpapi_key,
+        serpapi_endpoint=serpapi_ep,
         search_timeout_s=timeout_s,
         max_calls=cfg.search_max_calls_reputation,
         search_endpoint=endpoint,
     )
     coord_rec = EvidenceCoordinator(
-        api_key=api_key,
+        serper_key,
+        serpapi_api_key=serpapi_key,
+        serpapi_endpoint=serpapi_ep,
         search_timeout_s=timeout_s,
         max_calls=cfg.search_max_calls_recommendations,
         search_endpoint=endpoint,

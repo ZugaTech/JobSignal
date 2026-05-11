@@ -32,8 +32,13 @@ def test_recommendations_min_verify_score_env(monkeypatch):
 def test_any_search_configured_requires_key(monkeypatch):
     monkeypatch.delenv("SERPER_API_KEY", raising=False)
     monkeypatch.delenv("SEARCH_API_KEY", raising=False)
+    monkeypatch.delenv("SERPAPI_API_KEY", raising=False)
     assert any_search_configured() is False
     monkeypatch.setenv("SERPER_API_KEY", "x")
+    assert any_search_configured() is True
+    monkeypatch.delenv("SERPER_API_KEY", raising=False)
+    assert any_search_configured() is False
+    monkeypatch.setenv("SERPAPI_API_KEY", "y")
     assert any_search_configured() is True
 
 

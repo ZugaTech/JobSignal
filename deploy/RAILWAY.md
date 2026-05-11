@@ -20,8 +20,10 @@
 | `NODE_ENV` | For **production**, set to `production` only after **Redis** is attached (see below). Until then, leaving it unset uses the app default and avoids the `CACHE_URL` requirement. |
 | `CACHE_URL` | **Required** when `NODE_ENV` is `production` or `staging`. Use the Redis connection URL from a Railway **Redis** plugin (same value as `REDIS_URL` on the Redis service, or a variable reference in the dashboard). |
 | `ALLOWED_ORIGINS` | e.g. `https://jobsignal.up.railway.app` or `*` for demos. |
-| `SERPER_API_KEY` | Primary Serper.dev key for search-backed evidence and recommendations. If unset, `/ready` reports `checks.serp_key` **fail** and the API is **degraded**. |
-| `SEARCH_API_KEY` / `SERPAPI_API_KEY` | Legacy fallback aliases accepted by code; prefer `SERPER_API_KEY` for Railway. |
+| `SERPER_API_KEY` | Primary Serper.dev key for search-backed evidence and recommendations. If unset, `/ready` reports `checks.serp_key` **fail** and the API is **degraded** (unless `SERPAPI_API_KEY` alone is set). |
+| `SERPAPI_API_KEY` | Optional **SerpApi** key. Used when Serper returns errors or when only SerpApi is configured. Coexists with Serper; Serper is tried first when both are set. |
+| `SERPAPI_SEARCH_ENDPOINT` | SerpApi JSON endpoint (default `https://serpapi.com/search.json`). |
+| `SEARCH_API_KEY` | Alias for **Serper** only (same as `SERPER_API_KEY`); not sent to SerpApi. |
 | `FIREWORKS_API_KEY` / `LLM_API_KEY` | Enable LLM features when configured. |
 | `PROBE_PROVIDERS_ON_READY` | Keep `0` in production unless you intentionally want live Fireworks/Serper checks on `/ready`. |
 | `FETCH_MAX_BYTES` | Cap on raw HTML bytes read from the posting URL. |

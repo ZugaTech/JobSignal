@@ -25,7 +25,7 @@ def _get(name: str, default: Optional[str] = None) -> Optional[str]:
 
 
 def any_search_configured() -> bool:
-    return bool(_get("SERPER_API_KEY") or _get("SEARCH_API_KEY"))
+    return bool(_get("SERPER_API_KEY") or _get("SEARCH_API_KEY") or _get("SERPAPI_API_KEY"))
 
 
 def env_recommendations_default_on() -> bool:

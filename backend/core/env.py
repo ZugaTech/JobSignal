@@ -1,8 +1,9 @@
 """Environment loading with optional strict (production) validation.
 
 Provider/env authority (Sprint 2 audit):
-- SERPER_API_KEY
-- SEARCH_API_KEY / SERPAPI_API_KEY (legacy fallback aliases)
+- SERPER_API_KEY (primary Serper.dev)
+- SEARCH_API_KEY (alias for Serper key only)
+- SERPAPI_API_KEY + SERPAPI_SEARCH_ENDPOINT (SerpApi fallback after Serper errors / when Serper unset)
 - SEARCH_API_ENDPOINT (optional Serper endpoint override)
 - SEARCH_TIMEOUT_S / SEARCH_RETRY_COUNT / SEARCH_RATE_LIMIT_PER_MINUTE
 - FIREWORKS_API_KEY / FIREWORKS_BASE_URL / FIREWORKS_MODEL / FIREWORKS_VISION_MODEL
@@ -37,6 +38,7 @@ class EnvConfig:
     fetch_max_redirects: int
     cache_url: Optional[str]
     search_api_endpoint: Optional[str]
+    serpapi_search_endpoint: str
     search_timeout_s: int
     search_retry_count: int
     search_rate_limit_per_minute: int
@@ -74,6 +76,9 @@ class EnvConfig:
 
         cache_url = str(app_cfg.get("CACHE_URL")).strip() if app_cfg.get("CACHE_URL") else None
         search_api_endpoint = str(app_cfg.get("SEARCH_API_ENDPOINT") or "")
+        serpapi_search_endpoint = str(app_cfg.get("SERPAPI_SEARCH_ENDPOINT") or "https://serpapi.com/search.json").strip()
+        if not serpapi_search_endpoint:
+            serpapi_search_endpoint = "https://serpapi.com/search.json"
         search_timeout_s = _int("SEARCH_TIMEOUT_S", int(app_cfg.get("SEARCH_TIMEOUT_S") or 10), min_v=1, max_v=60)
         search_retry_count = _int("SEARCH_RETRY_COUNT", int(app_cfg.get("SEARCH_RETRY_COUNT") or 2), min_v=0, max_v=5)
         search_rate_limit = _int("SEARCH_RATE_LIMIT_PER_MINUTE", int(app_cfg.get("SEARCH_RATE_LIMIT_PER_MINUTE") or 60), min_v=1, max_v=10000)
@@ -122,6 +127,7 @@ class EnvConfig:
             fetch_max_redirects=fetch_redirs,
             cache_url=cache_url,
             search_api_endpoint=search_api_endpoint,
+            serpapi_search_endpoint=serpapi_search_endpoint,
             search_timeout_s=search_timeout_s,
             search_retry_count=search_retry_count,
             search_rate_limit_per_minute=search_rate_limit,

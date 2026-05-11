@@ -14,6 +14,7 @@ def _sample_env(**overrides):
         fetch_max_redirects=5,
         cache_url=None,
         search_api_endpoint=None,
+        serpapi_search_endpoint="https://serpapi.com/search.json",
         search_timeout_s=10,
         search_retry_count=2,
         search_rate_limit_per_minute=60,
