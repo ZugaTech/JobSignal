@@ -57,6 +57,59 @@ GLOBAL_RED_TRIGGERS = [
     "sinking ship", "bankrupt", "hostile workplace", "workplace harassment", "unpaid overtime"
 ]
 
+_CORPORATE_STOPWORDS = frozenset(
+    {
+        "company",
+        "corporation",
+        "corp",
+        "inc",
+        "llc",
+        "ltd",
+        "gmbh",
+        "plc",
+        "sa",
+        "nv",
+        "bv",
+        "ag",
+        "kg",
+        "limited",
+        "group",
+        "holdings",
+        "co",
+        "the",
+    }
+)
+
+
+def _significant_company_tokens(company_name: str) -> List[str]:
+    """Tokens used to reject unrelated SERP rows (e.g. NBC News about Twitter when verifying Sofatutor)."""
+
+    raw = re.sub(r"[^\w\s&]", " ", company_name.lower())
+    parts = [p for p in raw.split() if p]
+    tokens: List[str] = []
+    for p in parts:
+        if p in _CORPORATE_STOPWORDS:
+            continue
+        if len(p) >= 4:
+            tokens.append(p)
+        elif len(parts) == 1 and len(p) >= 2:
+            tokens.append(p)
+    if not tokens:
+        for p in parts:
+            if p not in _CORPORATE_STOPWORDS and len(p) >= 2:
+                tokens.append(p)
+                break
+    return tokens
+
+
+def _snippet_references_employer(company_name: str, title: str, snippet: str, link: str) -> bool:
+    tokens = _significant_company_tokens(company_name)
+    if not tokens:
+        return True
+    hay = f"{title} {snippet} {link}".lower()
+    return any(t in hay for t in tokens)
+
+
 GLOBAL_GREEN_TRIGGERS = [
     "great culture", "pays well", "highly recommend", "work life balance", "promotes internally",
     "transparent leadership", "fast growth", "great benefits", "amazing team", "love working here",
@@ -170,13 +223,15 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
 
     # Six parallel Serper calls (fits tight SEARCH_MAX_CALLS_REPUTATION budgets on Railway).
     # Plain queries only — site: operators often return empty/blocked rows from datacenter egress IPs.
+    # Plain queries only — avoid the literal phrase "twitter employees", which surfaces unrelated
+    # news about Twitter-the-company. Real X/Twitter rows are detected by domain in ``_parse_serper_item``.
     queries = {
         "reviews_aggregate": f"{company_name} employee reviews ratings Glassdoor Indeed",
         "linkedin_company": f"{company_name} LinkedIn company reviews employees",
         "reddit_culture": f"{company_name} company culture reddit employees",
-        "x_layoffs": f"{company_name} layoffs hiring twitter employees",
-        "x_watchouts": f"{company_name} workplace toxic scam fake recruiter twitter employees",
-        "x_positive": f"{company_name} great place to work reviews twitter employees",
+        "x_layoffs": f'"{company_name}" layoffs OR restructuring OR downsizing',
+        "x_watchouts": f'"{company_name}" toxic workplace OR scam job OR fake recruiter',
+        "x_positive": f'"{company_name}" great employer OR recommend working OR good culture',
     }
 
     try:
@@ -201,7 +256,7 @@ async def get_company_reviews(coordinator: Any, company_name: Optional[str], *, 
     for k, query_res in results.items():
         if query_res is None: continue # dropped by coordinator
         for item in query_res:
-            source = _parse_serper_item(item, k)
+            source = _parse_serper_item(item, k, company_name)
             if source:
                 if source.platform == "Reddit":
                     reddit_results.append(source)
@@ -453,18 +508,23 @@ def _process_x(results: List[ReviewSource]) -> Optional[Dict[str, Any]]:
         "note": f"X signals are weighted lower due to noise. Corroborated by {max(0, len(results)-1)} other source(s)."
     }
 
-def _parse_serper_item(item: Dict[str, Any], query_key: str) -> Optional[ReviewSource]:
-    snippet = item.get("snippet", "")
-    link = item.get("link", "").lower()
-    title = item.get("title", "").lower()
-    
+def _parse_serper_item(item: Dict[str, Any], query_key: str, company_name: str) -> Optional[ReviewSource]:
+    snippet_raw = item.get("snippet", "") or ""
+    title_raw = item.get("title", "") or ""
+    snippet = snippet_raw
+    link = (item.get("link", "") or "").lower()
+    title_lower = title_raw.lower()
+
+    if not _snippet_references_employer(company_name, title_raw, snippet_raw, link):
+        return None
+
     platform = "Web"
     reliability = "low"
-    
+
     if "reddit" in query_key or "reddit.com" in link:
         platform = "Reddit"
         reliability = "medium"
-    elif "x_" in query_key or "twitter.com" in link or "x.com" in link:
+    elif "twitter.com" in link or "x.com" in link:
         platform = "X/Twitter"
         reliability = "low"
     elif "glassdoor.com" in link:
@@ -494,8 +554,8 @@ def _parse_serper_item(item: Dict[str, Any], query_key: str) -> Optional[ReviewS
     sentiment = "unknown"
     pos_words = ["great", "positive", "love", "good", "recommend", "growth", "culture", "stable", "pays well"]
     neg_words = ["toxic", "poor", "bad", "underpaid", "layoffs", "management", "turnover", "scam", "avoid", "run"]
-    
-    text = (title + " " + snippet).lower()
+
+    text = title_lower + " " + snippet.lower()
     pos_score = sum(1 for w in pos_words if w in text)
     neg_score = sum(1 for w in neg_words if w in text)
     
@@ -514,7 +574,7 @@ def _parse_serper_item(item: Dict[str, Any], query_key: str) -> Optional[ReviewS
         sentiment=sentiment,
         snippet=snippet,
         reliability=reliability,
-        post_title=title
+        post_title=title_lower,
     )
 
 
@@ -530,7 +590,12 @@ async def _generate_llm_summary(
         return None
 
     context = "\n".join([f"- {h.platform} ({h.sentiment}): {h.snippet}" for h in highlights[:10]])
-    user_content = f"Company: {company}\nData:\n{context}"
+    user_content = (
+        f"Company: {company}\n"
+        "Only describe reputation for THIS company. Ignore any line that is clearly about a different "
+        "organization (for example a news headline dominated by another employer's name).\n"
+        f"Data:\n{context}"
+    )
 
     pos = sum(1 for h in highlights if h.sentiment == "positive")
     neg = sum(1 for h in highlights if h.sentiment == "negative")
@@ -563,7 +628,11 @@ async def _generate_llm_summary(
         messages=[
             {
                 "role": "system",
-                "content": "You are a recruiter briefing a candidate. Write a 2-3 sentence employer reputation briefing. No jargon. No instructions. Output ONLY the briefing text.",
+                "content": (
+                    "You are a recruiter briefing a candidate. Write a 2-3 sentence employer reputation briefing "
+                    "for the named company only. If the data lines refer to a different employer, omit them. "
+                    "No jargon. Output ONLY the briefing text."
+                ),
             },
             {"role": "user", "content": user_content},
         ],
