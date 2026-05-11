@@ -25,6 +25,10 @@ _JOB_KEYWORD_RE = re.compile(
     r"\b(salary|responsibilities|requirements|apply|hiring|position|experience)\b",
     re.I,
 )
+_HOSTED_JOBS_SUBDOMAIN_PATH_RE = re.compile(
+    r"^/o/[^/?#]+(?:/c/new)?/?$",
+    re.I,
+)
 _KNOWN_JOB_PLATFORMS = frozenset(
     {
         "linkedin.com",
@@ -189,10 +193,14 @@ async def head_domain_root(url: str) -> Literal["ok", "unknown"]:
 
 def _url_matches_job_heuristic(url: str) -> bool:
     parsed = urlparse(url.strip())
-    host = parsed.hostname or ""
+    host = (parsed.hostname or "").lower().strip(".")
+    path = parsed.path or ""
     if is_known_job_platform(host):
         return True
-    return bool(_JOB_PATH_RE.search(parsed.path or ""))
+    # Some ATS platforms host postings on jobs.<company> with /o/<role-slug>/c/new paths.
+    if host.startswith("jobs.") and _HOSTED_JOBS_SUBDOMAIN_PATH_RE.match(path):
+        return True
+    return bool(_JOB_PATH_RE.search(path))
 
 
 def _description_matches_job_keywords(desc: Optional[str]) -> bool:

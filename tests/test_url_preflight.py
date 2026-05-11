@@ -54,3 +54,14 @@ async def test_unknown_domain_dns_failure_degrades_to_verify(monkeypatch):
     result = await evaluate_job_url_preflight("https://example.invalid/anything", None, cfg=cfg)
     assert result.outcome == "verify_weak"
     assert "could not be reached" in result.plain_reason
+
+
+@pytest.mark.asyncio
+async def test_jobs_subdomain_hosted_ats_o_path_proceeds():
+    cfg = EnvConfig.load(strict=False)
+    result = await evaluate_job_url_preflight(
+        "https://jobs.sofatutor.com/o/junior-full-stack-engineer-gn/c/new?source=LinkedIn+Basic+Jobs",
+        None,
+        cfg=cfg,
+    )
+    assert result.outcome == "proceed"
