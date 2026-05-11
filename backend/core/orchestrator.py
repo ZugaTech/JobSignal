@@ -644,9 +644,12 @@ async def verify_job(
                 {
                     "role": "system",
                     "content": (
-                        "You are JobSignal, a verification assistant. Write a 2-sentence briefing for a job seeker. "
+                        "You are JobSignal, a verification assistant. Write exactly two sentences of plain advice "
+                        "for someone deciding whether to pursue this job. "
+                        "Do not restate or summarize the task (never start with \"The user wants\", \"I will\", "
+                        "\"Here is\", or similar meta). Begin immediately with substance about the employer and decision. "
                         "No jargon. Never mention internal tiers (such as T1/T2/T3), gates, or scoring rule names. "
-                        "No headers. Output ONLY the briefing text."
+                        "No headers. Output ONLY the two sentences."
                     ),
                 },
                 {

@@ -27,7 +27,12 @@ _LEAK_MARKERS = [
     "constraints:",
     "instructions:",
     "system prompt",
-    "you are a",
+    # Do not use bare "you are a" — benign briefing copy ("You are a strong candidate...") must pass.
+    "you are a helpful assistant",
+    "you are an ai assistant",
+    "you are a language model",
+    "you are chatgpt",
+    "you are gpt",
     "as an ai",
     "here is the system",
     "here is the prompt",
@@ -45,6 +50,32 @@ _LEAK_MARKERS = [
     "medium+ with",
     "high with support",
 ]
+
+
+def _strip_llm_meta_preface(text: str) -> str:
+    """Drop leading task-paraphrase sentences models sometimes emit before real prose."""
+
+    s = text.strip()
+    low = s.lower()
+    prefixes = (
+        "the user wants ",
+        "the user asked for ",
+        "the user asked ",
+        "i'll write ",
+        "i will write ",
+        "here is the briefing:",
+        "here's the briefing:",
+    )
+    for p in prefixes:
+        if low.startswith(p):
+            for sep in ".!?\n":
+                idx = s.find(sep)
+                if idx != -1:
+                    rest = s[idx + 1 :].strip()
+                    if len(rest) >= 12:
+                        return rest
+            break
+    return s
 
 
 def _looks_like_prompt_leak(text: str) -> bool:
@@ -95,7 +126,7 @@ def call_llm_safe_chat_sync(
         if raw is None:
             logger.warning("llm_call_failed request_id=%s error=empty_message_content", request_id)
             return fallback[:max_chars]
-        text = raw.strip()
+        text = _strip_llm_meta_preface(raw.strip())
         if prose_mode:
             too_short = len(text) < min_prose_len
             no_period = require_sentence_period and "." not in text
