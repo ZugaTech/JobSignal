@@ -308,6 +308,18 @@ def extract_company_from_domain(url: str) -> str | None:
         return None
 
 
+def _maybe_humanize_compound_token(name: str) -> str:
+    """Re-split fused single-word employer slugs (``Wemabank`` → ``Wema Bank``).
+
+    LLMs and SERP queries hit better with a spaced employer name. Only applies when the input
+    is a single token whose tail matches a known suffix in ``_DOMAIN_SUFFIX_SPLITS``.
+    """
+
+    if not name or " " in name:
+        return name
+    return _humanize_domain_label(name)
+
+
 def resolve_reputation_query_name(
     company_name: Optional[str],
     job_url: Optional[str],
@@ -316,13 +328,13 @@ def resolve_reputation_query_name(
     low = raw.lower()
     usable = bool(raw) and low not in BAD_REPUTATION_PLACEHOLDER_NAMES and not is_job_board_brand_label(raw)
     if usable:
-        return raw
+        return _maybe_humanize_compound_token(raw)
     if job_url and not is_known_job_platform_url(job_url):
         dom = extract_company_from_domain(job_url)
         if dom:
             return dom
     if raw and low not in BAD_REPUTATION_PLACEHOLDER_NAMES and not is_job_board_brand_label(raw):
-        return raw
+        return _maybe_humanize_compound_token(raw)
     return None
 
 
@@ -427,7 +439,7 @@ async def get_llm_company_baseline(
             model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
             temperature=0.2,
             max_tokens=700,
-            timeout=25.0,
+            timeout=35.0,
             prose_mode=False,
             max_chars=8000,
             min_prose_len=2,
@@ -779,9 +791,9 @@ async def get_company_reviews(
     query_keys = [f"enrich_{i}" for i in range(len(query_templates))]
 
     async def _bounded_baseline() -> Optional[Dict[str, Any]]:
-        # Hard ceiling on the baseline call so a slow Fireworks request can never consume the
-        # outer pipeline budget. 30s covers Kimi K2.6 cold starts on Fireworks; the 75s outer
-        # budget still leaves room for synthesis to run after baseline + Serper resolve.
+        # Hard ceiling on the baseline call. Production probes showed Kimi K2.6 on Fireworks
+        # sometimes runs 20-25s for the compact schema, so 40s gives consistent headroom
+        # while still fitting inside the 75s outer budget alongside synthesis.
         try:
             return await asyncio.wait_for(
                 get_llm_company_baseline(
@@ -790,7 +802,7 @@ async def get_company_reviews(
                     job_location,
                     request_id=f"{request_id}_baseline",
                 ),
-                timeout=30.0,
+                timeout=40.0,
             )
         except Exception:  # noqa: BLE001
             return None
