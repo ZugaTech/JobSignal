@@ -394,7 +394,8 @@ async def verify_job(
     serpapi_ep = (cfg.serpapi_search_endpoint or "").strip() or "https://serpapi.com/search.json"
     timeout_s = float(cfg.search_timeout_s)
     ev_calls = 4 if depth_quick else cfg.search_max_calls_evidence
-    rep_calls = 4 if depth_quick else cfg.search_max_calls_reputation
+    # Hybrid reputation: 3 Serper calls (quick) or 4 (full); coordinator budget must cover parallel gather.
+    rep_calls = 3 if depth_quick else 4
     rec_calls = 2 if depth_quick else cfg.search_max_calls_recommendations
     coord_evidence = EvidenceCoordinator(
         serper_key,
@@ -602,8 +603,27 @@ async def verify_job(
 
         fetch_norm = _norm_with_fetch_hints(norm, fx)
         ext_for_search = extract_entities(fetch_norm) if fetch_norm is not norm else ext_local
-        structured_company = sanitize_company_name(getattr(merged_fields, "company_name", None)) if merged_fields else None
         is_board_url = bool(norm.canonical_url and is_known_job_platform_url(norm.canonical_url))
+        # Image / vision extraction (when present)
+        structured_company = sanitize_company_name(getattr(merged_fields, "company_name", None)) if merged_fields else None
+        # Pasted job text often includes "Company: …" but merged_fields is only set for screenshots — reuse the
+        # same deterministic parse used for entity hints so board URLs + description still confirm the employer.
+        if not structured_company:
+            structured_company = sanitize_company_name(ext_local.company_hint)
+        # When the posting body names the employer without a strict "Company:" line, run the description extractor
+        # once (LLM-gated) so reputation is not permanently blocked on job boards.
+        desc_plain = (norm.description_text or "").strip()
+        if (
+            not structured_company
+            and is_board_url
+            and len(desc_plain) >= 200
+        ):
+            desc_x = await asyncio.to_thread(
+                partial(extract_fields_from_description, desc_plain[:20_000], request_id=request_id),
+            )
+            if desc_x and desc_x.has_company_info:
+                structured_company = sanitize_company_name(desc_x.company_name) or structured_company
+
         employer_identity = resolve_employer_identity(
             is_job_board_url=is_board_url,
             url_domain_candidate=ext_local.company_hint if norm.canonical_url and not is_board_url else None,
@@ -652,6 +672,9 @@ async def verify_job(
                 request_id=request_id,
                 quick=depth_quick,
                 employer_confirmed=employer_identity.confirmed,
+                job_url=norm.canonical_url,
+                job_title=ext_for_search.title_hint,
+                job_location=ext_for_search.location_hint,
             )
         )
         serp_results, review_summary = await asyncio.gather(evidence_task, review_task)

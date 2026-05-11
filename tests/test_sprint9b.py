@@ -10,21 +10,25 @@ from backend.evidence.company_reviews import (
 )
 
 @pytest.mark.asyncio
-async def test_review_pipeline_partial_on_timeout():
+async def test_review_pipeline_survives_slow_serper_per_query_timeout():
+    """Each Serper call is capped (~6s); slow searches empty out instead of failing the whole pipeline."""
+
     class DummyCoordinator:
         def __init__(self):
             self.calls = 0
+
         async def search(self, query: str, num: int = 5):
             self.calls += 1
-            if self.calls <= 3:
-                await asyncio.sleep(12.0) # trigger timeout
-                return []
-            return [{"snippet": "great company", "link": "https://glassdoor.com", "title": "Review"}]
-            
+            await asyncio.sleep(12.0)
+            return []
+
     res = await get_company_reviews(DummyCoordinator(), "Acme Corp")
-    assert res.status == "unavailable"
-    assert res.timeout is True
-    assert res.partial is True
+    assert res.status == "ok"
+    assert res.timeout is False
+    assert res.partial is False
+    assert res.sources_found == 0
+    assert res.review_confidence_score is None
+    assert "sparse" in (res.plain_summary or "").lower()
 
 def test_reddit_red_flag_mass_layoffs():
     source = ReviewSource(
@@ -59,11 +63,10 @@ def test_plain_summary_template():
     assert "Acme" in res
 
 @pytest.mark.asyncio
-async def test_full_verify_returns_200_on_review_timeout(monkeypatch):
+async def test_full_verify_returns_200_when_reputation_serper_is_slow(monkeypatch):
     from backend.api.main import app
     from httpx import AsyncClient, ASGITransport
-    
-    # Mock coordinator to timeout
+
     class TimeoutCoordinator:
         async def search(self, *args, **kwargs):
             await asyncio.sleep(12)
@@ -74,15 +77,16 @@ async def test_full_verify_returns_200_on_review_timeout(monkeypatch):
 
         def set_max_calls(self, count: int) -> None:
             pass
-        
+
     monkeypatch.setattr(
         "backend.core.orchestrator.EvidenceCoordinator",
         lambda *args, **kwargs: TimeoutCoordinator(),
     )
-    
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.post("/v1/verify", json={"job_url": "https://google.com/jobs/1"})
         assert resp.status_code == 200
         data = resp.json()
-        assert data["review_summary"]["status"] == "unavailable"
-        assert data["review_summary"]["timeout"] is True
+        rs = data.get("review_summary") or {}
+        assert rs.get("timeout") is not True
+        assert rs.get("status") != "unavailable"

@@ -16,7 +16,6 @@ import { rewriteMicrocopy, formatCachedAgo, isSafeHttpUrl } from './utils/format
 import {
   ConfidenceGaugeStrip,
   EvidenceOverviewAccordion,
-  PipelineAttemptLog,
   TechnicalDetailsAccordion,
   verdictHeroSubtitle,
 } from './components/TrustPresentation';
@@ -681,7 +680,7 @@ export default function App() {
                     </div>
 
                     <div className="glass rounded-3xl p-5 sm:p-6 md:p-8 space-y-8 border border-border/60">
-                      <div className="space-y-4">
+                      <div className="space-y-5">
                         <h3 className="text-lg font-bold flex items-center gap-2">
                           <Info className="w-5 h-5 text-brand" />
                           What we found
@@ -689,11 +688,7 @@ export default function App() {
                         <p className="text-neutral-300 leading-relaxed text-base md:text-lg">
                           {rewriteMicrocopy(report.llm_summary)}
                         </p>
-                      </div>
-
-                      <div className="space-y-4">
-                        <h3 className="text-lg font-bold">What drove this</h3>
-                        <ul className="space-y-3">
+                        <ul className="space-y-3 pt-1 border-t border-border/40">
                           {report.reasons.map((reason: string, i: number) => (
                             <li key={i} className="flex gap-3 text-neutral-400 leading-relaxed">
                               <div className="mt-2 w-1.5 h-1.5 rounded-full bg-brand shrink-0" />
@@ -719,8 +714,6 @@ export default function App() {
                           </ul>
                         </div>
                       )}
-
-                      <PipelineAttemptLog report={report} />
                     </div>
 
                     <div className="glass rounded-3xl p-5 sm:p-6 md:p-8 border border-border/60 space-y-6">

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -12,6 +14,8 @@ from urllib.parse import urlparse
 from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
 from backend.core.job_url_shortcuts import is_job_board_brand_label, is_known_job_platform_url
 from backend.core.prompt_guard import is_prompt_leak
+
+logger = logging.getLogger("jobsignal")
 
 @dataclass(frozen=True, slots=True)
 class ReviewSource:
@@ -43,6 +47,9 @@ class ReviewSummary:
     sources_unavailable: List[str] = field(default_factory=list)
     reddit: Optional[Dict[str, Any]] = None
     x_twitter: Optional[Dict[str, Any]] = None
+    # How the reputation panel was produced (hybrid pipeline).
+    data_sources: tuple[str, ...] = ()
+    reliability_report: str = ""
 
 
 GLOBAL_RED_TRIGGERS = [
@@ -94,16 +101,24 @@ def count_relevant_negative_hits(
     return count
 
 
-def is_raw_snippet(text: str) -> bool:
-    markers = [
-        "based on",
-        "out of 5 stars",
-        "company reviews on",
-        "...",
-        "indicating that most",
-    ]
+SNIPPET_MARKERS = [
+    "out of 5 stars",
+    "company reviews on",
+    "based on",
+    "indicating that most",
+    "...",
+    "would recommend",
+]
+
+
+def contains_raw_snippet(text: str) -> bool:
     text_lower = (text or "").lower()
-    return sum(1 for marker in markers if marker in text_lower) >= 2
+    hits = sum(1 for m in SNIPPET_MARKERS if m in text_lower)
+    return hits >= 2
+
+
+# Backward-compatible name used by older tests and _generate_llm_summary.
+is_raw_snippet = contains_raw_snippet
 
 
 GLOBAL_GREEN_TRIGGERS = [
@@ -206,6 +221,477 @@ def _dedup_flags(flags: List[str], max_flags: int = 4) -> List[str]:
                 break
     return res
 
+
+BAD_REPUTATION_PLACEHOLDER_NAMES = frozenset(
+    {
+        "unknown",
+        "the company",
+        "this company",
+        "",
+        "employer",
+        "client",
+        "confidential",
+        "a company",
+        "n/a",
+        "none",
+        "null",
+    }
+)
+
+_SKIP_DOMAIN_LABELS = frozenset(
+    {
+        "www",
+        "careers",
+        "jobs",
+        "job",
+        "apply",
+        "work",
+        "talent",
+        "recruiting",
+        "hr",
+        "people",
+        "board",
+        "vacancies",
+    }
+)
+
+
+def extract_company_from_domain(url: str) -> str | None:
+    try:
+        host = (urlparse(url).hostname or "").lower().strip()
+        if not host:
+            return None
+        if host.startswith("www."):
+            host = host[4:]
+        parts = [p for p in host.split(".") if p]
+        i = 0
+        while i < len(parts) and parts[i] in _SKIP_DOMAIN_LABELS:
+            i += 1
+        if i >= len(parts) - 1:
+            return None
+        name = parts[i]
+        if name in _SKIP_DOMAIN_LABELS or len(name) < 2:
+            return None
+        return name.replace("-", " ").title()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def resolve_reputation_query_name(
+    company_name: Optional[str],
+    job_url: Optional[str],
+) -> Optional[str]:
+    raw = (company_name or "").strip()
+    low = raw.lower()
+    usable = bool(raw) and low not in BAD_REPUTATION_PLACEHOLDER_NAMES and not is_job_board_brand_label(raw)
+    if usable:
+        return raw
+    if job_url and not is_known_job_platform_url(job_url):
+        dom = extract_company_from_domain(job_url)
+        if dom:
+            return dom
+    if raw and low not in BAD_REPUTATION_PLACEHOLDER_NAMES and not is_job_board_brand_label(raw):
+        return raw
+    return None
+
+
+def build_template_fallback(
+    company_name: str,
+    overall_sentiment: str,
+    green_flags: List[str],
+    red_flags: List[str],
+    sources_found: int,
+) -> str:
+    g0 = green_flags[0] if green_flags else "No strong positives identified."
+    r0 = red_flags[0] if red_flags else "No major concerns detected."
+    return (
+        f"Based on {sources_found} source(s), {company_name} has a {overall_sentiment} employer reputation. "
+        f"{g0} {r0}"
+    )
+
+
+def _strip_json_fence(text: str) -> str:
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.removeprefix("```json").removeprefix("```").strip()
+        if t.endswith("```"):
+            t = t[:-3].strip()
+    return t
+
+
+def _parse_llm_json_object(text: str) -> Optional[Dict[str, Any]]:
+    t = _strip_json_fence(text)
+    if not t:
+        return None
+    try:
+        return json.loads(t)
+    except Exception:  # noqa: BLE001
+        start = t.find("{")
+        end = t.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        try:
+            return json.loads(t[start : end + 1])
+        except Exception:  # noqa: BLE001
+            return None
+
+
+async def get_llm_company_baseline(
+    company_name: str,
+    job_title: Optional[str] = None,
+    job_location: Optional[str] = None,
+    *,
+    request_id: str = "company_baseline",
+) -> Optional[Dict[str, Any]]:
+    from backend.core.llm_fireworks import _get, llm_enabled
+    from backend.core.llm_safe import call_llm_safe
+
+    fallback = (
+        '{"known":false,"company_type":"unknown","industry":null,"headquarters":null,'
+        '"size_estimate":null,"reputation_summary":"","known_positives":[],"known_concerns":[],'
+        '"confidence":"none","knowledge_cutoff_note":""}'
+    )
+    try:
+        if not llm_enabled():
+            return None
+        if not (_get("FIREWORKS_API_KEY") or _get("LLM_API_KEY")):
+            return None
+        extras: List[str] = []
+        if job_title:
+            extras.append(f"Job title context: {job_title}")
+        if job_location:
+            extras.append(f"Location context: {job_location}")
+        extra_blk = ("\n" + "\n".join(extras)) if extras else ""
+        system = (
+            "You are a company research assistant. Respond only with valid JSON. "
+            "No preamble. No explanation. No markdown."
+        )
+        user = (
+            f"What do you know about {company_name} as an employer?{extra_blk}\n"
+            "Return exactly this JSON structure and nothing else:\n\n"
+            "{\n"
+            '  "known": true or false,\n'
+            '  "company_type": "public/private/government/startup/unknown",\n'
+            '  "industry": "string or null",\n'
+            '  "headquarters": "city, country or null",\n'
+            '  "size_estimate": "startup/small/medium/large/enterprise or null",\n'
+            '  "reputation_summary": "2 sentences max, honest assessment",\n'
+            '  "known_positives": ["list of up to 3 genuine positive traits"],\n'
+            '  "known_concerns": ["list of up to 3 genuine concerns if any"],\n'
+            '  "confidence": "high/medium/low/none",\n'
+            '  "knowledge_cutoff_note": "brief note if info may be outdated"\n'
+            "}\n\n"
+            "If you have no knowledge of this company, set known to false and confidence to none. "
+            "Never invent information."
+        )
+        raw = await call_llm_safe(
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            fallback=fallback,
+            request_id=request_id,
+            model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
+            temperature=0.2,
+            max_tokens=600,
+            timeout=8.0,
+            prose_mode=False,
+            max_chars=8000,
+            min_prose_len=2,
+            require_sentence_period=False,
+        )
+        data = _parse_llm_json_object(raw)
+        if not data or not data.get("known"):
+            return None
+        conf = str(data.get("confidence") or "").lower()
+        if conf in ("none", ""):
+            return None
+        return data
+    except Exception:  # noqa: BLE001
+        logger.warning("llm_company_baseline_failed request_id=%s", request_id, exc_info=False)
+        return None
+
+
+def _serper_summary_for_llm(rows: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    out: List[Dict[str, str]] = []
+    for row in rows[:12]:
+        out.append(
+            {
+                "title": str(row.get("title") or "")[:240],
+                "snippet": str(row.get("snippet") or "")[:400],
+                "link": str(row.get("link") or "")[:300],
+            }
+        )
+    return out
+
+
+async def synthesize_reputation(
+    company_name: str,
+    llm_baseline: Optional[Dict[str, Any]],
+    serper_summary: Optional[List[Dict[str, str]]],
+    *,
+    legacy_score: int,
+    legacy_sentiment: str,
+    legacy_green: List[str],
+    legacy_red: List[str],
+    sources_found: int,
+    request_id: str = "reputation_synthesize",
+) -> Optional[Dict[str, Any]]:
+    from backend.core.llm_fireworks import _get, llm_enabled
+    from backend.core.llm_safe import call_llm_safe
+
+    has_base = bool(llm_baseline)
+    has_serper = bool(serper_summary)
+    if not has_base and not has_serper:
+        return None
+
+    rel_n = len(serper_summary or [])
+    if not llm_enabled() or not (_get("FIREWORKS_API_KEY") or _get("LLM_API_KEY")):
+        return _synthesize_fallback_payload(
+            company_name,
+            llm_baseline,
+            serper_summary,
+            legacy_score=legacy_score,
+            legacy_sentiment=legacy_sentiment,
+            legacy_green=legacy_green,
+            legacy_red=legacy_red,
+            sources_found=sources_found,
+        )
+
+    serper_blob = json.dumps(serper_summary or [], ensure_ascii=False)
+    base_blob = json.dumps(llm_baseline or {}, ensure_ascii=False)
+
+    if has_base and has_serper:
+        branch_user = (
+            f"Synthesize a company reputation assessment for {company_name}.\n\n"
+            f"LLM knowledge:\n{base_blob}\n\n"
+            f"Live search findings:\n{serper_blob}\n\n"
+            "Return exactly this JSON:\n"
+            "{\n"
+            '  "overall_sentiment": "positive/mixed/negative/unknown",\n'
+            '  "review_confidence_score": <integer 0-100>,\n'
+            '  "plain_summary": "2-3 sentences, recruiter tone, honest",\n'
+            '  "green_flags": ["up to 3 specific positives"],\n'
+            '  "red_flags": ["up to 3 specific concerns"],\n'
+            '  "data_sources": ["LLM knowledge", "Live search"],\n'
+            '  "reliability": "high/medium/low"\n'
+            "}\n"
+            "plain_summary must be original prose, not copied snippets. "
+            "green_flags and red_flags must be specific to this company. "
+            "review_confidence_score: if both sources agree, 65-85; if conflicting, 45-65."
+        )
+        expected_sources = ["LLM knowledge", "Live search"]
+    elif has_base:
+        branch_user = (
+            f"Synthesize a company reputation assessment for {company_name}.\n\n"
+            f"LLM knowledge:\n{base_blob}\n\n"
+            "Live search returned no usable rows for this run.\n\n"
+            "Return exactly this JSON:\n"
+            "{\n"
+            '  "overall_sentiment": "positive/mixed/negative/unknown",\n'
+            '  "review_confidence_score": <integer 0-100>,\n'
+            '  "plain_summary": "2-3 sentences; end by noting live review data was unavailable.",\n'
+            '  "green_flags": ["up to 3 specific positives"],\n'
+            '  "red_flags": ["up to 3 specific concerns"],\n'
+            '  "data_sources": ["LLM knowledge only"],\n'
+            '  "reliability": "high/medium/low"\n'
+            "}\n"
+            "Add to plain_summary: Note: live review data was unavailable at this time.\n"
+            "If LLM confidence in the baseline was high, score 50-65; medium 30-50; else lower."
+        )
+        expected_sources = ["LLM knowledge only"]
+    else:
+        branch_user = (
+            f"Synthesize a company reputation assessment for {company_name}.\n\n"
+            "LLM had no reliable prior knowledge of this employer.\n\n"
+            f"Live search findings:\n{serper_blob}\n\n"
+            "Return exactly this JSON:\n"
+            "{\n"
+            '  "overall_sentiment": "positive/mixed/negative/unknown",\n'
+            '  "review_confidence_score": <integer 0-100>,\n'
+            '  "plain_summary": "2-3 sentences, recruiter tone, honest",\n'
+            '  "green_flags": ["up to 3 specific positives"],\n'
+            '  "red_flags": ["up to 3 specific concerns"],\n'
+            '  "data_sources": ["Live search only"],\n'
+            '  "reliability": "high/medium/low"\n'
+            "}\n"
+            f"If there are 3+ relevant results use 55-70; if 1-2 use 35-55. "
+            f"(This run has {rel_n} summarized rows.)"
+        )
+        expected_sources = ["Live search only"]
+
+    fallback = json.dumps(
+        {
+            "overall_sentiment": legacy_sentiment,
+            "review_confidence_score": legacy_score,
+            "plain_summary": _template_summary(
+                company_name, sources_found, legacy_sentiment, legacy_red, legacy_green
+            ),
+            "green_flags": legacy_green[:3],
+            "red_flags": legacy_red[:3],
+            "data_sources": expected_sources,
+            "reliability": "low",
+        },
+        ensure_ascii=False,
+    )
+
+    try:
+        raw = await call_llm_safe(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are JobSignal's reputation analyst. "
+                        "Respond only with valid JSON. No preamble. No markdown."
+                    ),
+                },
+                {"role": "user", "content": branch_user},
+            ],
+            fallback=fallback,
+            request_id=request_id,
+            model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
+            temperature=0.25,
+            max_tokens=700,
+            timeout=12.0,
+            prose_mode=False,
+            max_chars=12_000,
+            min_prose_len=2,
+            require_sentence_period=False,
+        )
+        data = _parse_llm_json_object(raw)
+        if not data:
+            return _synthesize_fallback_payload(
+                company_name,
+                llm_baseline,
+                serper_summary,
+                legacy_score=legacy_score,
+                legacy_sentiment=legacy_sentiment,
+                legacy_green=legacy_green,
+                legacy_red=legacy_red,
+                sources_found=sources_found,
+            )
+        if isinstance(data.get("data_sources"), list):
+            ds = [str(x) for x in data["data_sources"]]
+        else:
+            ds = list(expected_sources)
+        data["data_sources"] = ds
+        return data
+    except Exception:  # noqa: BLE001
+        logger.warning("synthesize_reputation_failed request_id=%s", request_id, exc_info=False)
+        return _synthesize_fallback_payload(
+            company_name,
+            llm_baseline,
+            serper_summary,
+            legacy_score=legacy_score,
+            legacy_sentiment=legacy_sentiment,
+            legacy_green=legacy_green,
+            legacy_red=legacy_red,
+            sources_found=sources_found,
+        )
+
+
+def _sentiment_to_simple(legacy: str) -> str:
+    s = (legacy or "unknown").lower().strip()
+    if "positive" in s and "negative" not in s:
+        return "positive"
+    if "negative" in s:
+        return "negative"
+    if "mixed" in s:
+        return "mixed"
+    return "unknown"
+
+
+def _synthesize_fallback_payload(
+    company_name: str,
+    llm_baseline: Optional[Dict[str, Any]],
+    serper_summary: Optional[List[Dict[str, str]]],
+    *,
+    legacy_score: int,
+    legacy_sentiment: str,
+    legacy_green: List[str],
+    legacy_red: List[str],
+    sources_found: int,
+) -> Dict[str, Any]:
+    has_base = bool(llm_baseline)
+    has_serper = bool(serper_summary)
+    if has_base and has_serper:
+        return {
+            "overall_sentiment": legacy_sentiment,
+            "review_confidence_score": legacy_score,
+            "plain_summary": _template_summary(
+                company_name, sources_found, legacy_sentiment, legacy_red, legacy_green
+            ),
+            "green_flags": legacy_green[:3] or ["No strong positives identified."],
+            "red_flags": legacy_red[:3],
+            "data_sources": ["LLM knowledge", "Live search"],
+            "reliability": "medium",
+        }
+    if has_base:
+        ds = ["LLM knowledge only"]
+        note = " Note: live review data was unavailable at this time."
+        summary = (llm_baseline or {}).get("reputation_summary") or ""
+        summary = f"{summary}{note}" if summary else note.strip()
+        greens = [str(x) for x in (llm_baseline or {}).get("known_positives") or []][:3]
+        reds = [str(x) for x in (llm_baseline or {}).get("known_concerns") or []][:3]
+        if not greens and legacy_green:
+            greens = legacy_green[:3]
+        if not reds and legacy_red:
+            reds = legacy_red[:3]
+        return {
+            "overall_sentiment": _sentiment_from_baseline(llm_baseline)
+            or legacy_sentiment
+            or _sentiment_to_simple(legacy_sentiment),
+            "review_confidence_score": max(30, min(65, legacy_score)) if legacy_score else 45,
+            "plain_summary": summary
+            or build_template_fallback(
+                company_name,
+                _sentiment_from_baseline(llm_baseline) or "unknown",
+                greens,
+                reds,
+                sources_found,
+            ),
+            "green_flags": greens or ["No strong positives identified."],
+            "red_flags": reds or [],
+            "data_sources": ds,
+            "reliability": "medium",
+        }
+    if has_serper:
+        return {
+            "overall_sentiment": legacy_sentiment,
+            "review_confidence_score": legacy_score,
+            "plain_summary": _template_summary(
+                company_name, sources_found, legacy_sentiment, legacy_red, legacy_green
+            ),
+            "green_flags": legacy_green[:3] or ["No strong positives identified."],
+            "red_flags": legacy_red[:3],
+            "data_sources": ["Live search only"],
+            "reliability": "medium",
+        }
+    return {}
+
+
+def _sentiment_from_baseline(baseline: Optional[Dict[str, Any]]) -> str:
+    if not baseline:
+        return "unknown"
+    concerns = baseline.get("known_concerns") or []
+    pos = baseline.get("known_positives") or []
+    if pos and not concerns:
+        return "positive"
+    if concerns and not pos:
+        return "negative"
+    if pos and concerns:
+        return "mixed"
+    return "unknown"
+
+
+async def _one_serper_query(coordinator: Any, q: str) -> Optional[List[Dict[str, Any]]]:
+    try:
+        rows = await asyncio.wait_for(coordinator.search(q, num=5), timeout=6.0)
+        return rows
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def get_company_reviews(
     coordinator: Any,
     company_name: Optional[str],
@@ -213,6 +699,9 @@ async def get_company_reviews(
     request_id: str = "unknown",
     quick: bool = False,
     employer_confirmed: bool = True,
+    job_url: Optional[str] = None,
+    job_title: Optional[str] = None,
+    job_location: Optional[str] = None,
 ) -> ReviewSummary:
     if not employer_confirmed:
         return ReviewSummary(
@@ -225,191 +714,267 @@ async def get_company_reviews(
             plain_summary="",
         )
 
-    if (
-        not company_name
-        or company_name.lower() in ("unknown", "n/a", "none", "null")
-        or is_job_board_brand_label(company_name)
-    ):
+    resolved = resolve_reputation_query_name(company_name, job_url)
+    if not resolved:
         return ReviewSummary(
             status="company_not_identified",
-            message="We could not identify the company name from this posting. Paste the company name manually to enable reputation checks."
+            message="We could not identify the company name from this posting. Paste the company name manually to enable reputation checks.",
         )
 
-    # Six parallel Serper calls (fits tight SEARCH_MAX_CALLS_REPUTATION budgets on Railway).
-    # Plain queries only — site: operators often return empty/blocked rows from datacenter egress IPs.
-    # Plain queries only — avoid the literal phrase "twitter employees", which surfaces unrelated
-    # news about Twitter-the-company. Real X/Twitter rows are detected by domain in ``_parse_serper_item``.
-    queries = {
-        "reviews_aggregate": f"{company_name} employee reviews ratings Glassdoor Indeed",
-        "linkedin_company": f"{company_name} LinkedIn company reviews employees",
-        "reddit_culture": f"{company_name} company culture reddit employees",
-        "x_layoffs": f'"{company_name}" layoffs OR restructuring OR downsizing',
-        "x_watchouts": f'"{company_name}" toxic workplace OR scam job OR fake recruiter',
-        "x_positive": f'"{company_name}" great employer OR recommend working OR good culture',
-    }
-    if quick:
-        queries = {
-            "reviews_aggregate": queries["reviews_aggregate"],
-            "reddit_culture": queries["reddit_culture"],
-            "x_watchouts": queries["x_watchouts"],
-        }
+    company_name_eff = resolved
+
+    query_templates_full = [
+        f"{company_name_eff} employee reviews rating",
+        f"{company_name_eff} Glassdoor Indeed workplace",
+        f"{company_name_eff} company culture employees",
+        f"{company_name_eff} employer reputation",
+    ]
+    query_templates = query_templates_full[:3] if quick else query_templates_full
+    query_keys = [f"enrich_{i}" for i in range(len(query_templates))]
+
+    async def _run_pipeline() -> ReviewSummary:
+        baseline_task = asyncio.create_task(
+            get_llm_company_baseline(
+                company_name_eff,
+                job_title,
+                job_location,
+                request_id=f"{request_id}_baseline",
+            )
+        )
+        serper_tasks = [_one_serper_query(coordinator, q) for q in query_templates]
+        serper_gathered = asyncio.gather(*serper_tasks)
+        llm_baseline, raw_lists = await asyncio.gather(baseline_task, serper_gathered)
+
+        results: Dict[str, List[Dict[str, Any]]] = {}
+        flat_for_summary: List[Dict[str, Any]] = []
+        for key, q, rows in zip(query_keys, query_templates, raw_lists):
+            if rows is None:
+                results[key] = []
+                continue
+            filtered = [row for row in rows if is_company_relevant(row, company_name_eff)]
+            results[key] = filtered
+            for row in filtered:
+                flat_for_summary.append(row)
+
+        serper_for_llm = _serper_summary_for_llm(flat_for_summary) if flat_for_summary else None
+
+        all_highlights: List[ReviewSource] = []
+        platforms_found: set[str] = set()
+        reddit_results: List[ReviewSource] = []
+        x_results: List[ReviewSource] = []
+
+        for k, query_res in results.items():
+            for item in query_res:
+                source = _parse_serper_item(item, k, company_name_eff)
+                if source:
+                    if source.platform == "Reddit":
+                        reddit_results.append(source)
+                    elif source.platform == "X/Twitter":
+                        x_results.append(source)
+                    else:
+                        if source.platform not in platforms_found:
+                            all_highlights.append(source)
+                            platforms_found.add(source.platform)
+
+        reddit_data = _process_reddit(reddit_results)
+        if reddit_data:
+            platforms_found.add("Reddit")
+
+        x_data = _process_x(x_results)
+        if x_data:
+            platforms_found.add("X/Twitter")
+
+        score = 50.0
+
+        def score_source(sentiment: str, reliability_weight: float) -> None:
+            nonlocal score
+            if sentiment == "positive":
+                score += 15 * reliability_weight
+            elif sentiment == "mixed":
+                score += 3 * reliability_weight
+            elif sentiment == "negative":
+                score -= 15 * reliability_weight
+
+        all_red: List[str] = []
+        all_green: List[str] = []
+
+        for h in all_highlights:
+            w = {"high": 0.9, "medium": 0.7}.get(h.reliability, 0.45)
+            if h.platform == "Glassdoor":
+                w = 0.95
+            elif h.platform == "Indeed":
+                w = 0.90
+            elif h.platform == "LinkedIn":
+                w = 0.80
+            elif h.platform == "Trustpilot":
+                w = 0.65
+            score_source(h.sentiment, w)
+
+            text = (h.snippet + " " + (h.post_title or "")).lower()
+            has_green = False
+            has_red = False
+
+            for t in GLOBAL_RED_TRIGGERS:
+                if t in text:
+                    all_red.append(f"{t} (via {h.platform})")
+                    has_red = True
+
+            for t in GLOBAL_GREEN_TRIGGERS:
+                if t in text:
+                    all_green.append(f"{t} (via {h.platform})")
+                    has_green = True
+
+            if h.sentiment == "negative" and not has_red:
+                all_red.append(f"Negative feedback on {h.platform} (via {h.platform})")
+            if h.sentiment == "positive" and not has_green:
+                all_green.append(f"Positive feedback on {h.platform} (via {h.platform})")
+
+        if reddit_data:
+            score_source(str(reddit_data["sentiment"]).replace("mostly ", ""), 0.70)
+            for r in reddit_data["red_flags_found"]:
+                all_red.append(f"{r} (via Reddit)")
+            for g in reddit_data["green_flags_found"]:
+                all_green.append(f"{g} (via Reddit)")
+
+        if x_data:
+            score_source(str(x_data["sentiment"]).replace("mostly ", ""), 0.55)
+            for r in x_data["red_flags_found"]:
+                all_red.append(f"{r} (via X)")
+            for g in x_data["green_flags_found"]:
+                all_green.append(f"{g} (via X)")
+
+        red_dedup = _dedup_flags(all_red, 4)
+        green_dedup = _dedup_flags(all_green, 4)
+
+        score -= 10 * len(red_dedup)
+        score += min(20, 5 * len(green_dedup))
+
+        final_score = int(min(max(score, 0), 100))
+
+        positive_count = sum(1 for h in all_highlights if h.sentiment == "positive") + (
+            1 if reddit_data and "positive" in str(reddit_data["sentiment"]) else 0
+        )
+        negative_count = sum(1 for h in all_highlights if h.sentiment == "negative") + (
+            1 if reddit_data and "negative" in str(reddit_data["sentiment"]) else 0
+        )
+
+        overall_sentiment = "mixed"
+        if positive_count > negative_count * 2:
+            overall_sentiment = "mostly positive"
+        elif negative_count > positive_count:
+            overall_sentiment = "mostly negative"
+
+        sources_unavailable = [
+            p for p in ["Glassdoor", "Indeed", "Trustpilot", "LinkedIn", "Reddit", "X/Twitter"] if p not in platforms_found
+        ]
+
+        highlights_payload = [
+            {
+                "platform": h.platform,
+                "rating": h.rating,
+                "review_count": h.review_count,
+                "sentiment": h.sentiment,
+                "snippet": h.snippet,
+                "reliability": h.reliability,
+            }
+            for h in all_highlights
+        ]
+
+        if not llm_baseline and not serper_for_llm:
+            return ReviewSummary(
+                review_confidence_score=None,
+                overall_sentiment="unknown",
+                sources_checked=len(query_templates),
+                sources_found=0,
+                plain_summary=_template_summary(company_name_eff, 0, "unknown", [], []),
+                sources_unavailable=["Glassdoor", "Indeed", "Trustpilot", "LinkedIn", "Reddit", "X/Twitter"],
+                data_sources=(),
+                reliability_report="",
+            )
+
+        synth = await synthesize_reputation(
+            company_name_eff,
+            llm_baseline,
+            serper_for_llm,
+            legacy_score=final_score,
+            legacy_sentiment=overall_sentiment,
+            legacy_green=green_dedup,
+            legacy_red=red_dedup,
+            sources_found=len(platforms_found),
+            request_id=f"{request_id}_synthesize",
+        )
+        if not synth:
+            return ReviewSummary(
+                review_confidence_score=None,
+                overall_sentiment="unknown",
+                sources_checked=len(query_templates),
+                sources_found=len(platforms_found),
+                highlights=highlights_payload,
+                plain_summary=_template_summary(company_name_eff, 0, "unknown", [], []),
+                sources_unavailable=sources_unavailable,
+                reddit=reddit_data,
+                x_twitter=x_data,
+                data_sources=(),
+                reliability_report="",
+            )
+
+        plain = str(synth.get("plain_summary") or "").strip()
+        osent = str(synth.get("overall_sentiment") or "unknown")
+        gfs = [str(x) for x in (synth.get("green_flags") or [])][:4]
+        rfs = [str(x) for x in (synth.get("red_flags") or [])][:4]
+        rcs = synth.get("review_confidence_score")
+        try:
+            rcs_int = int(rcs) if rcs is not None else final_score
+            rcs_int = max(0, min(100, rcs_int))
+        except Exception:  # noqa: BLE001
+            rcs_int = final_score
+
+        if contains_raw_snippet(plain):
+            plain = build_template_fallback(
+                company_name_eff,
+                osent,
+                gfs or green_dedup,
+                rfs or red_dedup,
+                len(platforms_found),
+            )
+
+        ds_raw = synth.get("data_sources") or []
+        ds_tuple = tuple(str(x) for x in ds_raw) if isinstance(ds_raw, list) else ()
+        rel_rep = str(synth.get("reliability") or "")
+
+        display_sentiment = osent
+        if osent == "positive" and overall_sentiment == "mostly positive":
+            display_sentiment = overall_sentiment
+        elif osent == "negative" and overall_sentiment == "mostly negative":
+            display_sentiment = overall_sentiment
+
+        return ReviewSummary(
+            review_confidence_score=rcs_int,
+            overall_sentiment=display_sentiment,
+            sources_checked=len(query_templates),
+            sources_found=len(platforms_found),
+            highlights=highlights_payload,
+            red_flags=rfs or red_dedup,
+            green_flags=gfs or green_dedup,
+            plain_summary=plain,
+            sources_unavailable=sources_unavailable,
+            reddit=reddit_data,
+            x_twitter=x_data,
+            data_sources=ds_tuple,
+            reliability_report=rel_rep,
+        )
 
     try:
-        tasks = {k: coordinator.search(q, num=5) for k, q in queries.items()}
-        # Wait up to 10s for the searches
-        results_list = await asyncio.wait_for(asyncio.gather(*tasks.values()), timeout=8.0)
-        results = {}
-        for k, rows in zip(tasks.keys(), results_list):
-            if rows is None:
-                results[k] = None
-            else:
-                results[k] = [row for row in rows if is_company_relevant(row, company_name)]
+        return await asyncio.wait_for(_run_pipeline(), timeout=45.0)
     except asyncio.TimeoutError:
         return ReviewSummary(status="unavailable", message="Review pipeline timed out.", timeout=True, partial=True)
-    except Exception as e:
-        import logging
-        logging.error(f"Review pipeline error: {e}")
-        return ReviewSummary(status="unavailable", message="Reputation data could not be retrieved for this request.", error_type="internal")
-
-    all_highlights: List[ReviewSource] = []
-    platforms_found = set()
-    
-    reddit_results = []
-    x_results = []
-
-    for k, query_res in results.items():
-        if query_res is None: continue # dropped by coordinator
-        for item in query_res:
-            source = _parse_serper_item(item, k, company_name)
-            if source:
-                if source.platform == "Reddit":
-                    reddit_results.append(source)
-                elif source.platform == "X/Twitter":
-                    x_results.append(source)
-                else:
-                    if source.platform not in platforms_found:
-                        all_highlights.append(source)
-                        platforms_found.add(source.platform)
-
-    # Process Reddit
-    reddit_data = _process_reddit(reddit_results)
-    if reddit_data:
-        platforms_found.add("Reddit")
-    
-    # Process X
-    x_data = _process_x(x_results)
-    if x_data:
-        platforms_found.add("X/Twitter")
-
-    if not all_highlights and not reddit_data and not x_data:
+    except Exception as e:  # noqa: BLE001
+        logger.error("Review pipeline error: %s", e)
         return ReviewSummary(
-            review_confidence_score=None,
-            overall_sentiment="unknown",
-            sources_checked=len(queries),
-            sources_found=0,
-            plain_summary=_template_summary(company_name, 0, "unknown", [], []),
-            sources_unavailable=["Glassdoor", "Indeed", "Trustpilot", "LinkedIn", "Reddit", "X/Twitter"]
+            status="unavailable",
+            message="Reputation data could not be retrieved for this request.",
+            error_type="internal",
         )
-
-    # Score calculation using Reliability table
-    score = 50.0
-    
-    def score_source(sentiment, reliability_weight):
-        nonlocal score
-        if sentiment == "positive": score += 15 * reliability_weight
-        elif sentiment == "mixed": score += 3 * reliability_weight
-        elif sentiment == "negative": score -= 15 * reliability_weight
-
-    all_red = []
-    all_green = []
-
-    for h in all_highlights:
-        w = {"high": 0.9, "medium": 0.7}.get(h.reliability, 0.45)
-        if h.platform == "Glassdoor": w = 0.95
-        elif h.platform == "Indeed": w = 0.90
-        elif h.platform == "LinkedIn": w = 0.80
-        elif h.platform == "Trustpilot": w = 0.65
-        score_source(h.sentiment, w)
-        
-        text = (h.snippet + " " + (h.post_title or "")).lower()
-        has_green = False
-        has_red = False
-        
-        for t in GLOBAL_RED_TRIGGERS:
-            if t in text:
-                all_red.append(f"{t} (via {h.platform})")
-                has_red = True
-                
-        for t in GLOBAL_GREEN_TRIGGERS:
-            if t in text:
-                all_green.append(f"{t} (via {h.platform})")
-                has_green = True
-                
-        if h.sentiment == "negative" and not has_red:
-            all_red.append(f"Negative feedback on {h.platform} (via {h.platform})")
-        if h.sentiment == "positive" and not has_green:
-            all_green.append(f"Positive feedback on {h.platform} (via {h.platform})")
-
-    if reddit_data:
-        score_source(reddit_data["sentiment"].replace("mostly ", ""), 0.70)
-        for r in reddit_data["red_flags_found"]: all_red.append(f"{r} (via Reddit)")
-        for g in reddit_data["green_flags_found"]: all_green.append(f"{g} (via Reddit)")
-        
-    if x_data:
-        score_source(x_data["sentiment"].replace("mostly ", ""), 0.55)
-        for r in x_data["red_flags_found"]: all_red.append(f"{r} (via X)")
-        for g in x_data["green_flags_found"]: all_green.append(f"{g} (via X)")
-
-    red_dedup = _dedup_flags(all_red, 4)
-    green_dedup = _dedup_flags(all_green, 4)
-    
-    score -= 10 * len(red_dedup)
-    score += min(20, 5 * len(green_dedup))
-    
-    final_score = int(min(max(score, 0), 100))
-
-    positive_count = sum(1 for h in all_highlights if h.sentiment == "positive") + (1 if reddit_data and "positive" in reddit_data["sentiment"] else 0)
-    negative_count = sum(1 for h in all_highlights if h.sentiment == "negative") + (1 if reddit_data and "negative" in reddit_data["sentiment"] else 0)
-    
-    overall_sentiment = "mixed"
-    if positive_count > negative_count * 2: overall_sentiment = "mostly positive"
-    elif negative_count > positive_count: overall_sentiment = "mostly negative"
-
-    # Keep narrative anchored to curated platform highlights; social channels still influence
-    # score/flags via reddit_data and x_data, but raw snippets are too noisy for primary prose.
-    avg_rating = _average_rating(all_highlights)
-    # Candidate-facing reputation copy is deterministic for now. Live traffic still showed
-    # prompt scaffolding echoed back by the model, so prefer stable structured prose.
-    plain_summary = _template_summary(
-        company_name,
-        len(platforms_found),
-        overall_sentiment,
-        red_dedup,
-        green_dedup,
-    )
-
-    sources_unavailable = [p for p in ["Glassdoor", "Indeed", "Trustpilot", "LinkedIn", "Reddit", "X/Twitter"] if p not in platforms_found]
-
-    return ReviewSummary(
-        review_confidence_score=final_score,
-        overall_sentiment=overall_sentiment,
-        sources_checked=len(queries),
-        sources_found=len(platforms_found),
-        highlights=[{
-            "platform": h.platform,
-            "rating": h.rating,
-            "review_count": h.review_count,
-            "sentiment": h.sentiment,
-            "snippet": h.snippet,
-            "reliability": h.reliability
-        } for h in all_highlights],
-        red_flags=red_dedup,
-        green_flags=green_dedup,
-        plain_summary=plain_summary,
-        sources_unavailable=sources_unavailable,
-        reddit=reddit_data,
-        x_twitter=x_data
-    )
 
 def _average_rating(highlights: List[ReviewSource]) -> Optional[float]:
     vals = [float(h.rating) for h in highlights if h.rating is not None]

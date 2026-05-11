@@ -31,6 +31,9 @@ export interface ReviewSummary {
   red_flags?: string[];
   green_flags?: string[];
   plain_summary?: string;
+  /** How reputation was produced: LLM baseline and/or live search. */
+  data_sources?: string[];
+  reliability_report?: string;
   reddit?: Record<string, unknown> | null;
   x_twitter?: Record<string, unknown> | null;
   message?: string;

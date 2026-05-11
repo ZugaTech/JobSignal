@@ -10,6 +10,22 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+function reputationSourcesCaption(rs: SanitizedVerifyReport['review_summary']): string | null {
+  if (!rs) return null;
+  const ds = rs.data_sources;
+  if (!Array.isArray(ds) || ds.length === 0) return null;
+  if (ds.includes('LLM knowledge') && ds.includes('Live search')) {
+    return 'Sources: LLM knowledge + Live search';
+  }
+  if (ds.length === 1 && ds[0] === 'LLM knowledge only') {
+    return 'Sources: LLM knowledge only (live data unavailable)';
+  }
+  if (ds.length === 1 && ds[0] === 'Live search only') {
+    return 'Sources: Live search only';
+  }
+  return `Sources: ${ds.join(', ')}`;
+}
+
 export function ReputationSection({ report }: { report: SanitizedVerifyReport }) {
   return (
     <>
@@ -49,7 +65,9 @@ export function ReputationSection({ report }: { report: SanitizedVerifyReport })
         </div>
       )}
 
-      {report.reputationPanelVariant === 'full' && report.review_summary && (
+      {report.reputationPanelVariant === 'full' && report.review_summary && (() => {
+        const reputationSourcesLine = reputationSourcesCaption(report.review_summary);
+        return (
         <div className="glass rounded-3xl p-6 md:p-8 space-y-6 border border-border/60 ring-1 ring-white/[0.04]">
           <div>
             <h3 className="text-lg md:text-xl font-bold flex items-center gap-2">
@@ -118,6 +136,9 @@ export function ReputationSection({ report }: { report: SanitizedVerifyReport })
             <p className="text-[13px] sm:text-sm text-neutral-300 leading-[1.65]">
               {rewriteMicrocopy(report.review_summary.plain_summary || '')}
             </p>
+            {reputationSourcesLine ? (
+              <p className="text-[11px] mt-3 leading-snug text-[#525252]">{reputationSourcesLine}</p>
+            ) : null}
           </div>
 
           {report.review_summary.reddit &&
@@ -160,7 +181,8 @@ export function ReputationSection({ report }: { report: SanitizedVerifyReport })
               </div>
             )}
         </div>
-      )}
+        );
+      })()}
     </>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, ClipboardList, Gauge, Globe, Microscope } from 'lucide-react';
+import { ChevronDown, ChevronUp, Gauge, Globe, Microscope } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -17,8 +17,6 @@ import {
   rowPrimaryLabel,
   type TrustEvidenceBucket,
 } from '../utils/evidenceGroups';
-import { buildAttemptLogLines } from '../utils/attemptLog';
-
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -32,62 +30,6 @@ export function verdictHeroSubtitle(verdict: string): string {
     default:
       return 'We could not fully confirm this from public data alone. Open the employer careers site to confirm the posting before you invest time in an application.';
   }
-}
-
-/** Transparency: cache, listing fetch policy, and similar-jobs search outcome (warnings stay under Heads up). */
-export function PipelineAttemptLog({ report }: { report: SanitizedVerifyReport }) {
-  const lines = buildAttemptLogLines(report);
-  const [open, setOpen] = useState(true);
-
-  if (lines.length === 0) {
-    return null;
-  }
-
-  return (
-    <section className="rounded-2xl border border-border/50 bg-neutral-950/35 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-900/50 transition-colors min-h-[48px]"
-        aria-expanded={open}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <ClipboardList className="w-4 h-4 text-brand/90 shrink-0" aria-hidden />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-neutral-200">What we tried</p>
-            <p className="text-[11px] text-neutral-500 leading-snug">
-              {lines.length} context line{lines.length === 1 ? '' : 's'} (cache, page fetch, optional searches). For
-              cautions, see Heads up above when present.
-            </p>
-          </div>
-        </div>
-        {open ? (
-          <ChevronUp className="w-4 h-4 text-neutral-500 shrink-0" aria-hidden />
-        ) : (
-          <ChevronDown className="w-4 h-4 text-neutral-500 shrink-0" aria-hidden />
-        )}
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden border-t border-border/40"
-          >
-            <ul className="px-4 pb-4 pt-2 space-y-2 text-sm text-neutral-300 leading-snug">
-              {lines.map((line, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="text-neutral-500 shrink-0">—</span>
-                  <span>{rewriteMicrocopy(line)}</span>
-                </li>
-              ))}
-            </ul>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </section>
-  );
 }
 
 function ScoreMetricBar({ label, value }: { label: string; value: number }) {
