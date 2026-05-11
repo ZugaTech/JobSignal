@@ -179,7 +179,7 @@ export function EvidenceOverviewAccordion({
             <p className="text-sm font-semibold text-neutral-200">Evidence overview</p>
             <p className="text-[11px] text-neutral-500 leading-snug">
               {hideSignalsSection
-                ? 'Structured checks were not returned for this run.'
+                ? 'No public check rows are available to list yet. The summary above still reflects what we could infer.'
                 : 'Tap to expand how each public check landed.'}
             </p>
           </div>
@@ -201,7 +201,8 @@ export function EvidenceOverviewAccordion({
             <div className="px-4 pb-4 pt-2">
               {hideSignalsSection ? (
                 <p className="text-sm text-neutral-500">
-                  No structured evidence rows were returned for this check.
+                  We did not receive any structured evidence rows for this response. If this persists, try again with the
+                  direct job URL or paste the full posting text.
                 </p>
               ) : (
                 <GroupedEvidenceSections rows={rows} summaryLine={summaryLine} />

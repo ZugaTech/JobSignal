@@ -17,10 +17,25 @@ from backend.core.job_url_shortcuts import is_known_job_platform_url
 from backend.core.llm_safe import under_pytest
 
 _JOB_PATH_RE = re.compile(
-    r"(/jobs?/|/careers?/|/positions?/|/opening|/vacanc|/apply/|/posting/|/requisition/|"
-    r"/job-detail|/jobdetail|/job_description|/jobdescription|/role/|/opportunit|/join-us/|"
+    r"(/jobs?/|/careers?/|/positions?/|/position/|/opening|/openings/|/vacanc|/vacancies/|"
+    r"/listings/|/apply/|/posting/|/requisition/|/job-detail|/jobdetail|/job_description|/jobdescription|"
+    r"/role/|/roles/|/opportunit|/join-us/|/emploi/|/stellen(?:angebote)?/|/empleo/|/offres/|/trabajo/|"
     r"linkedin\.com/jobs|indeed\.com|glassdoor\.com/job|greenhouse\.io|lever\.co|"
     r"workday|wellfound\.com|jobvite|smartrecruiters|myworkdayjobs|teamtailor|personio|workable)",
+    re.I,
+)
+# Locale-prefixed job paths: /en/careers/foo, /de/jobs/123, /fr-fr/emplois/bar
+_LOCALE_JOB_PREFIX_RE = re.compile(
+    r"^/(?:[a-z]{2}(?:-[a-z]{2})?/)"
+    r"(?:jobs?|careers?|vacancies|vacanc|listings|openings?|positions?|postings?|roles?|opportunities|emplois?|"
+    r"stellenangebote|empleos?|offres|trabajo)(?:/|$)",
+    re.I,
+)
+_JOB_QUERY_HINT_RE = re.compile(
+    r"(?:^|[?&])(?:"
+    r"gh_jid|job_?id|jobid|vacancy_?id|requisition_?id|requisitionid|position_?id|"
+    r"listing_?id|req_?id|jr_?id|fid|opening_?id"
+    r")=",
     re.I,
 )
 _JOB_KEYWORD_RE = re.compile(
@@ -92,9 +107,6 @@ _REASON_SKIP_SHORTENER = "Please paste the final destination URL, not a shortene
 _REASON_SKIP_GOOGLE = "Please paste the direct link to the job posting, not a search results page."
 _REASON_SKIP_OTHER = "This link format cannot be verified automatically. Paste the direct job posting URL instead."
 _REASON_VERIFY_DOMAIN = "This job page could not be reached right now. It may be behind a login or temporarily unavailable."
-_REASON_VERIFY_JOBISH = (
-    "We could not confirm this is a job posting. If it is, paste the job description directly for a better result."
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,6 +229,14 @@ def _url_matches_job_heuristic(url: str) -> bool:
     first_label = host.split(".", 1)[0] if host else ""
     if first_label in _JOB_SUBDOMAIN_LABELS and len([p for p in path.split("/") if p]) >= 1:
         return True
+    if _LOCALE_JOB_PREFIX_RE.search(path):
+        return True
+    q = parsed.query or ""
+    if q and _JOB_QUERY_HINT_RE.search(f"?{q}"):
+        return True
+    # Slug-shaped detail pages: /job/..., /role/..., /listing/... (single segment + slug)
+    if re.search(r"/(?:job|role|listing|posting|vacancy|opening|position)(?:/[^/]+){1,4}/?$", path, re.I):
+        return True
     return bool(_JOB_PATH_RE.search(path))
 
 
@@ -261,4 +281,6 @@ async def evaluate_job_url_preflight(
     if job_fetch_enabled():
         return UrlPreflightResult(outcome="proceed", plain_reason="")
 
-    return UrlPreflightResult(outcome="verify_weak", plain_reason=_REASON_VERIFY_JOBISH)
+    # DNS resolved: let the main pipeline run layered evidence (search, scoring). URL-only
+    # heuristics are not authoritative; degrading confidence belongs downstream, not here.
+    return UrlPreflightResult(outcome="proceed", plain_reason="")

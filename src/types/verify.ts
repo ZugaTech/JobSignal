@@ -65,6 +65,8 @@ export interface SanitizedVerifyExtensions {
   coverage_pct: number;
   staleness_flag: boolean;
   scorer_version_display: string;
+  /** How complete structured evidence is (0–100), distinct from verdict confidence. */
+  evidence_completeness_score: number;
   reasons: string[];
   warnings: string[];
   llm_summary: string;

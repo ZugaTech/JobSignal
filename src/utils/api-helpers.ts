@@ -147,6 +147,9 @@ export function sanitizeApiResponse(raw: unknown): SanitizedVerifyReport {
   out.scorer_version_display =
     typeof metaObj.scorer_version === 'string' ? metaObj.scorer_version.trim() : '';
 
+  const ecsRaw = Number((out as Record<string, unknown>).evidence_completeness_score);
+  out.evidence_completeness_score = Number.isFinite(ecsRaw) ? clampScore0to100(ecsRaw) : 0;
+
   const reasonsIn = Array.isArray(out.reasons) ? out.reasons : [];
   const reasonLines = reasonsIn.map((r: unknown) => formatReasonForDisplay(r));
   const seenReason = new Set<string>();

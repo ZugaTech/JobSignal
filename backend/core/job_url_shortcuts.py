@@ -47,6 +47,16 @@ _JOB_BOARD_REGISTRABLE_DOMAINS = frozenset(
         "ycombinator.com",
         "seek.com.au",
         "reed.co.uk",
+        "brightermonday.co.ke",
+        "brightermonday.co.ug",
+        "brightermonday.co.tz",
+        "brightermonday.com",
+        "jobberman.com",
+        "bayt.com",
+        "naukri.com",
+        "foundit.in",
+        "foundit.com",
+        "gulftalent.com",
     }
 )
 
@@ -60,6 +70,13 @@ _KNOWN_JOB_BOARD_NETLOCS = tuple(
         r"lever\.co",
         r"myworkdayjobs\.com",
         r"workday\.com",
+        r"(^|\.)brightermonday\.",
+        r"(^|\.)jobberman\.",
+        r"seek\.com\.au",
+        r"(^|\.)bayt\.com",
+        r"(^|\.)naukri\.com",
+        r"(^|\.)foundit\.(in|com)",
+        r"(^|\.)gulftalent\.com",
     )
 )
 
@@ -123,6 +140,16 @@ _JOB_BOARD_BRAND_LABELS = frozenset(
         "hired",
         "monster worldwide",
         "myworkdayjobs",
+        "brighter monday",
+        "brightermonday",
+        "brighter monday kenya",
+        "brightermonday kenya",
+        "jobberman",
+        "bayt",
+        "naukri",
+        "foundit",
+        "gulf talent",
+        "gulftalent",
     }
 )
 

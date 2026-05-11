@@ -25,6 +25,24 @@ FETCH_ADAPTER_VERSION = "1.2.0"
 
 _FETCH_HTML_SAMPLE_CAP = 400_000
 
+_PRIMARY_FETCH_HEADERS = {
+    "User-Agent": "JobSignal/1.0 (+https://github.com/jobverification)",
+    "Accept": "text/html,*/*;q=0.8",
+}
+_BROWSER_FETCH_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
+def _urls_same_origin_path(a: str, b: str) -> bool:
+    pa, pb = urlparse(a), urlparse(b)
+    return (pa.scheme, pa.netloc, pa.path.rstrip("/")) == (pb.scheme, pb.netloc, pb.path.rstrip("/"))
+
 
 def extract_employer_urls_from_html(html_bytes: bytes, base_url: str, *, max_urls: int = 48) -> Tuple[str, ...]:
     """Extract employer / careers URLs from fetched HTML (single GET; used for domain alignment).
@@ -451,7 +469,7 @@ def run_job_page_fetch(
         )
 
     timeout = httpx.Timeout(6.0, connect=2.0)
-    headers = {"User-Agent": "JobSignal/1.0 (+https://github.com/jobverification)", "Accept": "text/html,*/*;q=0.8"}
+    headers = dict(_PRIMARY_FETCH_HEADERS)
 
     own_client = client is None
     hc = client or httpx.Client(timeout=timeout, verify=True)
@@ -462,6 +480,7 @@ def run_job_page_fetch(
     content_type: Optional[str] = None
     total_read = 0
     final_url = canonical_url
+    used_browser_ua_fallback = False
 
     try:
         while True:
@@ -523,6 +542,22 @@ def run_job_page_fetch(
                     signals=[_fetch_ok_signal("low", f"Request failed: {type(e).__name__}")],
                     warnings=warnings,
                 )
+
+            if (
+                status_code in (401, 403, 429)
+                and not used_browser_ua_fallback
+                and redirect_hops == 0
+                and _urls_same_origin_path(current, canonical_url)
+            ):
+                used_browser_ua_fallback = True
+                headers = dict(_BROWSER_FETCH_HEADERS)
+                warnings.append(
+                    {
+                        "code": "FETCH_RETRY_BROWSER_UA",
+                        "message": "Blocked or rate-limited on first fetch; retried once with a browser-like profile.",
+                    }
+                )
+                continue
 
             break
 

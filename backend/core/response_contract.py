@@ -51,6 +51,18 @@ def _score_to_label(score: int) -> str:
     return "High"
 
 
+def _early_exit_pipeline_signal(*, details: str) -> Dict[str, Any]:
+    """Visible pipeline row so the UI never shows an empty evidence list for early exits."""
+
+    return {
+        "id": "early_input_scope",
+        "label": "Scope of automated checks",
+        "tier": "T3",
+        "strength": "limited",
+        "details": details[:512],
+    }
+
+
 def build_preflight_skip_report(*, reason: str, request_id: str) -> Dict[str, Any]:
     ts = _now_iso()
     rid = _repair_request_id(request_id)
@@ -61,7 +73,11 @@ def build_preflight_skip_report(*, reason: str, request_id: str) -> Dict[str, An
         "confidence_score": 0,
         "confidence_label": "None",
         "trust_signals": [],
-        "signals": [],
+        "signals": [
+            _early_exit_pipeline_signal(
+                details="Automated checks stopped at URL validation. No job-page evidence was collected."
+            )
+        ],
         "reasons": [reason],
         "warnings": [],
         "llm_summary": summary,
@@ -79,13 +95,17 @@ def build_preflight_verify_job_uncertain_report(*, reason: str, request_id: str)
     ts = _now_iso()
     rid = _repair_request_id(request_id)
     summary = reason if reason.endswith(".") else f"{reason}."
+    scope_detail = (
+        "The full verification pipeline did not run. "
+        "What you see below is an honest boundary on what we could evaluate from your input."
+    )
     return {
         "verdict": "VERIFY",
         "confidence": "low",
         "confidence_score": 15,
         "confidence_label": "Low",
         "trust_signals": [],
-        "signals": [],
+        "signals": [_early_exit_pipeline_signal(details=scope_detail)],
         "reasons": [reason],
         "warnings": [],
         "llm_summary": summary,
@@ -175,6 +195,30 @@ def validate_and_repair_response(report: Dict[str, Any], *, request_id: str) -> 
     sj = out.get("similar_jobs")
     if sj is not None and not isinstance(sj, list):
         out["similar_jobs"] = None
+
+    # Evidence completeness (distinct from verdict confidence): how much structured signal
+    # surface area the response carries, not whether the job is trustworthy.
+    _internal_ids = frozenset({"url_canonical", "input_text_only"})
+    sigs_raw = out.get("signals")
+    sigs: List[Any] = sigs_raw if isinstance(sigs_raw, list) else []
+    visible_pipe = 0
+    for item in sigs:
+        if not isinstance(item, dict):
+            continue
+        sid = str(item.get("id") or "")
+        if sid and sid not in _internal_ids:
+            visible_pipe += 1
+    ts_raw = out.get("trust_signals")
+    ts_len = len(ts_raw) if isinstance(ts_raw, list) else 0
+    v_total = int(out.get("verified_signal_count") or 0)
+    t_total = int(out.get("total_signal_count") or 0)
+    if t_total > 0:
+        ratio = min(1.0, max(0.0, v_total / t_total))
+        from_scorer = int(round(100 * ratio))
+    else:
+        from_scorer = 0
+    from_rows = min(100, visible_pipe * 14 + ts_len * 10)
+    out["evidence_completeness_score"] = max(from_scorer, from_rows) if (from_scorer or from_rows) else from_rows
 
     return out
 

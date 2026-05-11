@@ -36,6 +36,37 @@ def cfg(monkeypatch):
     return EnvConfig.load(strict=False)
 
 
+def test_fetch_403_then_browser_ua_retry_succeeds(monkeypatch, cfg):
+    """Some boards return 403 to non-browser clients; one browser-profile retry is allowed."""
+
+    def fake_gai(host, *args, **kwargs):
+        if host == "example.com":
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+        return socket.getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_gai)
+
+    body = b"<html><title>Engineer</title></html>" + b"x" * 300
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        ua = (request.headers.get("user-agent") or "").lower()
+        if calls["n"] == 1:
+            assert "jobsignal" in ua
+            return httpx.Response(403, content=b"blocked", headers={"content-type": "text/html"})
+        assert "mozilla" in ua
+        return httpx.Response(200, content=body, headers={"content-type": "text/html; charset=utf-8"})
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.Client(transport=transport, timeout=httpx.Timeout(5.0))
+    out = run_job_page_fetch("https://example.com/jobs/1", cfg, client=client)
+    assert out.attempted is True
+    assert calls["n"] == 2
+    assert any(s["id"] == "fetch_ok" and s["strength"] == "high" for s in out.signals)
+    assert any(w.get("code") == "FETCH_RETRY_BROWSER_UA" for w in out.warnings)
+
+
 def test_fetch_200_populates_signals(monkeypatch, cfg):
     def fake_gai(host, *args, **kwargs):
         if host == "example.com":

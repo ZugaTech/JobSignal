@@ -97,6 +97,57 @@ async def test_common_ats_and_careers_url_shapes_proceed(url):
 
 
 @pytest.mark.asyncio
+async def test_unknown_reachable_url_proceeds_when_fetch_disabled(monkeypatch):
+    """Resolvable hosts should reach the main pipeline even without job-fetch preflight metadata."""
+    monkeypatch.setenv("ENABLE_JOB_FETCH", "0")
+    monkeypatch.setattr("backend.core.url_preflight.domain_resolves", lambda _url: True)
+
+    async def fake_head(_url: str):
+        return "ok"
+
+    monkeypatch.setattr("backend.core.url_preflight.head_domain_root", fake_head)
+    cfg = EnvConfig.load(strict=False)
+    result = await evaluate_job_url_preflight("https://example.com/custom-role-page/abc", None, cfg=cfg)
+    assert result.outcome == "proceed"
+
+
+@pytest.mark.asyncio
+async def test_global_job_path_hints_need_head_when_fetch_off(monkeypatch):
+    """Paths that match heuristics proceed before HEAD; this test only ensures head is not required for /vacancies/."""
+    monkeypatch.setenv("ENABLE_JOB_FETCH", "0")
+    monkeypatch.setattr("backend.core.url_preflight.domain_resolves", lambda _url: True)
+
+    async def boom_head(_url: str):
+        raise AssertionError("heuristic match should short-circuit before HEAD")
+
+    monkeypatch.setattr("backend.core.url_preflight.head_domain_root", boom_head)
+    cfg = EnvConfig.load(strict=False)
+    result = await evaluate_job_url_preflight(
+        "https://careers.example.org/vacancies/senior-engineer-2025", None, cfg=cfg
+    )
+    assert result.outcome == "proceed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://careers.example.org/vacancies/senior-engineer-2025",
+        "https://careers.example.org/listings/abc123",
+        "https://careers.example.org/en/jobs/backend",
+        "https://careers.example.org/de/stellenangebote/praktikum",
+        "https://careers.example.org/page?job_id=8844221",
+    ],
+)
+async def test_global_job_path_and_query_hints_proceed(url, monkeypatch):
+    monkeypatch.setenv("ENABLE_JOB_FETCH", "0")
+    monkeypatch.setattr("backend.core.url_preflight.domain_resolves", lambda _url: True)
+    cfg = EnvConfig.load(strict=False)
+    result = await evaluate_job_url_preflight(url, None, cfg=cfg)
+    assert result.outcome == "proceed"
+
+
+@pytest.mark.asyncio
 async def test_unknown_reachable_url_proceeds_to_pipeline_when_fetch_enabled(monkeypatch):
     monkeypatch.setenv("ENABLE_JOB_FETCH", "1")
     monkeypatch.setattr("backend.core.url_preflight.domain_resolves", lambda _url: True)

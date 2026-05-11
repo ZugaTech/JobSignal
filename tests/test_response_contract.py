@@ -47,6 +47,9 @@ def test_fast_fail_skip_report_uses_zero_confidence():
     out = build_preflight_skip_report(reason="Invalid URL.", request_id="00000000-0000-4000-8000-000000000004")
     assert out["confidence_score"] == 0
     assert out["confidence_label"] == "None"
+    assert isinstance(out.get("signals"), list)
+    assert len(out["signals"]) == 1
+    assert out["signals"][0].get("id") == "early_input_scope"
 
 
 def test_missing_confidence_score_repairs_to_zero_not_band_default():
