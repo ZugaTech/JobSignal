@@ -146,7 +146,11 @@ def call_llm_safe_chat_sync(
             if len(text) < 2:
                 logger.warning("llm_response_too_short request_id=%s", request_id)
                 return fallback[:max_chars]
-        if _looks_like_prompt_leak(text):
+        # Prompt-leak heuristic is tuned for natural-language UI copy. In JSON-mode (e.g.
+        # reputation baseline / synthesis) we let the JSON parser be the validator — leak
+        # markers like "data provided" or "based on" routinely appear inside legitimate
+        # structured payloads and would otherwise force a silent fallback.
+        if prose_mode and _looks_like_prompt_leak(text):
             logger.warning("llm_prompt_leak_detected request_id=%s preview=%s", request_id, text[:100])
             return fallback[:max_chars]
         return text[:max_chars]
