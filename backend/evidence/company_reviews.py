@@ -372,22 +372,19 @@ async def get_llm_company_baseline(
             "You are a company research assistant. Respond only with valid JSON. "
             "No preamble. No explanation. No markdown."
         )
+        # Compact schema: dropping low-value fields keeps Kimi K2.6 generation under our 25s
+        # request budget. Industry/headquarters/size were never user-visible.
         user = (
             f"What do you know about {company_name} as an employer?{extra_blk}\n"
-            "Return exactly this JSON structure and nothing else:\n\n"
+            "Return exactly this JSON structure and nothing else:\n"
             "{\n"
-            '  "known": true or false,\n'
-            '  "company_type": "public/private/government/startup/unknown",\n'
-            '  "industry": "string or null",\n'
-            '  "headquarters": "city, country or null",\n'
-            '  "size_estimate": "startup/small/medium/large/enterprise or null",\n'
-            '  "reputation_summary": "2 sentences max, honest assessment",\n'
-            '  "known_positives": ["list of up to 3 genuine positive traits"],\n'
-            '  "known_concerns": ["list of up to 3 genuine concerns if any"],\n'
-            '  "confidence": "high/medium/low/none",\n'
-            '  "knowledge_cutoff_note": "brief note if info may be outdated"\n'
-            "}\n\n"
-            "If you have no knowledge of this company, set known to false and confidence to none. "
+            '  "known": true|false,\n'
+            '  "reputation_summary": "<=2 sentence honest assessment",\n'
+            '  "known_positives": ["up to 3 short bullets"],\n'
+            '  "known_concerns": ["up to 3 short bullets"],\n'
+            '  "confidence": "high|medium|low|none"\n'
+            "}\n"
+            "If you have no knowledge of this company, set known=false and confidence=none. "
             "Never invent information."
         )
         raw = await call_llm_safe(
@@ -399,7 +396,7 @@ async def get_llm_company_baseline(
             request_id=request_id,
             model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
             temperature=0.2,
-            max_tokens=1500,
+            max_tokens=700,
             timeout=25.0,
             prose_mode=False,
             max_chars=8000,
@@ -569,7 +566,7 @@ async def synthesize_reputation(
             request_id=request_id,
             model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
             temperature=0.25,
-            max_tokens=1500,
+            max_tokens=700,
             timeout=25.0,
             prose_mode=False,
             max_chars=12_000,
