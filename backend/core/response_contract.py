@@ -213,8 +213,7 @@ def validate_and_repair_response(report: Dict[str, Any], *, request_id: str) -> 
         out["similar_jobs"] = None
 
     # Evidence completeness must match the scorer's coverage math (verified ÷ total), not a
-    # separate row-count heuristic — otherwise Technical details showed "strong" breadth while
-    # coverage stayed low, and cached vs live could disagree with the same signal payload.
+    # separate row-count heuristic — otherwise layer breadth labels could disagree with coverage.
     cr_raw = out.get("coverage_ratio")
     try:
         cr_f = float(cr_raw) if cr_raw is not None else None

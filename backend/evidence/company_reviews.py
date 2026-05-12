@@ -905,6 +905,21 @@ def _sentiment_from_baseline(baseline: Optional[Dict[str, Any]]) -> str:
     return "unknown"
 
 
+def _cap_review_confidence_score(score: int, *, platforms_found: int, quick: bool) -> int:
+    """Tie reputation numeric confidence to how many distinct platforms returned usable rows.
+
+    Public web search leftovers are not grounds for a perfect score; caps keep the UI honest.
+    """
+
+    v = max(0, min(100, int(score)))
+    n = max(0, int(platforms_found))
+    if quick:
+        ceiling = min(74, 38 + n * 12)
+    else:
+        ceiling = min(84, 48 + n * 12)
+    return min(v, ceiling)
+
+
 async def _one_serper_query(
     coordinator: Any, q: str, *, timeout_s: float = 6.0
 ) -> Optional[List[Dict[str, Any]]]:
@@ -1092,6 +1107,9 @@ async def get_company_reviews(
         score += min(20, 5 * len(green_dedup))
 
         final_score = int(min(max(score, 0), 100))
+        final_score = _cap_review_confidence_score(
+            final_score, platforms_found=len(platforms_found), quick=quick
+        )
 
         positive_count = sum(1 for h in all_highlights if h.sentiment == "positive") + (
             1 if reddit_data and "positive" in str(reddit_data["sentiment"]) else 0
@@ -1142,7 +1160,9 @@ async def get_company_reviews(
                 red_dedup,
                 green_dedup,
             )
-            rcs_quick = min(final_score, 85)
+            rcs_quick = _cap_review_confidence_score(
+                final_score, platforms_found=len(platforms_found), quick=True
+            )
             return ReviewSummary(
                 review_confidence_score=rcs_quick,
                 overall_sentiment=overall_sentiment,
@@ -1222,6 +1242,9 @@ async def get_company_reviews(
             rcs_int = max(0, min(100, rcs_int))
         except Exception:  # noqa: BLE001
             rcs_int = final_score
+        rcs_int = _cap_review_confidence_score(
+            rcs_int, platforms_found=len(platforms_found), quick=False
+        )
 
         if is_prompt_leak(plain) or contains_raw_snippet(plain):
             plain = build_template_fallback(

@@ -256,7 +256,7 @@ def test_text_only_mid_red_flags_yield_strong_verify_copy():
 
 
 def test_scorer_version_is_current():
-    assert SCORER_VERSION == "3.3.0"
+    assert SCORER_VERSION == "3.4.0"
 
 
 def test_url_duplication_signal_does_not_force_hard_skip():

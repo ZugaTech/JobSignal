@@ -22,7 +22,6 @@ import {
 import {
   ConfidenceGaugeStrip,
   EvidenceOverviewAccordion,
-  TechnicalDetailsAccordion,
   verdictHeroSubtitle,
 } from './components/TrustPresentation';
 import { ReputationSection, SimilarJobsPanel, ResultsActionsFooter } from './components/ResultPanels';
@@ -682,6 +681,14 @@ export default function App() {
                         {formatCachedAgo(String(report.cached_at || report.data_freshness || ''))}
                       </span>
                     )}
+                    {report.request_id ? (
+                      <span
+                        className="text-[10px] font-mono text-neutral-600 max-w-[9rem] sm:max-w-[14rem] truncate"
+                        title={report.request_id}
+                      >
+                        {report.request_id}
+                      </span>
+                    ) : null}
                   </div>
                   <button
                     type="button"
@@ -781,7 +788,6 @@ export default function App() {
                         rows={report.display_signal_rows}
                         summaryLine={report.signals_summary_line}
                       />
-                      <TechnicalDetailsAccordion report={report} />
                     </div>
                   </div>
 

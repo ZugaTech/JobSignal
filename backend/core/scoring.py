@@ -13,7 +13,7 @@ from typing import Any, List, Mapping, Optional, Tuple, cast
 from backend.core.decision_schema import DecisionResponse, ReasonItem, SignalEvidence, Verdict, WarningItem
 from backend.core.source_evidence import _strength_rank, sort_evidence_by_trust
 
-SCORER_VERSION = "3.3.0"
+SCORER_VERSION = "3.4.0"
 
 _SEVERE_SCAM_TOKENS = (
     "training_fee",
@@ -308,7 +308,7 @@ def decide_from_signals(
         company_ids.discard("cross_platform_freshness")
         freshness_ids.discard("cross_platform_freshness")
 
-    company_score = _layer_score(sorted_rows, company_ids)
+    company_score = min(_layer_score(sorted_rows, company_ids), 94)
     posting_score = _layer_score(sorted_rows, posting_ids)
     freshness_score = _layer_score(sorted_rows, freshness_ids)
     llm_conf = _layer_score(sorted_rows, {"jd_specificity", "jd_recruiter_intent_score", "jd_employer_identifiability"})

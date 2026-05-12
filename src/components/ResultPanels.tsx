@@ -276,7 +276,7 @@ export function ResultsActionsFooter({
       <p className="text-xs text-neutral-300 leading-snug">{verdictNextStepLine(report.verdict)}</p>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-[11px] text-neutral-600 truncate max-w-[min(100%,16rem)]">
-          Request id and scores live under Technical details.
+          Request id is shown in the bar at the top of the results when you need support.
         </p>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           {report.cached ? (

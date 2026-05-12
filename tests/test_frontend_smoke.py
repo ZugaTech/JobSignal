@@ -60,6 +60,6 @@ def test_verdict_strings_present_in_ui_source():
     blob = _read("src/App.tsx")
     for tok in ("APPLY", "SKIP"):
         assert tok in blob
-    assert "Technical details" in blob or "TrustPresentation" in blob
+    assert "Evidence overview" in blob or "TrustPresentation" in blob
     helpers = _read("src/utils/api-helpers.ts")
     assert "VERIFY" in helpers

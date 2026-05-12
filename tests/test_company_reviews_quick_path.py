@@ -37,6 +37,7 @@ async def test_quick_skips_synthesis_and_uses_live_search_only():
 
     assert out.data_sources == ["Live search only"]
     assert out.review_confidence_score is not None
+    assert out.review_confidence_score <= 74
     assert coord.search_calls == 2
 
 
