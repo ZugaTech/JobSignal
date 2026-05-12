@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Search, FileText, Image as ImageIcon, Clipboard, X, Loader2, CheckCircle2, AlertCircle, ArrowRight, ShieldCheck, Info, ListOrdered } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx, type ClassValue } from 'clsx';
@@ -12,7 +12,13 @@ function cn(...inputs: ClassValue[]) {
 import { useJobSignal } from './hooks/useJobSignal';
 import { useBatchVerify } from './hooks/useBatchVerify';
 import { useClipboardAndHandoff } from './hooks/useClipboardAndHandoff';
-import { rewriteMicrocopy, formatCachedAgo, isSafeHttpUrl, filterReasonsAgainstSummary } from './utils/formatters';
+import {
+  rewriteMicrocopy,
+  formatCachedAgo,
+  isSafeHttpUrl,
+  buildWhatWeFoundBullets,
+  filterHeadsUpWarnings,
+} from './utils/formatters';
 import {
   ConfidenceGaugeStrip,
   EvidenceOverviewAccordion,
@@ -108,6 +114,16 @@ export default function App() {
     runBatch,
     resetBatch,
   } = useBatchVerify();
+
+  const whatWeFoundBullets = useMemo(() => {
+    if (!report) return [];
+    return buildWhatWeFoundBullets(report.verdict, report.llm_summary, report.reasons);
+  }, [report]);
+
+  const headsUpWarnings = useMemo(() => {
+    if (!report) return [];
+    return filterHeadsUpWarnings(report.llm_summary, whatWeFoundBullets, report.warnings);
+  }, [report, whatWeFoundBullets]);
 
   const handleCloseResults = useCallback(() => {
     resetBatch();
@@ -729,27 +745,26 @@ export default function App() {
                         <p className="text-neutral-300 leading-relaxed text-base md:text-lg">
                           {rewriteMicrocopy(report.llm_summary)}
                         </p>
-                        <ul className="space-y-3 pt-1 border-t border-border/40">
-                          {(report.verdict === 'VERIFY'
-                            ? filterReasonsAgainstSummary(String(report.llm_summary || ''), report.reasons || [])
-                            : report.reasons || []
-                          ).map((reason: string, i: number) => (
-                            <li key={i} className="flex gap-3 text-neutral-400 leading-relaxed">
-                              <div className="mt-2 w-1.5 h-1.5 rounded-full bg-brand shrink-0" />
-                              <span>{rewriteMicrocopy(reason)}</span>
-                            </li>
-                          ))}
-                        </ul>
+                        {whatWeFoundBullets.length > 0 && (
+                          <ul className="space-y-3 pt-1 border-t border-border/40">
+                            {whatWeFoundBullets.map((reason: string, i: number) => (
+                              <li key={i} className="flex gap-3 text-neutral-400 leading-relaxed">
+                                <div className="mt-2 w-1.5 h-1.5 rounded-full bg-brand shrink-0" />
+                                <span>{rewriteMicrocopy(reason)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
 
-                      {report.warnings && report.warnings.length > 0 && (
+                      {headsUpWarnings.length > 0 && (
                         <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-6 space-y-3">
                           <h3 className="text-amber-400 font-bold flex items-center gap-2">
                             <AlertCircle className="w-5 h-5" />
                             Heads up
                           </h3>
                           <ul className="space-y-2">
-                            {report.warnings.map((w: string, i: number) => (
+                            {headsUpWarnings.map((w: string, i: number) => (
                               <li key={i} className="text-sm text-amber-200/70 flex gap-2">
                                 <span>•</span>
                                 <span>{rewriteMicrocopy(w)}</span>

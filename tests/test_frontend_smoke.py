@@ -45,6 +45,8 @@ def test_formatters_exports_ui_safety_helpers():
     assert "isUnsafeUserProse" in blob
     assert "looksLikeModelMonologue" in blob
     assert "sanitizeProseForUi" in blob
+    assert "buildWhatWeFoundBullets" in blob
+    assert "filterHeadsUpWarnings" in blob
 
 
 def test_api_helpers_sanitizes_with_prose_guard():

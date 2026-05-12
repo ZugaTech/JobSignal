@@ -164,6 +164,115 @@ export function rewriteMicrocopy(text: string): string {
   return normalizeDisplayDashes(out);
 }
 
+function corpusNormalize(text: string): string {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[\u2014\u2013\-–—]/g, " ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function wordHitRatio(a: string, b: string): number {
+  const wa = corpusNormalize(a).split(" ").filter(Boolean);
+  const wbSet = new Set(corpusNormalize(b).split(" ").filter(Boolean));
+  if (!wa.length || !wbSet.size) return 0;
+  let hits = 0;
+  for (const w of wa) {
+    if (w.length < 3) continue;
+    if (wbSet.has(w)) hits++;
+  }
+  return hits / wa.length;
+}
+
+function softEvidenceTheme(text: string): boolean {
+  const t = corpusNormalize(text);
+  if (!t) return false;
+  return (
+    /\bnot enough\b/.test(t) ||
+    /\bonly gathered\b/.test(t) ||
+    /\bpartial picture\b/.test(t) ||
+    /\bincomplete\b/.test(t) ||
+    /\blimited\b/.test(t) &&
+      (/\bcheck\b/.test(t) || /\bsignal\b/.test(t) || /\bdata\b/.test(t) || /\binformation\b/.test(t)) ||
+    /\bweak\b/.test(t) && /\bsignal\b/.test(t) ||
+    /\bsparse\b/.test(t)
+  );
+}
+
+/** Collapse overlapping VERIFY bullets (e.g. "not enough checks" vs "only gathered part of the picture"). */
+export function dedupeWhatWeFoundBullets(summary: string, reasons: string[]): string[] {
+  const out: string[] = [];
+  const keptNorm: string[] = [];
+  for (const r of reasons) {
+    const raw = String(r || "").trim();
+    if (!raw) continue;
+    const n = corpusNormalize(raw);
+    let drop = false;
+    for (const prev of keptNorm) {
+      if (n === prev) {
+        drop = true;
+        break;
+      }
+      const aInB = wordHitRatio(raw, prev) >= 0.55;
+      const bInA = wordHitRatio(prev, raw) >= 0.55;
+      const bothSoft = softEvidenceTheme(raw) && softEvidenceTheme(prev);
+      if (aInB || bInA || (bothSoft && (wordHitRatio(raw, prev) >= 0.35 || wordHitRatio(prev, raw) >= 0.35))) {
+        drop = true;
+        break;
+      }
+    }
+    if (!drop && summary) {
+      const s = String(summary);
+      if (wordHitRatio(raw, s) >= 0.5 && softEvidenceTheme(raw)) drop = true;
+    }
+    if (drop) continue;
+    out.push(raw);
+    keptNorm.push(n);
+  }
+  return out;
+}
+
+export function buildWhatWeFoundBullets(
+  verdict: string | undefined,
+  summary: string | undefined,
+  reasons: unknown[] | undefined
+): string[] {
+  const v = String(verdict || "").toUpperCase();
+  const s = String(summary || "").trim();
+  const list = Array.isArray(reasons) ? reasons.map((x) => formatReasonForDisplay(x)).filter(Boolean) : [];
+  if (v === "VERIFY" && s) {
+    return dedupeWhatWeFoundBullets(s, filterReasonsAgainstSummary(s, list));
+  }
+  return list;
+}
+
+/** Drop "Heads up" lines that mostly repeat the summary or a bullet (VERIFY redundancy). */
+export function filterHeadsUpWarnings(
+  summary: string | undefined,
+  bullets: string[],
+  warnings: unknown[] | undefined
+): string[] {
+  const s = String(summary || "").trim();
+  const b = Array.isArray(bullets) ? bullets.map((x) => String(x || "").trim()).filter(Boolean) : [];
+  const raw = Array.isArray(warnings) ? warnings.map((w) => formatWarningForDisplay(w)).filter(Boolean) : [];
+  const out: string[] = [];
+  for (const line of raw) {
+    if (!line) continue;
+    if (s && wordHitRatio(line, s) >= 0.45) continue;
+    let repeatsBullet = false;
+    for (const bl of b) {
+      if (wordHitRatio(line, bl) >= 0.45 || wordHitRatio(bl, line) >= 0.45) {
+        repeatsBullet = true;
+        break;
+      }
+    }
+    if (repeatsBullet) continue;
+    out.push(line);
+  }
+  return out;
+}
+
 /** Drop bullet reasons that mostly repeat the narrative summary (VERIFY copy bloat). */
 export function filterReasonsAgainstSummary(summary: string, reasons: string[]): string[] {
   const s = String(summary || "")
