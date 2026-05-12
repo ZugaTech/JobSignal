@@ -8,11 +8,12 @@ import type {
 } from '../types/verify';
 import {
   buildSignalsSummaryLine,
-  containsLeakMarker,
   formatPipelineSignalDetail,
   formatReasonForDisplay,
   formatWarningForDisplay,
+  isUnsafeUserProse,
   sanitizeField,
+  sanitizeProseForUi,
   scoreToConfidenceLabel,
 } from './formatters';
 
@@ -41,13 +42,17 @@ function normalizeTrustSignals(raw: unknown): TrustSignalRow[] {
   for (const row of raw) {
     if (!row || typeof row !== 'object') continue;
     const r = row as Record<string, unknown>;
-    const name = sanitizeField(r.name, '');
+    const name0 = sanitizeField(r.name, '');
+    const name = name0 && !isUnsafeUserProse(name0) ? name0 : name0 ? 'Public check' : '';
     const status = sanitizeField(r.status, '');
+    const detail0 = typeof r.detail === 'string' ? r.detail.trim() : '';
+    const detail =
+      detail0 && !isUnsafeUserProse(detail0) ? (detail0.length > 400 ? detail0.slice(0, 400) : detail0) : undefined;
     if (!name && !status) continue;
     out.push({
       name: name || 'Signal',
       status: status || 'Insufficient evidence',
-      detail: typeof r.detail === 'string' ? r.detail : undefined,
+      detail,
       source: typeof r.source === 'string' ? r.source : undefined,
     });
   }
@@ -57,12 +62,16 @@ function normalizeTrustSignals(raw: unknown): TrustSignalRow[] {
 function buildDisplayRows(signals: PipelineSignalRow[], trustSignals: TrustSignalRow[]): DisplaySignalRow[] {
   const userSignals = signals.filter((s) => s.id && !INTERNAL_SIGNAL_IDS.has(s.id));
   if (userSignals.length > 0) {
-    return userSignals.map((s) => ({
-      kind: 'pipeline' as const,
-      id: s.id,
-      strength: String(s.strength ?? ''),
-      detail: formatPipelineSignalDetail(s.id, typeof s.details === 'string' ? s.details : undefined),
-    }));
+    return userSignals.map((s) => {
+      const raw = formatPipelineSignalDetail(s.id, typeof s.details === 'string' ? s.details : undefined);
+      const detail = raw && !isUnsafeUserProse(raw) ? raw : undefined;
+      return {
+        kind: 'pipeline' as const,
+        id: s.id,
+        strength: String(s.strength ?? ''),
+        detail,
+      };
+    });
   }
   return trustSignals.map((t) => ({
     kind: 'trust' as const,
@@ -175,11 +184,17 @@ export function sanitizeApiResponse(raw: unknown): SanitizedVerifyReport {
   }
   out.warnings = warningsDeduped;
 
+  const SUMMARY_FALLBACK = 'Summary unavailable. Please try again.';
   let llm = sanitizeField(out.llm_summary, '');
-  if (!llm || llm.indexOf('.') === -1 || containsLeakMarker(llm)) {
-    out.llm_summary = 'Summary unavailable. Please try again.';
+  if (!llm) {
+    out.llm_summary = SUMMARY_FALLBACK;
   } else {
-    out.llm_summary = llm.slice(0, 2000);
+    const cleaned = sanitizeProseForUi(llm, SUMMARY_FALLBACK, 2000);
+    if (cleaned.indexOf('.') === -1) {
+      out.llm_summary = SUMMARY_FALLBACK;
+    } else {
+      out.llm_summary = cleaned;
+    }
   }
 
   const rs = out.review_summary;
@@ -187,8 +202,31 @@ export function sanitizeApiResponse(raw: unknown): SanitizedVerifyReport {
   if (rs && typeof rs === 'object' && !Array.isArray(rs)) {
     reviewObj = rs as Record<string, unknown>;
     const ps = sanitizeField(reviewObj.plain_summary, '');
-    if (ps && containsLeakMarker(ps)) {
-      reviewObj = { ...reviewObj, plain_summary: 'Summary unavailable. Please try again.' };
+    const cleanseBullet = (arr: unknown): string[] =>
+      Array.isArray(arr)
+        ? (arr as unknown[])
+            .map((x) => sanitizeField(x, '').trim())
+            .filter((x) => x.length > 0 && !isUnsafeUserProse(x))
+            .slice(0, 8)
+        : [];
+    const rr0 = sanitizeField(reviewObj.reliability_report, '');
+    const rr = rr0 && !isUnsafeUserProse(rr0) ? rr0 : '';
+    if (ps) {
+      const cleanedPs = sanitizeProseForUi(ps, SUMMARY_FALLBACK, 2000);
+      reviewObj = {
+        ...reviewObj,
+        plain_summary: cleanedPs.indexOf('.') === -1 ? SUMMARY_FALLBACK : cleanedPs,
+        red_flags: cleanseBullet(reviewObj.red_flags),
+        green_flags: cleanseBullet(reviewObj.green_flags),
+        reliability_report: rr,
+      };
+    } else {
+      reviewObj = {
+        ...reviewObj,
+        red_flags: cleanseBullet(reviewObj.red_flags),
+        green_flags: cleanseBullet(reviewObj.green_flags),
+        reliability_report: rr,
+      };
     }
     out.review_summary = reviewObj as ReviewSummary;
   } else {
@@ -216,6 +254,20 @@ export function sanitizeApiResponse(raw: unknown): SanitizedVerifyReport {
   } else {
     out.hideSimilarJobs = false;
     out.similarJobsEmptyMessage = null;
+  }
+
+  if (Array.isArray(out.similar_jobs) && out.similar_jobs.length > 0) {
+    out.similar_jobs = out.similar_jobs.map((job: unknown) => {
+      if (!job || typeof job !== 'object') return job;
+      const j = job as Record<string, unknown>;
+      const title = sanitizeField(j.title, '');
+      const company = sanitizeField(j.company, '');
+      return {
+        ...j,
+        title: title && !isUnsafeUserProse(title) ? String(title).slice(0, 300) : 'Job posting',
+        company: company && !isUnsafeUserProse(company) ? String(company).slice(0, 160) : '',
+      };
+    });
   }
 
   out.request_id = sanitizeField(out.request_id, '');

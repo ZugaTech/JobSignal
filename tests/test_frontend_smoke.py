@@ -40,9 +40,18 @@ def test_react_source_documents_core_flow_tokens(token: str):
     assert token in app_tsx
 
 
-def test_api_helpers_defines_sanitize():
+def test_formatters_exports_ui_safety_helpers():
+    blob = _read("src/utils/formatters.ts")
+    assert "isUnsafeUserProse" in blob
+    assert "looksLikeModelMonologue" in blob
+    assert "sanitizeProseForUi" in blob
+
+
+def test_api_helpers_sanitizes_with_prose_guard():
     blob = _read("src/utils/api-helpers.ts")
     assert "sanitizeApiResponse" in blob
+    assert "sanitizeProseForUi" in blob
+    assert "isUnsafeUserProse" in blob
 
 
 def test_verdict_strings_present_in_ui_source():

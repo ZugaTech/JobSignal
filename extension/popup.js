@@ -31,6 +31,35 @@ function normalizeApiOrigin(value) {
   return (value || "").trim().replace(/\/+$/, "");
 }
 
+/** Match web app sanitizer: never show model monologue / instruction echo in the popup. */
+function isUnsafeUiText(s) {
+  const t = String(s || "").toLowerCase();
+  if (!t.trim()) return false;
+  const markers = [
+    "let me look",
+    "let me read",
+    "let me analyze",
+    "provided text carefully",
+    "the user wants",
+    "system prompt",
+    "as an ai",
+    "as a language model",
+    "chain of thought",
+    "key constraints",
+    "instructions:",
+  ];
+  if (markers.some((m) => t.includes(m))) return true;
+  return /^\s*let me (look|read|analyze)\b/i.test(String(s || "").trim());
+}
+
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function showState(stateEl) {
   [stateIdle, stateLoading, stateResult, stateError, stateNotJob].forEach((el) => {
     if (el) el.classList.add("hidden");
@@ -177,9 +206,13 @@ function applyResult(report) {
     if (s.strength === "warning") sColor = "#f59e0b";
     if (s.strength === "danger") sColor = "#ef4444";
 
+    const rawLabel = String(s.label || s.id || "").trim();
+    const label = isUnsafeUiText(rawLabel) ? "Public check" : escapeHtml(rawLabel.slice(0, 120));
+    const strength = escapeHtml(String(s.strength || ""));
+
     li.innerHTML = `
-      <div><span class="signal-dot" style="background:${sColor}"></span>${s.label || s.id}</div>
-      <span style="font-size:0.7rem; color:${sColor}">${s.strength}</span>
+      <div><span class="signal-dot" style="background:${sColor}"></span>${label}</div>
+      <span style="font-size:0.7rem; color:${sColor}">${strength}</span>
     `;
     ul.appendChild(li);
   });

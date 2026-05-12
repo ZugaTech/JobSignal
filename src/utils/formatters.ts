@@ -22,6 +22,7 @@ export function sanitizeEvidenceDetailForDisplay(
   const formatted = formatPipelineSignalDetail(signalId || '', detail);
   if (!formatted) return undefined;
   if (INTERNAL_DETAIL_HINT.test(formatted)) return undefined;
+  if (isUnsafeUserProse(formatted)) return undefined;
   return formatted;
 }
 
@@ -84,18 +85,65 @@ export function containsLeakMarker(text: string): boolean {
   return false;
 }
 
+/** Opening lines that are almost always model “thinking”, not user-facing copy. */
+const MONOLOGUE_HEAD_RE =
+  /^\s*(let me (look|read|analyze|check|think|start|see|try|be clear|get this)|i'll (analyze|read|check|look|start)|i will (analyze|read|check|look)|first,?\s+i\s|okay,?\s+i\s|ok,?\s+i\s|here's (my|how|the)\s|as a language model\b|as an ai\b|chain of thought|i need to (analyze|read|break|think)|the user wants)/i;
+
+const MONOLOGUE_SUBSTRINGS = [
+  'provided text carefully',
+  'provided text and',
+  'looking at the input',
+  'key data points',
+  'i should note that',
+  'step-by-step',
+  'internal dialogue',
+  'scratchpad',
+];
+
+export function looksLikeModelMonologue(text: string): boolean {
+  const s = String(text || '').trim();
+  if (!s) return false;
+  const head = s.slice(0, 240);
+  if (MONOLOGUE_HEAD_RE.test(head)) return true;
+  const low = s.toLowerCase();
+  return MONOLOGUE_SUBSTRINGS.some((m) => low.includes(m));
+}
+
+/** True when this string must not be shown verbatim in the product UI. */
+export function isUnsafeUserProse(text: string): boolean {
+  return containsLeakMarker(text) || looksLikeModelMonologue(text);
+}
+
+const DEFAULT_UI_PROSE_FALLBACK =
+  "We could not display a reliable automated summary for this check. Use the evidence sections below and confirm on the employer's official careers page.";
+
+/** Safe narrative line(s) for hero / reputation / similar — strips leaks and monologue. */
+export function sanitizeProseForUi(text: string, fallback: string = DEFAULT_UI_PROSE_FALLBACK, maxLen = 2400): string {
+  const s = String(text || '').trim();
+  if (!s || isUnsafeUserProse(s)) return fallback;
+  return s.length > maxLen ? s.slice(0, maxLen) : s;
+}
+
 export function formatReasonForDisplay(entry: any): string {
+  let out = '';
   if (typeof entry === "string") {
     const t = sanitizeField(entry, "");
     if (!t) return "Not enough verified information was available.";
     if (/^[A-Z][A-Z0-9_]+$/.test(t.trim())) return getReasonLabel(t.trim());
-    return t;
+    out = t;
+  } else {
+    const msg = sanitizeField(entry?.message, "");
+    if (msg) out = msg;
+    else {
+      const code = sanitizeField(entry?.code, "");
+      if (code) return getReasonLabel(code);
+      return "Not enough verified information was available.";
+    }
   }
-  const msg = sanitizeField(entry?.message, "");
-  if (msg) return msg;
-  const code = sanitizeField(entry?.code, "");
-  if (code) return getReasonLabel(code);
-  return "Not enough verified information was available.";
+  if (isUnsafeUserProse(out)) {
+    return 'One detail was omitted because it matched internal model wording. Verify on the official job posting.';
+  }
+  return out;
 }
 
 /** Warnings use the same { code, message } contract as reasons. */
@@ -124,11 +172,11 @@ export function filterReasonsAgainstSummary(summary: string, reasons: string[]):
     .replace(/\s+/g, " ");
   if (!s || !reasons.length) return reasons;
   return reasons.filter((r) => {
-    const t = String(r || "")
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, " ");
-    if (!t || t.length < 24) return true;
+    const raw = String(r || "").trim();
+    if (!raw) return false;
+    if (isUnsafeUserProse(raw)) return false;
+    const t = raw.toLowerCase().replace(/\s+/g, " ");
+    if (t.length < 24) return true;
     if (s.includes(t)) return false;
     if (t.length >= 40 && s.slice(0, Math.min(120, s.length)).includes(t.slice(0, 48))) return false;
     return true;
@@ -139,7 +187,7 @@ export function filterReasonsAgainstSummary(summary: string, reasons: string[]):
 export function sanitizeReputationPlainSummary(text: string | undefined | null): string {
   const raw = String(text || "").trim();
   if (!raw) return "";
-  if (containsLeakMarker(raw)) {
+  if (isUnsafeUserProse(raw)) {
     return "Public employer reviews did not surface clearly enough for a clean summary here.";
   }
   return rewriteMicrocopy(raw);
