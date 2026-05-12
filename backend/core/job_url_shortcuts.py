@@ -8,6 +8,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from backend.core.normalization import registrable_domain_naive
+from backend.core.employer_llm_noise import employer_label_is_llm_noise
 
 # Hardcoded high-risk recruiter scam patterns (extend carefully).
 _SCAM_REGISTRABLE_DOMAINS = frozenset(
@@ -197,6 +198,8 @@ def _clean_employer_candidate(label: Optional[str]) -> Optional[str]:
     if low in _WEAK_EMPLOYER_LABELS:
         return None
     if _ROLE_WORDS.search(low) and not re.search(r"\b(inc|llc|ltd|limited|corp|corporation|company|group|plc)\b", low):
+        return None
+    if employer_label_is_llm_noise(t):
         return None
     return t
 

@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 from backend.core.job_url_shortcuts import is_job_board_brand_label, is_job_board_registrable_domain
 from backend.core.normalization import NormalizationResult, registrable_domain_naive
+from backend.core.employer_llm_noise import employer_label_is_llm_noise
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +27,9 @@ class ExtractionResult:
 
 
 _TITLE_PREFIX = re.compile(r"^\s*(title|job title|position)\s*:\s*", re.I)
+# After NFKC/collapse, LLM prefaces and real titles often land in one line; split only when the
+# whole line is monologue-like so we do not chop legitimate "Dr. …" titles on every period.
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+")
 _LOCATIONISH = re.compile(
     r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*[A-Z]{2})\b"  # City, ST
 )
@@ -64,11 +68,26 @@ def _company_from_domain(domain: Optional[str]) -> Optional[str]:
 def _first_meaningful_line(text: Optional[str]) -> Optional[str]:
     if not text:
         return None
-    for line in text.splitlines():
-        s = line.strip()
+    lines = [ln.strip() for ln in text.splitlines() if len(ln.strip()) >= 3]
+    fragments: list[str] = []
+    if len(lines) <= 1:
+        one = (lines[0] if lines else text.strip())
+        if not one:
+            return None
+        stripped = _TITLE_PREFIX.sub("", one).strip()
+        if employer_label_is_llm_noise(stripped):
+            fragments = [p.strip() for p in _SENTENCE_BOUNDARY.split(one) if p.strip()]
+        else:
+            fragments = [one]
+    else:
+        fragments = lines
+
+    for raw in fragments:
+        s = _TITLE_PREFIX.sub("", raw).strip()
         if len(s) < 3:
             continue
-        s = _TITLE_PREFIX.sub("", s).strip()
+        if employer_label_is_llm_noise(s):
+            continue
         return s[:256] or None
     return None
 

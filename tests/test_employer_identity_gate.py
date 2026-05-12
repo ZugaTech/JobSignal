@@ -63,6 +63,18 @@ def test_job_board_confirms_hardened_name_when_only_extraction_signal():
     assert resolved.name == "Contoso Robotics"
 
 
+def test_job_board_rejects_llm_monologue_as_hardened_employer():
+    resolved = resolve_employer_identity(
+        is_job_board_url=True,
+        structured_candidate=None,
+        url_domain_candidate=None,
+        hardened_candidate="Let me look through the provided text carefully",
+        heuristic_candidate=None,
+    )
+    assert resolved.confirmed is False
+    assert resolved.name is None
+
+
 @pytest.mark.asyncio
 async def test_reputation_hidden_when_employer_unconfirmed():
     coord = CountingCoordinator(

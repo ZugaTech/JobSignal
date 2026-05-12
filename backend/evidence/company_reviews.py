@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from backend.core.employer_hints import merge_curated_baseline
+from backend.core.employer_llm_noise import employer_label_is_llm_noise
 from backend.core.fireworks_defaults import DEFAULT_FIREWORKS_MODEL
 from backend.core.job_url_shortcuts import is_job_board_brand_label, is_known_job_platform_url
 from backend.core.prompt_guard import is_prompt_leak
@@ -241,47 +242,14 @@ BAD_REPUTATION_PLACEHOLDER_NAMES = frozenset(
     }
 )
 
-# Model / paste garbage that must never be used as the employer string in templates or Serper.
-_EMPLOYER_LLM_NOISE_MARKERS: tuple[str, ...] = (
-    "let me look",
-    "let me read",
-    "provided text",
-    "carefully, so",
-    "i'll analyze",
-    "i will analyze",
-    "chain of thought",
-    "looking at the",
-    "based on my analysis",
-    "first, i need",
-    "as a language model",
-    "i should note",
-    "step-by-step",
-    "the assistant",
-    "here is the",
-    "wait,",
-)
-
-
-def _employer_label_is_llm_noise(name: str) -> bool:
-    if not name or not str(name).strip():
-        return False
-    s = str(name).strip()
-    if len(s) > 140:
-        return True
-    low = s.lower()
-    if low.startswith("let me ") or low.startswith("i'll ") or low.startswith("i will "):
-        return True
-    if any(m in low for m in _EMPLOYER_LLM_NOISE_MARKERS):
-        return True
-    if is_prompt_leak(s):
-        return True
-    return False
+# Backward-compatible name for tests / internal callers.
+_employer_label_is_llm_noise = employer_label_is_llm_noise
 
 
 def _safe_reputation_company_label(company: str, job_url: Optional[str]) -> str:
     """User-visible employer name for templates; never inject instruction-like strings."""
 
-    if company and not _employer_label_is_llm_noise(company):
+    if company and not employer_label_is_llm_noise(company):
         return company
     if job_url:
         dom = extract_company_from_domain(job_url)
@@ -376,7 +344,7 @@ def resolve_reputation_query_name(
     job_url: Optional[str],
 ) -> Optional[str]:
     raw_in = (company_name or "").strip()
-    if _employer_label_is_llm_noise(raw_in):
+    if employer_label_is_llm_noise(raw_in):
         raw_in = ""
     raw = raw_in
     low = raw.lower()
