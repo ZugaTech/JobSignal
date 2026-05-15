@@ -65,12 +65,12 @@
 
 ---
 
-## 7) Submission Checklist
-- [ ] **Python Version:** 3.10+ (compatible with `typing_extensions`).
-- [ ] **Dependencies:** Run `pip install -r requirements.txt`.
-- [ ] **Environment:** Copy `.env.example` to `.env`.
-- [ ] **Verification:** Run `pytest` to ensure all 89 tests pass locally.
-- [ ] **Service Start:**
-  - Backend: `uvicorn backend.api.main:app --host 0.0.0.0 --port 8080 --reload`
-  - Frontend: `python -m http.server 3000 --directory frontend` (or any static server).
-- [ ] **Fixtures Mode:** Ensure `JOBSIGNAL_SEARCH_FIXTURE_PATH` is set for offline demos.
+## 7) Review checklist (local)
+
+- [ ] **Python:** 3.10+ (`requirements.txt`, CI matrix).
+- [ ] **Dependencies:** `pip install -r requirements.txt`, `npm ci`.
+- [ ] **Environment:** copy `.env.example` → `.env`; fill keys only locally.
+- [ ] **Tests & build:** `npm run build` then `PYTHONPATH=. pytest` (same shape as `.github/workflows/ci.yml`).
+- [ ] **API + UI:** `python -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8080` — serves `dist/` after `npm run build`; legacy `frontend/` only applies if that directory exists on disk.
+- [ ] **Optional dev UI:** `npm run dev` (Vite) with `VITE_API_BASE` pointing at the API if not same-origin.
+- [ ] **Offline demos:** set `JOBSIGNAL_SEARCH_FIXTURE_PATH` (and related fixture env from `.env.example`) when providers must stay cold.

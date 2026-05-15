@@ -12,6 +12,15 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 
 ## Log entries (newest first)
 
+### 2026-05-12 — Documentation and repo hygiene for external review
+
+- **README:** Rewritten for accurate stack (FastAPI, React/Vite, CI, extension); removed stale “docs-only sprint” wording.
+- **Ledger:** Rebuilt [`TECHNICAL-LEDGER.md`](TECHNICAL-LEDGER.md) to remove contradictory rows (CI, adapters, `/ready`, frontend).
+- **Structure:** Updated [`folder_structure.md`](folder_structure.md), [`backend/README.md`](../backend/README.md), [`deployment/README.md`](../deployment/README.md), [`security/README.md`](../security/README.md).
+- **Misc:** [`deployment_readiness.md`](deployment_readiness.md) secret naming aligned with `.env.example`; [`demo_script.md`](demo_script.md) checklist matches production UI path; [`final_scope.md`](final_scope.md) framing clarified for pilots.
+- **Tests:** Regression guard `tests/test_pipeline_performance.py` uses a looser ceiling to avoid flaky failures under full-suite load on shared hosts.
+- **Tooling:** `.cursor/rules` references updated for React `src/` (legacy `frontend/app.js` may be absent).
+
 ### 2026-05-06 — Sprint 7: Production-ish hardening
 
 - **Security:** Added per-IP rate limiting middleware in `backend/api/main.py` (20 req/min).
@@ -134,12 +143,12 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 |--------|--------|---------------------|
 | **1** | Done (docs + scaffold) | `architecture.md`, `trust_model.md`, `scope.md`, `environment.md`, `folder_structure.md`, `docs/sprints/sprint-1.md` |
 | **2** | Done (docs + core modules + tests) | `data_flow.md`, `cache_design.md`, `source_validation.md`, `backend/core/*`, `tests/*`, `docs/sprints/sprint-2.md` |
-| **3** | Done (scoring + static UI + tests; API still mock) | `scoring.md`, `decision_logic.md`, `frontend_flow.md`, `backend/core/scoring.py`, `report.py`, `frontend/*`, `docs/sprints/sprint-3.md` |
+| **3** | Done (scoring + UI + tests; FastAPI wired same era) | `scoring.md`, `decision_logic.md`, `frontend_flow.md`, `backend/core/scoring.py`, `report.py`, `frontend/*`, `docs/sprints/sprint-3.md` |
 | **4** | Done (hardening + docs + tests; no scope creep) | `security.md`, `reliability.md`, `deployment_readiness.md`, `final_scope.md`, `env.py`, `inputs.py`, `prompt_guard.py`, `health.py`, `docs/sprints/sprint-4.md` |
 | **5** | Done (image path + insufficient-screenshot UX) | `image_ingest.md`, `scope_addendum_2026-05-06.md`, `backend/core/image_ingest.py`, multipart `/v1/verify`, `frontend` file upload |
 | **6** | Done | `recommendations.py`, Serper + fixture providers, UI checkbox, `docs/recommendations.md` |
 | **7** | Done | Production-ish hardening (rate limits, SSRF, versioned keys) |
-| **8** | Planned | Demo script, optional CI, release tag |
+| **8** | Done | `docs/demo_script.md`; CI via `.github/workflows/ci.yml` |
 | **9** | Done | `fetch_job_page.py`, `ENABLE_JOB_FETCH`, live `fetch_ok` / `domain_align`, `docs/fetch_job_page.md` |
 | **10** | Done | Redis cache + truthful `/ready` |
 | **11** | Done | Frontend explainability, premium aesthetics, timeline |
@@ -149,12 +158,11 @@ Use this file as a **running journal** of what shipped, when, and why. Append ne
 
 ---
 
-## Follow-ups (backlog from sprints)
+## Follow-ups (backlog)
 
-- [ ] Wire `SearchAdapter` + fetch with **recorded** fixtures for CI.
-- [ ] Replace naive registrable-domain parsing with PSL-aware library; bump `NORMALIZATION_VERSION`.
-- [ ] Align `docs/architecture.md` API narrative with `DecisionResponse` / `confidence` band-only if product locks that contract everywhere.
-- [ ] Sprint 3: rule engine + minimal UI per `prompts/sprint-03-agent.md`.
+- [ ] Expand **recorded** HTTP/search fixtures for regression demos (deterministic CI already uses mocks).
+- [ ] Optional: PSL-backed registrable-domain parsing; bump `NORMALIZATION_VERSION` if semantics change.
+- [ ] Optional: Playwright (or similar) smoke tests for React UI + mocked API.
 
 ---
 

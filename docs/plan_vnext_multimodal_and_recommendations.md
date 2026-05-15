@@ -1,6 +1,8 @@
-# JobSignal — vNext plan: screenshots + optional “similar jobs” (hackathon-style sprints)
+# JobSignal — vNext plan: screenshots + optional “similar jobs”
 
-**Status:** planning (Sprint 5 shipped; Sprints 6–12 are backlog / execution order is suggestive only).  
+**Status:** planning / backlog (major multimodal + recommendation milestones shipped; remaining rows are polish and datasets).
+
+**Historical:** Originally framed as sprint-sized increments for rapid iteration.  
 **Date:** 2026-05-06 (expanded 2026-05-06 with Sprints 9–12 for gap closure).  
 **Authority:** aligns with `.cursor/rules/JOBSIGNAL-RULES.mdc`, `docs/trust_model.md`, `docs/cache_design.md`, `docs/security.md`, and the post–Sprint 4 integration baseline (`docs/TECHNICAL-LEDGER.md`).
 

@@ -1,9 +1,23 @@
 # backend/
 
-Core Python modules (incrementally added across sprints):
+Python service for JobSignal: **input validation**, **normalization**, **evidence collection** (search + optional live fetch), **scoring**, **public report shaping**, and **cache** read/write.
 
-- `core/normalization.py`, `cache_key.py`, `cache_payload.py`, `cache_store.py`, `extraction.py`, `source_evidence.py` — Sprint 2 ingestion/cache contracts  
-- `core/decision_schema.py`, `scoring.py`, `report.py` — Sprint 3 verdict + public report  
-- `core/env.py`, `inputs.py`, `prompt_guard.py`, `health.py` — Sprint 4 hardening + readiness helpers  
+## Layout
 
-Run tests from repo root: `python -m pytest`.
+| Area | Module(s) | Role |
+|------|------------|------|
+| HTTP | `api/main.py` | FastAPI app, CORS, rate limits, static / `dist/` UI |
+| Orchestration | `core/orchestrator.py` | End-to-end `verify_job` pipeline |
+| Trust / evidence | `core/evidence.py`, `source_evidence.py`, `fetch_job_page.py` | T1–T3 signals, SSRF-safe fetch |
+| Scoring | `core/scoring.py`, `report.py`, `decision_schema.py` | Verdict + confidence |
+| Cache | `core/cache_key.py`, `cache_payload.py`, `cache_store.py` | Keys, TTL, Redis / memory |
+| Safety | `core/inputs.py`, `prompt_guard.py`, `env.py`, `health.py` | Bounds, injection hints, readiness |
+
+## Tests
+
+From repo root:
+
+```bash
+set PYTHONPATH=.
+pytest
+```

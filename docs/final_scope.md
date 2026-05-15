@@ -1,6 +1,6 @@
 # JobSignal — Final scope freeze (Sprint 4)
 
-**Effective:** 2026-05-04 (working freeze for hackathon / pilot). Changes after this require an explicit **version bump** and **ADR**.
+**Effective:** 2026-05-04 (working freeze for pilot / production-minded deployments). Changes after this require an explicit **version bump** and **ADR**.
 
 ## Will ship (in scope)
 
@@ -9,7 +9,7 @@
 - **Explainable signals** and **warnings**; **no false certainty** in UI copy requirements (`docs/frontend_flow.md`).
 - **Global shared cache** for identical **public** normalized inputs with **TTL** (10–30 days, default 14) and **versioned keys** (`docs/cache_design.md`).
 - **Multi-tenant-safe** separation: tenant metadata **not** in shared cache payload (`docs/security.md`).
-- **Minimal static UI** for demo (`frontend/`) and **pytest** coverage for core logic.
+- **React UI (`src/` → `dist/`)** for demo and **pytest** coverage for core logic (legacy `frontend/` may be omitted in some clones).
 - **Hardened inputs**, **env validation (strict mode)**, **health payloads**, and **prompt-injection risk assessment** utilities.
 
 ## Will not ship (out of scope)

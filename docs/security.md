@@ -1,4 +1,6 @@
-# JobSignal — Security (Sprint 4)
+# JobSignal — Security
+
+Engineering controls and explicit assumptions for applicant-side verification. This is **not** a penetration-test report; pair code review and dependency updates with your own assessments.
 
 ## 1. Threat model (MVP)
 
@@ -44,6 +46,7 @@ This document is **not** a penetration-test report; it encodes **explicit assump
 ## 7. Related documents
 
 - `deployment_readiness.md`, `reliability.md`, `cache_design.md`, `environment.md`
+- [`security/README.md`](../security/README.md) — entry point for reviewers
 
 ## Change log
 
@@ -51,3 +54,4 @@ This document is **not** a penetration-test report; it encodes **explicit assump
 |------|--------|-----|
 | Sprint 4 | Initial `security.md` + code gates (`env`, `inputs`, `prompt_guard`) | Sprint 4 deliverable. |
 | 2026-05-06 | Documented Sprint 9 primary fetch SSRF controls | `fetch_job_page.py` shipped behind `ENABLE_JOB_FETCH`. |
+| 2026-05-12 | Reframed intro for external reviewers; linked `security/README.md` | Employer/public clarity |

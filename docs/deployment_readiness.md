@@ -4,7 +4,7 @@
 
 - [ ] **Runtime:** Python 3.10+ on API hosts; `python -m pytest` green in CI.
 - [ ] **Dependencies:** `pip install -r requirements.txt` completes (FastAPI + uvicorn + httpx).
-- [ ] **Secrets:** `.env` / secret manager holds `SEARCH_API_KEY`, `CACHE_URL`, etc.; never baked into images.
+- [ ] **Secrets:** `.env` / secret manager holds provider keys (`SERPER_API_KEY` and/or `SERPAPI_API_KEY`, optional `FIREWORKS_API_KEY`), `CACHE_URL`, etc.; never baked into images.
 - [ ] **Config:** `EnvConfig.load(strict=True)` in production entrypoint (fail fast).
 - [ ] **Cache:** Redis (or compatible) reachable; TTL matches policy (see `cache_design.md`).
 - [ ] **Frontend:** static assets served with correct MIME; CSP baseline (nonce or hash later).

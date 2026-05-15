@@ -30,7 +30,7 @@ Use this when the repo **already contains** runnable backend/frontend/tests. The
 ## Frontend and API coupling
 
 - **Active tab / pane**: only read inputs from the **visible** pane so hidden fields cannot leak into requests (batch vs URL vs text vs image).
-- After JS structural edits, run **`node --check frontend/app.js`** and **`pytest tests/test_frontend_smoke.py`**; full UI proof remains manual or Playwright.
+- After structural edits under **`src/`**, run **`npm run build`** before relying on `dist/` behavior in FastAPI; **`pytest tests/test_frontend_smoke.py`** catches drift without Playwright; full UI proof remains manual or Playwright.
 
 ## Configuration consistency
 
