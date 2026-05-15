@@ -41,7 +41,12 @@ from backend.core.image_ingest import (
     merge_description_with_extraction,
 )
 from backend.core.inputs import InputValidationError, coerce_http_job_url, validate_verify_inputs
-from backend.core.job_url_shortcuts import is_known_job_platform_url, is_scam_domain_url, resolve_employer_identity
+from backend.core.job_url_shortcuts import (
+    is_job_board_brand_label,
+    is_known_job_platform_url,
+    is_scam_domain_url,
+    resolve_employer_identity,
+)
 from backend.core.llm_fireworks import build_llm_signals
 from backend.core.normalization import NormalizationResult, normalize_job_input, materialize_url_result_cache_key
 from backend.core.url_normalize_llm import llm_url_normalize_enabled, recover_job_url_with_llm_fallback
@@ -655,6 +660,14 @@ async def verify_job(
         is_board_url = bool(norm.canonical_url and is_known_job_platform_url(norm.canonical_url))
         # Image / vision extraction (when present)
         structured_company = sanitize_company_name(getattr(merged_fields, "company_name", None)) if merged_fields else None
+        jsonld_raw = ""
+        if fx and fx.attempted and getattr(fx, "jsonld_employer_name", None):
+            jsonld_raw = sanitize_company_name(fx.jsonld_employer_name) or ""
+        jsonld_ok = bool(jsonld_raw and not is_job_board_brand_label(jsonld_raw))
+
+        if not structured_company and jsonld_ok:
+            structured_company = jsonld_raw
+
         # Pasted job text often includes "Company: …" but merged_fields is only set for screenshots — reuse the
         # same deterministic parse used for entity hints so board URLs + description still confirm the employer.
         if not structured_company:

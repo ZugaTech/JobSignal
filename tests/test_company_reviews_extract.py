@@ -59,10 +59,11 @@ def test_linkedin_og_site_name_not_emitted_as_company_hint():
     <meta property="og:title" content="Full Stack Developer | hackajob | LinkedIn" />
     </head><body></body></html>
     """
-    title, _desc, site_name, extracted = extract_job_text_hints_from_html(html)
+    title, _desc, site_name, extracted, jsonld_name = extract_job_text_hints_from_html(html)
     assert site_name == "LinkedIn"
     assert extracted is not None
-    assert "Company: LinkedIn" not in extracted
+    assert "Company:" not in extracted
+    assert jsonld_name is None
     assert "hackajob" in (title or "").lower() or "hackajob" in extracted.lower()
 
 
@@ -90,11 +91,45 @@ def test_json_ld_jobposting_surfaces_in_extracted_text():
 "hiringOrganization":{"@type":"Organization","name":"Deloitte Consulting LLP"},
 "jobLocation":{"@type":"Place","address":{"addressRegion":"VA","addressCountry":"US"}}}
 </script></head><body><p>Extra body text for minimum length requirements here.</p></body></html>"""
-    title, _desc, _site, extracted = extract_job_text_hints_from_html(html, body_text_max_chars=4000)
+    title, _desc, _site, extracted, jsonld_name = extract_job_text_hints_from_html(html, body_text_max_chars=4000)
     assert extracted
+    assert jsonld_name == "Deloitte Consulting LLP"
     assert "340395" in extracted
     assert "GenAI" in extracted or "GenAI Engineer" in extracted
     assert "Deloitte" in extracted
+
+
+def test_fetch_hints_meta_site_never_emits_company_prefix():
+    html = b"""<html><head>
+    <meta property="og:site_name" content="Acme Robotics" />
+    <title>Software Engineer</title>
+    </head><body></body></html>"""
+    _t, _d, _s, extracted, jl = extract_job_text_hints_from_html(
+        html,
+        canonical_url="https://careers.acme-example.com/job/1",
+    )
+    assert extracted
+    assert "Company:" not in extracted
+    assert "Meta site_name: Acme Robotics" in extracted
+    assert jl is None
+
+
+def test_board_url_skips_meta_site_when_jsonld_names_employer():
+    html = b"""<html><head>
+    <meta property="og:site_name" content="RegionalJobsPortal" />
+    <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"JobPosting","title":"Backend Engineer",
+    "hiringOrganization":{"@type":"Organization","name":"True Employer LLC"}}
+    </script></head><body><p>More body.</p></body></html>"""
+    _t, _d, site, extracted, jl = extract_job_text_hints_from_html(
+        html,
+        canonical_url="https://www.indeed.com/viewjob?jk=abc",
+    )
+    assert jl == "True Employer LLC"
+    assert extracted
+    assert "Company:" not in extracted
+    assert "Meta site_name" not in extracted
+    assert site == "RegionalJobsPortal"
 
 
 def test_board_url_does_not_self_promote_as_official_careers_page():

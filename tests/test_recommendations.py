@@ -53,11 +53,12 @@ def test_extract_job_text_hints_from_html_for_recommendations():
       <body><h1>Senior Data Engineer</h1></body>
     </html>
     """
-    title, desc, site, extracted = extract_job_text_hints_from_html(html)
+    title, desc, site, extracted, _jl = extract_job_text_hints_from_html(html)
     assert title and "Senior Data Engineer" in title
     assert desc and "Python data pipelines" in desc
     assert site == "Acme Robotics"
-    assert extracted and "Company: Acme Robotics" in extracted
+    assert extracted and "Meta site_name: Acme Robotics" in extracted
+    assert "Company:" not in extracted
 
 
 @pytest.mark.asyncio

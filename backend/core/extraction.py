@@ -11,7 +11,11 @@ from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlparse
 
-from backend.core.job_url_shortcuts import is_job_board_brand_label, is_job_board_registrable_domain
+from backend.core.job_url_shortcuts import (
+    is_job_board_brand_label,
+    is_job_board_registrable_domain,
+    is_known_job_platform_url,
+)
 from backend.core.normalization import NormalizationResult, registrable_domain_naive
 from backend.core.employer_llm_noise import employer_label_is_llm_noise
 
@@ -94,12 +98,19 @@ def _first_meaningful_line(text: Optional[str]) -> Optional[str]:
 
 def extract_entities(norm: NormalizationResult) -> ExtractionResult:
     company = None
-    if norm.registrable_domain and not is_job_board_registrable_domain(norm.registrable_domain):
+    cu = (norm.canonical_url or "").strip()
+    board_like_url = cu.startswith(("http://", "https://")) and is_known_job_platform_url(cu)
+
+    if (
+        norm.registrable_domain
+        and not is_job_board_registrable_domain(norm.registrable_domain)
+        and not board_like_url
+    ):
         company = _company_from_domain(norm.registrable_domain)
     if not company and norm.canonical_url:
         host = urlparse(norm.canonical_url).hostname or ""
         reg = registrable_domain_naive(host) if host else None
-        if reg and not is_job_board_registrable_domain(reg):
+        if reg and not is_job_board_registrable_domain(reg) and not board_like_url:
             company = _company_from_domain(host)
 
     title = _first_meaningful_line(norm.description_text)

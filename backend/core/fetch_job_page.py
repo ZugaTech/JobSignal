@@ -18,7 +18,11 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from backend.core.env import EnvConfig
-from backend.core.job_url_shortcuts import is_job_board_brand_label
+from backend.core.job_url_shortcuts import (
+    is_job_board_brand_label,
+    is_job_board_registrable_domain,
+    is_known_job_platform_url,
+)
 from backend.core.normalization import registrable_domain_naive
 
 FETCH_ADAPTER_VERSION = "1.2.0"
@@ -119,6 +123,7 @@ class JobPageFetchOutcome:
     page_description: Optional[str] = None
     site_name: Optional[str] = None
     extracted_job_text: Optional[str] = None
+    jsonld_employer_name: Optional[str] = None
 
 
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
@@ -288,8 +293,11 @@ _JOB_ID_REGEXES = (
 )
 
 
-def _extract_jobposting_ld_hints(html: str, *, max_hints: int = 14) -> List[str]:
+def _extract_jobposting_ld_hints_and_employer(html: str, *, max_hints: int = 14) -> Tuple[List[str], Optional[str]]:
+    """Parse JobPosting JSON-LD blocks for hint lines and first plausible hiring organization name."""
+
     hints: List[str] = []
+    jsonld_employer: Optional[str] = None
     for m in re.finditer(
         r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
         html,
@@ -326,7 +334,10 @@ def _extract_jobposting_ld_hints(html: str, *, max_hints: int = 14) -> List[str]
             if isinstance(org, dict):
                 name = org.get("name")
                 if isinstance(name, str) and name.strip():
-                    hints.append(f"JSON-LD hiringOrganization: {name.strip()[:180]}")
+                    cand = name.strip()[:180]
+                    hints.append(f"JSON-LD hiringOrganization: {cand}")
+                    if jsonld_employer is None and not is_job_board_brand_label(cand):
+                        jsonld_employer = cand
             ident = obj.get("identifier")
             if isinstance(ident, str) and ident.strip():
                 hints.append(f"JSON-LD identifier: {ident.strip()[:80]}")
@@ -342,7 +353,7 @@ def _extract_jobposting_ld_hints(html: str, *, max_hints: int = 14) -> List[str]
                     loc_s = ", ".join(str(p) for p in pieces if isinstance(p, str) and p.strip())
                     if loc_s:
                         hints.append(f"JSON-LD location: {loc_s[:160]}")
-    return hints[:max_hints]
+    return hints[:max_hints], jsonld_employer
 
 
 def _collect_job_id_snippets(text: str, *, max_ids: int = 8) -> List[str]:
@@ -375,17 +386,22 @@ def _scam_caution_snippets(text: str) -> List[str]:
 def extract_job_text_hints_from_html(
     html_bytes: bytes,
     *,
+    canonical_url: str = "",
     body_text_max_chars: int = 16_000,
     extracted_max_chars: int = 48_000,
-) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
     """Extract conservative page hints for search/recommendation discovery.
 
     This is not treated as trusted evidence by itself; it only improves query
     construction when the user supplied a URL but no pasted job description.
+
+    ``canonical_url`` (typically the final URL after redirects) gates board-aware meta handling:
+    we never emit a synthetic ``Company:`` line from ``og:site_name`` — that string is not the
+    hiring employer on aggregator pages and previously poisoned regex-based extraction.
     """
 
     if not html_bytes:
-        return None, None, None, None
+        return None, None, None, None, None
     html = html_bytes[:_FETCH_HTML_SAMPLE_CAP].decode("utf-8", errors="ignore")
 
     title: Optional[str] = None
@@ -403,7 +419,8 @@ def extract_job_text_hints_from_html(
     site_name = _first_meta_content(html, "og:site_name", "application-name")
     description = _first_meta_content(html, "description", "og:description", "twitter:description")
 
-    ld_hints = _extract_jobposting_ld_hints(html)
+    ld_hints, jsonld_employer_name = _extract_jobposting_ld_hints_and_employer(html)
+
     main_html = _main_content_html_fragment(html)
     body_plain = _clean_html_text(main_html)
     cap = max(2_000, min(int(body_text_max_chars), 80_000))
@@ -418,13 +435,22 @@ def extract_job_text_hints_from_html(
         caution_hits.extend(_scam_caution_snippets(title))
         caution_hits = list(dict.fromkeys(caution_hits))
 
+    cu = (canonical_url or "").strip()
+    treat_board_meta = False
+    if cu.startswith(("http://", "https://")):
+        bh = urlparse(cu).hostname or ""
+        reg_dom = registrable_domain_naive(bh) if bh else None
+        treat_board_meta = is_known_job_platform_url(cu) or is_job_board_registrable_domain(reg_dom)
+
     parts: List[str] = []
     if title:
         parts.append(f"Title: {title}")
-    if site_name and not is_job_board_brand_label(site_name):
-        parts.append(f"Company: {site_name}")
     if ld_hints:
         parts.append("Structured data:\n" + "\n".join(ld_hints))
+    if site_name and not is_job_board_brand_label(site_name):
+        skip_meta = treat_board_meta and bool(jsonld_employer_name)
+        if not skip_meta:
+            parts.append(f"Meta site_name: {site_name}")
     if id_snippets:
         parts.append("Detected posting identifiers: " + ", ".join(id_snippets))
     if caution_hits:
@@ -441,7 +467,7 @@ def extract_job_text_hints_from_html(
     if extracted and len(extracted) > extracted_max_chars:
         extracted = extracted[:extracted_max_chars] + "\n…"
 
-    return title, description, site_name, extracted
+    return title, description, site_name, extracted, jsonld_employer_name
 
 
 def run_job_page_fetch(
@@ -626,11 +652,13 @@ def run_job_page_fetch(
         page_description: Optional[str] = None
         site_name: Optional[str] = None
         extracted_job_text: Optional[str] = None
+        jsonld_employer_name: Optional[str] = None
         if html_like and total_read > 0:
             html_bytes = bytes(buf)
             employer_urls = extract_employer_urls_from_html(html_bytes, final_url)
-            page_title, page_description, site_name, extracted_job_text = extract_job_text_hints_from_html(
+            page_title, page_description, site_name, extracted_job_text, jsonld_employer_name = extract_job_text_hints_from_html(
                 html_bytes,
+                canonical_url=final_url,
                 body_text_max_chars=cfg.fetch_body_text_max_chars,
             )
             if not (extracted_job_text or "").strip():
@@ -651,6 +679,7 @@ def run_job_page_fetch(
             page_description=page_description,
             site_name=site_name,
             extracted_job_text=extracted_job_text,
+            jsonld_employer_name=jsonld_employer_name,
         )
     finally:
         if own_client:

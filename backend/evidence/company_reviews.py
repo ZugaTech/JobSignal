@@ -143,6 +143,19 @@ def _get_env(name: str, default: str = "") -> str:
     return (os.environ.get(name) or default).strip()
 
 
+def _parse_brace_json_object(raw: str) -> Optional[Dict[str, Any]]:
+    s = raw.strip()
+    i = s.find("{")
+    j = s.rfind("}")
+    if i == -1 or j <= i:
+        return None
+    try:
+        obj = json.loads(s[i : j + 1])
+        return obj if isinstance(obj, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
 def extract_company_name_hardened(url: Optional[str], text: Optional[str], *, request_id: str = "company_name_extract") -> Optional[str]:
     # Never derive "company" from the job-board hostname (e.g. ng.indeed.com → "Indeed").
     if url and is_known_job_platform_url(url):
@@ -179,14 +192,53 @@ def extract_company_name_hardened(url: Optional[str], text: Optional[str], *, re
         api_key = _get("FIREWORKS_API_KEY") or _get("LLM_API_KEY")
         llm_enabled_flag = llm_enabled()
         if api_key and llm_enabled_flag:
+            snippet = text[:8000]
             try:
-                prompt = (
+                json_prompt = (
+                    "Classify this job posting text. Return the LEGAL HIRING COMPANY (the employer actively hiring).\n"
+                    "Ignore job board / marketplace operators (LinkedIn, Indeed, Glassdoor, ZipRecruiter, etc.), "
+                    "recruiting agencies named only as posters, ATS/web host names, and page chrome.\n"
+                    "Reply with ONLY valid JSON (no markdown fences): "
+                    '{"employer":string|null,"confidence":"high"|"medium"|"low","platform_guess":string|null}\n'
+                    "Rules: employer=null when unsure; confidence low when ambiguous.\n\n---\n"
+                    f"{snippet}"
+                )
+                raw_json = call_llm_safe_chat_sync(
+                    messages=[{"role": "user", "content": json_prompt}],
+                    fallback="{}",
+                    request_id=f"{request_id}_employer_json",
+                    model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
+                    temperature=0.0,
+                    max_tokens=160,
+                    timeout=6.0,
+                    prose_mode=False,
+                    max_chars=600,
+                    min_prose_len=1,
+                    require_sentence_period=False,
+                )
+                data = _parse_brace_json_object(raw_json)
+                if isinstance(data, dict):
+                    emp = data.get("employer")
+                    conf = str(data.get("confidence") or "").lower().strip()
+                    if isinstance(emp, str):
+                        emp_s = emp.strip()
+                    elif emp is None:
+                        emp_s = ""
+                    else:
+                        emp_s = str(emp).strip()
+                    if emp_s and conf in ("high", "medium") and not is_job_board_brand_label(emp_s):
+                        return emp_s[:200]
+            except Exception:
+                pass
+
+            try:
+                prose_prompt = (
                     "Extract only the hiring company name from this job posting. "
                     "Return only the company name, nothing else. If you cannot determine it, return null.\n\n"
                     f"{text[:2000]}"
                 )
                 res = call_llm_safe_chat_sync(
-                    messages=[{"role": "user", "content": prompt}],
+                    messages=[{"role": "user", "content": prose_prompt}],
                     fallback="null.",
                     request_id=request_id,
                     model=_get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL),
